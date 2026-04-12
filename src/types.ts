@@ -7,7 +7,7 @@ export interface Transaction {
   date: string;
   paymentMethod: string;
   amount: number;
-  status: 'Verified' | 'Pending' | 'New Charge' | 'Surplus' | 'Peak';
+  status: 'Verified' | 'Pending' | 'New Charge' | 'Surplus' | 'Peak' | 'Processing';
   icon: string;
   color: string;
 }

@@ -5,18 +5,40 @@ import Transactions from './components/Transactions';
 import MonthlyReview from './components/MonthlyReview';
 import YearlyReview from './components/YearlyReview';
 import AddTransactionModal from './components/AddTransactionModal';
+import ProcessingToast, { useProcessingJobs } from './components/ProcessingToast';
+import ReceiptDetail from './components/ReceiptDetail';
 
 export default function App() {
   const [activeTab, setActiveTab] = React.useState('dashboard');
   const [isModalOpen, setIsModalOpen] = React.useState(false);
   const [refreshKey, setRefreshKey] = React.useState(0);
+  const [selectedReceiptId, setSelectedReceiptId] = React.useState<string | null>(null);
+  const { jobs, addJob, removeJob } = useProcessingJobs();
+
+  const handleUploadComplete = (job: { jobId: string; receiptId: string }) => {
+    addJob(job);
+    setRefreshKey((k) => k + 1);
+  };
+
+  const handleSelectReceipt = (receiptId: string) => {
+    setSelectedReceiptId(receiptId);
+  };
+
+  const handleBackFromDetail = () => {
+    setSelectedReceiptId(null);
+  };
 
   const renderContent = () => {
+    // Receipt detail view takes priority
+    if (selectedReceiptId) {
+      return <ReceiptDetail receiptId={selectedReceiptId} onBack={handleBackFromDetail} />;
+    }
+
     switch (activeTab) {
       case 'dashboard':
-        return <Dashboard key={refreshKey} />;
+        return <Dashboard key={refreshKey} onSelectReceipt={handleSelectReceipt} />;
       case 'transactions':
-        return <Transactions key={refreshKey} />;
+        return <Transactions key={refreshKey} onSelectReceipt={handleSelectReceipt} />;
       case 'monthly':
         return <MonthlyReview />;
       case 'yearly':
@@ -35,24 +57,33 @@ export default function App() {
           </div>
         );
       default:
-        return <Dashboard />;
+        return <Dashboard key={refreshKey} onSelectReceipt={handleSelectReceipt} />;
     }
   };
 
   return (
     <>
-      <Layout 
-        activeTab={activeTab} 
-        onTabChange={setActiveTab} 
+      <Layout
+        activeTab={activeTab}
+        onTabChange={(tab) => {
+          setSelectedReceiptId(null);
+          setActiveTab(tab);
+        }}
         onAddTransaction={() => setIsModalOpen(true)}
       >
         {renderContent()}
       </Layout>
-      
+
       <AddTransactionModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        onComplete={() => setRefreshKey((k) => k + 1)}
+        onComplete={handleUploadComplete}
+      />
+
+      <ProcessingToast
+        jobs={jobs}
+        onJobDone={removeJob}
+        onRefresh={() => setRefreshKey((k) => k + 1)}
       />
     </>
   );

@@ -4,7 +4,11 @@ import { fetchTransactions } from '../lib/api';
 import { cn } from '../lib/utils';
 import type { Transaction } from '../types';
 
-export default function Transactions() {
+interface TransactionsProps {
+  onSelectReceipt?: (receiptId: string) => void;
+}
+
+export default function Transactions({ onSelectReceipt }: TransactionsProps) {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -120,31 +124,46 @@ export default function Transactions() {
             </thead>
             <tbody className="divide-y divide-outline-variant/5">
               {transactions.map((tx) => (
-                <tr key={tx.id} className="hover:bg-surface-container-high/30 transition-colors cursor-pointer group">
+                <tr
+                  key={tx.id}
+                  onClick={() => tx.status !== 'Processing' && onSelectReceipt?.(tx.id)}
+                  className={cn(
+                    "hover:bg-surface-container-high/30 transition-colors group",
+                    tx.status === 'Processing' ? 'cursor-default opacity-70' : 'cursor-pointer'
+                  )}
+                >
                   <td className="px-8 py-6">
                     <div className="flex items-center gap-4">
                       <div className={cn(
                         "w-10 h-10 rounded-xl bg-surface-container-highest flex items-center justify-center border",
-                        getColorClass(tx.category)
+                        tx.status === 'Processing' ? 'text-tertiary border-tertiary/20 animate-pulse' : getColorClass(tx.category)
                       )}>
-                        {getIcon(tx.category)}
+                        {tx.status === 'Processing' ? <Loader2 className="animate-spin" size={18} /> : getIcon(tx.category)}
                       </div>
-                      <span className="font-bold text-white group-hover:text-primary transition-colors">{tx.description}</span>
+                      <span className={cn(
+                        "font-bold transition-colors",
+                        tx.status === 'Processing' ? 'text-on-surface-variant' : 'text-white group-hover:text-primary'
+                      )}>
+                        {tx.description}
+                      </span>
                     </div>
                   </td>
                   <td className="px-8 py-6">
-                    <span className={cn(
-                      "px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider",
-                      getBadgeClass(tx.category)
-                    )}>
-                      {tx.category}
-                    </span>
+                    {tx.status !== 'Processing' && (
+                      <span className={cn(
+                        "px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider",
+                        getBadgeClass(tx.category)
+                      )}>
+                        {tx.category}
+                      </span>
+                    )}
                   </td>
-                  <td className="px-8 py-6 text-sm text-on-surface-variant">{tx.date}</td>
-                  <td className="px-8 py-6 text-sm text-on-surface-variant">{tx.paymentMethod}</td>
+                  <td className="px-8 py-6 text-sm text-on-surface-variant">{tx.status === 'Processing' ? '--' : tx.date}</td>
+                  <td className="px-8 py-6 text-sm text-on-surface-variant">{tx.status === 'Processing' ? '--' : tx.paymentMethod}</td>
                   <td className="px-8 py-6">
                     <span className={cn(
                       "px-2 py-0.5 rounded text-[10px] font-bold uppercase",
+                      tx.status === 'Processing' ? 'bg-tertiary/10 text-tertiary animate-pulse' :
                       tx.status === 'Verified' ? 'bg-primary/10 text-primary' :
                       tx.status === 'Pending' ? 'bg-error/10 text-error' :
                       'bg-tertiary/10 text-tertiary'
@@ -154,9 +173,12 @@ export default function Transactions() {
                   </td>
                   <td className={cn(
                     "px-8 py-6 text-right font-headline font-bold",
+                    tx.status === 'Processing' ? 'text-on-surface-variant' :
                     tx.amount > 0 ? "text-primary neon-glow-primary" : "text-white"
                   )}>
-                    {tx.amount > 0 ? '+' : ''}{tx.amount.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
+                    {tx.status === 'Processing' ? '--' : (
+                      <>{tx.amount > 0 ? '+' : ''}{tx.amount.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}</>
+                    )}
                   </td>
                 </tr>
               ))}
