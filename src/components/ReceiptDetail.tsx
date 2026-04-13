@@ -1,7 +1,21 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowLeft, Loader2, Receipt, CreditCard, Calendar, DollarSign, Tag, FileText, ChevronDown, ChevronUp } from 'lucide-react';
+import { ArrowLeft, Loader2, Receipt, CreditCard, Calendar, Tag, FileText, ChevronDown, ChevronUp, MapPin } from 'lucide-react';
+import { APIProvider, Map, Marker } from '@vis.gl/react-google-maps';
 import { fetchReceiptDetail, type ReceiptDetail as ReceiptDetailType } from '../lib/api';
 import { cn } from '../lib/utils';
+
+const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined;
+
+const DARK_MAP_STYLES: google.maps.MapTypeStyle[] = [
+  { elementType: 'geometry', stylers: [{ color: '#1f2937' }] },
+  { elementType: 'labels.text.stroke', stylers: [{ color: '#1f2937' }] },
+  { elementType: 'labels.text.fill', stylers: [{ color: '#9ca3af' }] },
+  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#374151' }] },
+  { featureType: 'road', elementType: 'labels.text.fill', stylers: [{ color: '#d1d5db' }] },
+  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#111827' }] },
+  { featureType: 'poi', elementType: 'labels.text.fill', stylers: [{ color: '#6b7280' }] },
+  { featureType: 'administrative', elementType: 'geometry.stroke', stylers: [{ color: '#4b5563' }] },
+];
 
 interface ReceiptDetailProps {
   receiptId: string;
@@ -177,6 +191,32 @@ export default function ReceiptDetail({ receiptId, onBack }: ReceiptDetailProps)
               (e.target as HTMLImageElement).style.display = 'none';
             }}
           />
+        </div>
+      )}
+
+      {/* Location (Google Map) */}
+      {!isProcessing && receipt.latitude != null && receipt.longitude != null && GOOGLE_MAPS_API_KEY && (
+        <div className="glass-panel rounded-xl p-6 border border-outline-variant/10">
+          <h3 className="font-headline font-bold text-white mb-4 flex items-center gap-2">
+            <MapPin size={18} />
+            Location
+          </h3>
+          {receipt.address && (
+            <p className="text-sm text-on-surface-variant mb-3">{receipt.address}</p>
+          )}
+          <div className="h-[300px] rounded-lg overflow-hidden">
+            <APIProvider apiKey={GOOGLE_MAPS_API_KEY}>
+              <Map
+                defaultCenter={{ lat: receipt.latitude, lng: receipt.longitude }}
+                defaultZoom={15}
+                gestureHandling="cooperative"
+                disableDefaultUI={false}
+                styles={DARK_MAP_STYLES}
+              >
+                <Marker position={{ lat: receipt.latitude, lng: receipt.longitude }} />
+              </Map>
+            </APIProvider>
+          </div>
         </div>
       )}
 

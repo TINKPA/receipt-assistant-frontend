@@ -21,6 +21,10 @@ interface BackendReceipt {
   tip?: number;
   notes?: string;
   image_path?: string;
+  address?: string;
+  latitude?: number;
+  longitude?: number;
+  place_id?: string;
   status?: string;
   extraction_meta?: {
     quality?: {
