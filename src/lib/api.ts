@@ -1,46 +1,30 @@
 /**
  * API client for ReceiptAssistant backend.
  * Uses Vite proxy: /api/* → localhost:3000/*
+ *
+ * Types are codegen'd from the backend's OpenAPI spec — see
+ * src/lib/api-types.ts (regenerate with `npm run api:types`).
+ * Do not hand-write request/response shapes here; derive from `paths`.
  */
 import imageCompression from 'browser-image-compression';
+import createClient from 'openapi-fetch';
+import type { components, paths } from '@/lib/api-types';
 import type { Transaction } from '@/types';
 
-const API = '/api';
+const client = createClient<paths>({ baseUrl: '/api' });
 
-// ── Backend → Frontend type mapping ─────────────────────────────
+// ── Backend type aliases (derived from the OpenAPI spec) ────────
 
-interface BackendReceipt {
-  id: string;
-  merchant: string;
-  date: string;
-  total: number;
-  currency?: string;
-  category?: string;
-  payment_method?: string;
-  tax?: number;
-  tip?: number;
-  notes?: string;
-  image_path?: string;
-  address?: string;
-  latitude?: number;
-  longitude?: number;
-  place_id?: string;
-  status?: string;
-  extraction_meta?: {
-    quality?: {
-      confidence_score?: number;
-      warnings?: string[];
-    };
-  };
-  items?: { name: string; quantity?: number; unit_price?: number; total_price?: number }[];
-}
+type BackendReceipt = components['schemas']['Receipt'];
+type BackendReceiptWithItems = components['schemas']['ReceiptWithItems'];
+type BackendSpendingSummary = components['schemas']['SpendingSummary'];
 
-export interface ReceiptDetail extends BackendReceipt {
-  raw_text?: string;
-  items: { name: string; quantity?: number; unit_price?: number; total_price?: number; category?: string }[];
-  created_at?: string;
-  updated_at?: string;
-}
+export type ReceiptDetail = BackendReceiptWithItems;
+export type JobStatus = components['schemas']['JobStatusResponse'];
+export type UploadResult = components['schemas']['JobUploadResponse'];
+export type SpendingSummary = BackendSpendingSummary[number];
+
+// ── Frontend display mapping (unchanged from before) ────────────
 
 const CATEGORY_MAP: Record<string, Transaction['category']> = {
   food: 'Dining',
@@ -70,7 +54,6 @@ const ICON_MAP: Record<string, string> = {
 };
 
 function mapReceipt(r: BackendReceipt): Transaction {
-  // Processing receipts show as "Processing" status
   if (r.status === 'processing') {
     return {
       id: r.id,
@@ -122,7 +105,7 @@ function mapReceipt(r: BackendReceipt): Transaction {
 // ── Image compression ──────────────────────────────────────────
 
 async function compressImage(file: File): Promise<File> {
-  if (file.size <= 500 * 1024) return file; // skip if already small
+  if (file.size <= 500 * 1024) return file;
   return imageCompression(file, {
     maxSizeMB: 1,
     maxWidthOrHeight: 2048,
@@ -133,80 +116,66 @@ async function compressImage(file: File): Promise<File> {
 
 // ── API functions ───────────────────────────────────────────────
 
+function unwrap<T>(label: string, data: T | undefined, error: unknown, status: number): T {
+  if (error || data === undefined) {
+    throw new Error(`${label} failed: ${status}${error ? ' — ' + JSON.stringify(error) : ''}`);
+  }
+  return data;
+}
+
 export async function fetchTransactions(opts?: {
   from?: string;
   to?: string;
   category?: string;
   limit?: number;
 }): Promise<Transaction[]> {
-  const params = new URLSearchParams();
-  if (opts?.from) params.set('from', opts.from);
-  if (opts?.to) params.set('to', opts.to);
-  if (opts?.category) params.set('category', opts.category);
-  if (opts?.limit) params.set('limit', String(opts.limit));
-
-  const qs = params.toString();
-  const res = await fetch(`${API}/receipts${qs ? '?' + qs : ''}`);
-  if (!res.ok) throw new Error(`Failed to fetch transactions: ${res.status}`);
-  const data: BackendReceipt[] = await res.json();
-  return data.map(mapReceipt);
+  const { data, error, response } = await client.GET('/receipts', {
+    params: { query: opts ?? {} },
+  });
+  return unwrap('fetchTransactions', data, error, response.status).map(mapReceipt);
 }
 
 export async function fetchTransaction(id: string): Promise<Transaction> {
-  const res = await fetch(`${API}/receipt/${id}`);
-  if (!res.ok) throw new Error(`Failed to fetch transaction: ${res.status}`);
-  const data: BackendReceipt = await res.json();
-  return mapReceipt(data);
+  const { data, error, response } = await client.GET('/receipt/{id}', {
+    params: { path: { id } },
+  });
+  return mapReceipt(unwrap('fetchTransaction', data, error, response.status));
 }
 
 export async function fetchReceiptDetail(id: string): Promise<ReceiptDetail> {
-  const res = await fetch(`${API}/receipt/${id}`);
-  if (!res.ok) throw new Error(`Failed to fetch receipt: ${res.status}`);
-  return res.json();
+  const { data, error, response } = await client.GET('/receipt/{id}', {
+    params: { path: { id } },
+  });
+  return unwrap('fetchReceiptDetail', data, error, response.status);
 }
 
 export async function deleteTransaction(id: string): Promise<void> {
-  const res = await fetch(`${API}/receipt/${id}`, { method: 'DELETE' });
-  if (!res.ok) throw new Error(`Delete failed: ${res.status}`);
-}
-
-export interface UploadResult {
-  jobId: string;
-  receiptId: string;
-  status: string;
+  const { error, response } = await client.DELETE('/receipt/{id}', {
+    params: { path: { id } },
+  });
+  if (error) throw new Error(`Delete failed: ${response.status}`);
 }
 
 export async function uploadReceipt(file: File): Promise<UploadResult> {
   const compressed = await compressImage(file);
+  // openapi-fetch handles multipart when body is FormData and bodySerializer is set.
   const form = new FormData();
   form.append('image', compressed);
-  const res = await fetch(`${API}/receipt`, { method: 'POST', body: form });
-  if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
-  return res.json();
-}
-
-export interface JobStatus {
-  jobId: string;
-  receiptId: string;
-  status: 'queued' | 'done' | 'error';
-  error?: string;
+  const { data, error, response } = await client.POST('/receipt', {
+    body: form as unknown as { image: string },
+    bodySerializer: (b) => b as unknown as FormData,
+  });
+  return unwrap('uploadReceipt', data, error, response.status);
 }
 
 export async function pollJob(jobId: string): Promise<JobStatus> {
-  const res = await fetch(`${API}/jobs/${jobId}`);
-  if (!res.ok) throw new Error(`Job poll failed: ${res.status}`);
-  return res.json();
-}
-
-export interface SpendingSummary {
-  category: string;
-  count: number;
-  total_spent: number;
-  avg_per_receipt: number;
+  const { data, error, response } = await client.GET('/jobs/{id}', {
+    params: { path: { id: jobId } },
+  });
+  return unwrap('pollJob', data, error, response.status);
 }
 
 export async function fetchSummary(): Promise<SpendingSummary[]> {
-  const res = await fetch(`${API}/summary`);
-  if (!res.ok) throw new Error(`Failed to fetch summary: ${res.status}`);
-  return res.json();
+  const { data, error, response } = await client.GET('/summary', { params: { query: {} } });
+  return unwrap('fetchSummary', data, error, response.status);
 }
