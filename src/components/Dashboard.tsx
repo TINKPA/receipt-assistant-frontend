@@ -26,7 +26,11 @@ import type { Transaction } from '../types';
 
 const CHART_COLORS = ['#4edea3', '#d0bcff', '#7bd0ff', '#ffb4ab', '#a8c7fa'];
 
-export default function Dashboard() {
+interface DashboardProps {
+  onSelectReceipt?: (receiptId: string) => void;
+}
+
+export default function Dashboard({ onSelectReceipt }: DashboardProps) {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [summary, setSummary] = useState<SpendingSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -193,21 +197,41 @@ export default function Dashboard() {
           ) : (
             <div className="space-y-4">
               {transactions.slice(0, 5).map((tx) => (
-                <div key={tx.id} className="flex items-center justify-between p-3 rounded-xl hover:bg-surface-container-high transition-colors group cursor-pointer">
+                <div
+                  key={tx.id}
+                  onClick={() => tx.status !== 'Processing' && onSelectReceipt?.(tx.id)}
+                  className={cn(
+                    "flex items-center justify-between p-3 rounded-xl transition-colors group",
+                    tx.status === 'Processing' ? 'cursor-default opacity-70' : 'cursor-pointer hover:bg-surface-container-high'
+                  )}
+                >
                   <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 rounded-full bg-surface-container-highest flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-on-primary transition-all">
-                      {getIcon(tx.category)}
+                    <div className={cn(
+                      "w-10 h-10 rounded-full bg-surface-container-highest flex items-center justify-center transition-all",
+                      tx.status === 'Processing'
+                        ? 'text-tertiary animate-pulse'
+                        : 'text-primary group-hover:bg-primary group-hover:text-on-primary'
+                    )}>
+                      {tx.status === 'Processing' ? <Loader2 className="animate-spin" size={18} /> : getIcon(tx.category)}
                     </div>
                     <div>
                       <p className="text-sm font-bold text-white">{tx.description}</p>
-                      <p className="text-xs text-on-surface-variant">{tx.category} • {tx.date}</p>
+                      <p className="text-xs text-on-surface-variant">
+                        {tx.status === 'Processing' ? 'Processing...' : `${tx.category} • ${tx.date}`}
+                      </p>
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className={cn("text-sm font-bold", tx.amount > 0 ? "text-primary" : "text-white")}>
-                      {tx.amount > 0 ? '+' : ''}{tx.amount.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
+                    <p className={cn("text-sm font-bold",
+                      tx.status === 'Processing' ? 'text-on-surface-variant' :
+                      tx.amount > 0 ? "text-primary" : "text-white"
+                    )}>
+                      {tx.status === 'Processing' ? '--' : (
+                        <>{tx.amount > 0 ? '+' : ''}{tx.amount.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}</>
+                      )}
                     </p>
                     <p className={cn("text-[10px]",
+                      tx.status === 'Processing' ? 'text-tertiary animate-pulse' :
                       tx.status === 'Verified' ? 'text-primary' :
                       tx.status === 'Pending' ? 'text-error' : 'text-tertiary'
                     )}>{tx.status}</p>

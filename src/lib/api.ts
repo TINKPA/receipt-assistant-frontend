@@ -2,6 +2,7 @@
  * API client for ReceiptAssistant backend.
  * Uses Vite proxy: /api/* → localhost:3000/*
  */
+import imageCompression from 'browser-image-compression';
 import type { Transaction } from '@/types';
 
 const API = '/api';
@@ -20,13 +21,25 @@ interface BackendReceipt {
   tip?: number;
   notes?: string;
   image_path?: string;
+  address?: string;
+  latitude?: number;
+  longitude?: number;
+  place_id?: string;
+  status?: string;
   extraction_meta?: {
     quality?: {
       confidence_score?: number;
       warnings?: string[];
     };
   };
-  items?: { name: string; quantity?: number; total_price?: number }[];
+  items?: { name: string; quantity?: number; unit_price?: number; total_price?: number }[];
+}
+
+export interface ReceiptDetail extends BackendReceipt {
+  raw_text?: string;
+  items: { name: string; quantity?: number; unit_price?: number; total_price?: number; category?: string }[];
+  created_at?: string;
+  updated_at?: string;
 }
 
 const CATEGORY_MAP: Record<string, Transaction['category']> = {
@@ -57,6 +70,35 @@ const ICON_MAP: Record<string, string> = {
 };
 
 function mapReceipt(r: BackendReceipt): Transaction {
+  // Processing receipts show as "Processing" status
+  if (r.status === 'processing') {
+    return {
+      id: r.id,
+      description: 'Processing...',
+      category: 'Fun',
+      date: r.date,
+      paymentMethod: 'Unknown',
+      amount: 0,
+      status: 'Processing',
+      icon: 'hourglass_empty',
+      color: 'tertiary',
+    };
+  }
+
+  if (r.status === 'error') {
+    return {
+      id: r.id,
+      description: r.merchant || 'Failed',
+      category: 'Fun',
+      date: r.date,
+      paymentMethod: 'Unknown',
+      amount: 0,
+      status: 'Pending',
+      icon: 'error',
+      color: 'error',
+    };
+  }
+
   const category = CATEGORY_MAP[r.category ?? 'other'] ?? 'Fun';
   const confidence = r.extraction_meta?.quality?.confidence_score;
   const status: Transaction['status'] =
@@ -75,6 +117,18 @@ function mapReceipt(r: BackendReceipt): Transaction {
     icon: ICON_MAP[category] ?? 'receipt',
     color: 'primary',
   };
+}
+
+// ── Image compression ──────────────────────────────────────────
+
+async function compressImage(file: File): Promise<File> {
+  if (file.size <= 500 * 1024) return file; // skip if already small
+  return imageCompression(file, {
+    maxSizeMB: 1,
+    maxWidthOrHeight: 2048,
+    useWebWorker: true,
+    fileType: 'image/jpeg',
+  });
 }
 
 // ── API functions ───────────────────────────────────────────────
@@ -105,6 +159,12 @@ export async function fetchTransaction(id: string): Promise<Transaction> {
   return mapReceipt(data);
 }
 
+export async function fetchReceiptDetail(id: string): Promise<ReceiptDetail> {
+  const res = await fetch(`${API}/receipt/${id}`);
+  if (!res.ok) throw new Error(`Failed to fetch receipt: ${res.status}`);
+  return res.json();
+}
+
 export async function deleteTransaction(id: string): Promise<void> {
   const res = await fetch(`${API}/receipt/${id}`, { method: 'DELETE' });
   if (!res.ok) throw new Error(`Delete failed: ${res.status}`);
@@ -117,8 +177,9 @@ export interface UploadResult {
 }
 
 export async function uploadReceipt(file: File): Promise<UploadResult> {
+  const compressed = await compressImage(file);
   const form = new FormData();
-  form.append('image', file);
+  form.append('image', compressed);
   const res = await fetch(`${API}/receipt`, { method: 'POST', body: form });
   if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
   return res.json();
@@ -127,8 +188,7 @@ export async function uploadReceipt(file: File): Promise<UploadResult> {
 export interface JobStatus {
   jobId: string;
   receiptId: string;
-  status: 'queued' | 'quick_done' | 'processing_full' | 'done' | 'error';
-  quickResult?: { merchant: string; date: string; total: number };
+  status: 'queued' | 'done' | 'error';
   error?: string;
 }
 
