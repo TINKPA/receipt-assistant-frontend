@@ -5,7 +5,8 @@ import Transactions from './components/Transactions';
 import MonthlyReview from './components/MonthlyReview';
 import YearlyReview from './components/YearlyReview';
 import AddTransactionModal from './components/AddTransactionModal';
-import ProcessingToast, { useProcessingJobs } from './components/ProcessingToast';
+import ProcessingToast from './components/ProcessingToast';
+import { useProcessingJobs } from './components/useProcessingJobs';
 import ReceiptDetail from './components/ReceiptDetail';
 
 export default function App() {
@@ -15,7 +16,7 @@ export default function App() {
   const [selectedReceiptId, setSelectedReceiptId] = React.useState<string | null>(null);
   const { jobs, addJob, removeJob } = useProcessingJobs();
 
-  const handleUploadComplete = (job: { jobId: string; receiptId: string }) => {
+  const handleUploadComplete = (job: { batchId: string; ingestId: string; filename: string }) => {
     addJob(job);
     setRefreshKey((k) => k + 1);
   };
