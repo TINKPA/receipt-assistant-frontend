@@ -127,9 +127,12 @@ export default function ReceiptDetail({ receiptId, onBack }: ReceiptDetailProps)
   const isProcessing = receipt.status === 'draft';
   const tax = md<number>(legacy, 'tax');
   const tip = md<number>(legacy, 'tip');
-  const latitude = md<number>(legacy, 'latitude');
-  const longitude = md<number>(legacy, 'longitude');
-  const address = md<string>(legacy, 'address');
+  // Geo comes from the v1 `transactions.place` JOIN (see backend
+  // `places` table). Older transactions written before the places
+  // migration have `place: null` and render without a map block.
+  const latitude = receipt.place?.lat ?? null;
+  const longitude = receipt.place?.lng ?? null;
+  const address = receipt.place?.formatted_address ?? md<string>(legacy, 'address');
   const rawText = md<string>(legacy, 'raw_text');
   const items = md<Array<{ name: string; quantity?: number; unit_price?: number; total_price?: number }>>(legacy, 'items');
   const confidence = md<number>(

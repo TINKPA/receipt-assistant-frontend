@@ -15,6 +15,13 @@ FROM node:22-bookworm AS builder
 
 WORKDIR /app
 
+# Vite inlines VITE_* env vars into the JS bundle at build time, so
+# they MUST be present in the builder stage env. Empty default is fine
+# — the frontend gates its map block on the key being truthy and
+# simply hides the block otherwise (see ReceiptDetail.tsx).
+ARG VITE_GOOGLE_MAPS_API_KEY=
+ENV VITE_GOOGLE_MAPS_API_KEY=$VITE_GOOGLE_MAPS_API_KEY
+
 # Install deps first (cached layer as long as package*.json is unchanged)
 COPY package.json package-lock.json ./
 RUN npm ci

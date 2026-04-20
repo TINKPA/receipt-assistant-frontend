@@ -62,7 +62,7 @@ The Vite dev server proxies `/api/*` to `localhost:3000` automatically.
 
 | Variable | When needed | Purpose |
 |----------|-------------|---------|
-| `VITE_GOOGLE_MAPS_API_KEY` | Receipt detail page | Enables the map + marker when an extraction produces `latitude` / `longitude`. Feature is gated on the key's presence — without it the map block is simply not rendered. |
+| `VITE_GOOGLE_MAPS_API_KEY` | Receipt detail page | Enables the map + marker when the backend returns a non-null `transaction.place` (Google Places entry joined in from the `places` table with `lat` / `lng` / `formatted_address`). Baked into the JS bundle at build time via Docker build arg `VITE_GOOGLE_MAPS_API_KEY` (substituted from `GOOGLE_MAPS_API_KEY` in this repo's `.env`). Gated on the key's presence — without it the map block is simply not rendered. Can reuse the same Google Maps API key the backend uses for server-side Geocoding/Places calls. |
 
 Set either in `.env.local` (for dev) or as build-time variables for Docker builds.
 
