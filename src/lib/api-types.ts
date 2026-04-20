@@ -40,16 +40,39 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/receipt": {
+    "/v1/accounts": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** List accounts (tree by default, flat with ?flat=true) */
+        get: {
+            parameters: {
+                query?: {
+                    flat?: boolean | null;
+                    include_closed?: boolean | null;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Account list (flat: array of Account; default: array of AccountTreeNode roots) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Account"][];
+                    };
+                };
+            };
+        };
         put?: never;
-        /** Upload a receipt JPG and start async extraction */
+        /** Create a new account */
         post: {
             parameters: {
                 query?: never;
@@ -59,35 +82,37 @@ export interface paths {
             };
             requestBody?: {
                 content: {
-                    "multipart/form-data": components["schemas"]["UploadReceiptForm"];
+                    "application/json": components["schemas"]["CreateAccountRequest"];
                 };
             };
             responses: {
-                /** @description Job submitted */
-                200: {
+                /** @description Account created */
+                201: {
                     headers: {
+                        Location?: string;
+                        ETag?: string;
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["JobUploadResponse"];
+                        "application/json": components["schemas"]["Account"];
                     };
                 };
-                /** @description Missing or invalid image */
-                400: {
+                /** @description Parent account not found */
+                404: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorResponse"];
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
                     };
                 };
-                /** @description Server error */
-                500: {
+                /** @description Validation failed */
+                422: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorResponse"];
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
                     };
                 };
             };
@@ -98,14 +123,14 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/jobs/{id}": {
+    "/v1/accounts/{id}": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Poll job status */
+        /** Get one account */
         get: {
             parameters: {
                 query?: never;
@@ -117,176 +142,37 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Current job status */
+                /** @description Account */
                 200: {
                     headers: {
+                        ETag?: string;
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["JobStatusResponse"];
+                        "application/json": components["schemas"]["Account"];
                     };
                 };
-                /** @description Job not found */
+                /** @description Not Modified (If-None-Match matched) */
+                304: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Account not found */
                 404: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorResponse"];
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
                     };
                 };
             };
         };
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/jobs/{id}/stream": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Server-Sent Events stream for job progress
-         * @description Emits `processing`, `done`, or `error` events. Connection closes after terminal event.
-         */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description SSE stream */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "text/event-stream": string;
-                    };
-                };
-                /** @description Job not found */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorResponse"];
-                    };
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/receipts": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List receipts with optional filters */
-        get: {
-            parameters: {
-                query?: {
-                    from?: string;
-                    to?: string;
-                    category?: string;
-                    limit?: number;
-                };
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Receipts ordered by date desc */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Receipt"][];
-                    };
-                };
-                /** @description Invalid query parameter (e.g. malformed date, non-numeric limit) */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ValidationErrorResponse"];
-                    };
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/receipt/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get one receipt with line items */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Receipt detail */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ReceiptWithItems"];
-                    };
-                };
-                /** @description Receipt not found */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorResponse"];
-                    };
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        /** Delete a receipt (cascades to line items) */
+        /** Hard-delete an unused account */
         delete: {
             parameters: {
                 query?: never;
@@ -299,38 +185,339 @@ export interface paths {
             requestBody?: never;
             responses: {
                 /** @description Deleted */
-                200: {
+                204: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content: {
-                        "application/json": components["schemas"]["DeleteReceiptResponse"];
-                    };
+                    content?: never;
                 };
-                /** @description Receipt not found */
+                /** @description Account not found */
                 404: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorResponse"];
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+                /** @description Account has postings; soft-close instead */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+                /** @description Version mismatch */
+                412: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+                /** @description Precondition required (If-Match missing) */
+                428: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
                     };
                 };
             };
         };
         options?: never;
         head?: never;
-        patch?: never;
+        /** Patch account (rename / re-parent / close) */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/merge-patch+json": components["schemas"]["UpdateAccountRequest"];
+                };
+            };
+            responses: {
+                /** @description Account updated */
+                200: {
+                    headers: {
+                        ETag?: string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Account"];
+                    };
+                };
+                /** @description Account not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+                /** @description Version mismatch (If-Match) */
+                412: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+                /** @description Validation failed */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+                /** @description Precondition required (If-Match missing) */
+                428: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
         trace?: never;
     };
-    "/receipt/{id}/image": {
+    "/v1/accounts/{id}/balance": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Serve the original receipt image file */
+        /** Account balance as of a date */
+        get: {
+            parameters: {
+                query?: {
+                    as_of?: string;
+                    currency?: string;
+                    include_children?: boolean | null;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Balance summary */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AccountBalance"];
+                    };
+                };
+                /** @description Account not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/accounts/{id}/register": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Register (checkbook view) with running balance */
+        get: {
+            parameters: {
+                query?: {
+                    from?: string;
+                    to?: string;
+                    include_voided?: boolean | null;
+                    cursor?: string;
+                    limit?: number;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Paginated register */
+                200: {
+                    headers: {
+                        Link?: string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AccountRegister"];
+                    };
+                };
+                /** @description Account not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/transactions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List transactions */
+        get: {
+            parameters: {
+                query?: {
+                    occurred_from?: string;
+                    occurred_to?: string;
+                    amount_min_minor?: number | null;
+                    amount_max_minor?: number | null;
+                    account_id?: string;
+                    payee_contains?: string;
+                    q?: string;
+                    status?: "draft" | "posted" | "voided" | "reconciled" | "error";
+                    trip_id?: string;
+                    has_document?: boolean | null;
+                    source_ingest_id?: string;
+                    sort?: "occurred_on" | "amount" | "created_at";
+                    order?: "asc" | "desc";
+                    cursor?: string;
+                    limit?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            items: components["schemas"]["Transaction"][];
+                            next_cursor: string | null;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        /** Create a transaction */
+        post: {
+            parameters: {
+                query?: never;
+                header: {
+                    "Idempotency-Key": string;
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["CreateTransactionRequest"];
+                };
+            };
+            responses: {
+                /** @description Created */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Transaction"];
+                    };
+                };
+                /** @description Idempotency conflict */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+                /** @description Validation failed */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+                /** @description Idempotency-Key required */
+                428: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/transactions/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a transaction */
         get: {
             parameters: {
                 query?: never;
@@ -342,83 +529,119 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description JPEG image bytes */
+                /** @description OK */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "image/jpeg": string;
+                        "application/json": components["schemas"]["Transaction"];
                     };
                 };
-                /** @description Image not found on disk or in DB */
+                /** @description Not Modified */
+                304: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Not Found */
                 404: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ErrorResponse"];
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
                     };
                 };
             };
         };
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/summary": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Spending summary grouped by category */
-        get: {
+        /** Delete draft/error transaction */
+        delete: {
             parameters: {
-                query?: {
-                    from?: string;
-                    to?: string;
+                query?: never;
+                header: {
+                    "If-Match": string;
                 };
-                header?: never;
-                path?: never;
+                path: {
+                    id: string;
+                };
                 cookie?: never;
             };
             requestBody?: never;
             responses: {
-                /** @description One row per category, ordered by total_spent desc */
+                /** @description Deleted */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Must void instead */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        /** Patch transaction head fields */
+        patch: {
+            parameters: {
+                query?: never;
+                header: {
+                    "If-Match": string;
+                };
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/merge-patch+json": components["schemas"]["UpdateTransactionRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["SpendingSummary"];
+                        "application/json": components["schemas"]["Transaction"];
                     };
                 };
-                /** @description Invalid query parameter (e.g. malformed date) */
-                400: {
+                /** @description Version mismatch */
+                412: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ValidationErrorResponse"];
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+                /** @description If-Match required */
+                428: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
                     };
                 };
             };
         };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
         trace?: never;
     };
-    "/ask": {
+    "/v1/transactions/{id}/void": {
         parameters: {
             query?: never;
             header?: never;
@@ -427,7 +650,91 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Free-form question answered by Claude over your receipts */
+        /** Void a posted transaction */
+        post: {
+            parameters: {
+                query?: never;
+                header: {
+                    "If-Match": string;
+                };
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["VoidTransactionRequest"];
+                };
+            };
+            responses: {
+                /** @description Mirror transaction created */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Transaction"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/transactions/{id}/reconcile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reconcile a posted transaction */
+        post: {
+            parameters: {
+                query?: never;
+                header: {
+                    "If-Match": string;
+                };
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Transaction"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/transactions/bulk": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Bulk update/void/reconcile */
         post: {
             parameters: {
                 query?: never;
@@ -437,39 +744,1244 @@ export interface paths {
             };
             requestBody?: {
                 content: {
-                    "application/json": components["schemas"]["AskRequest"];
+                    "application/json": components["schemas"]["BulkRequest"];
                 };
             };
             responses: {
-                /** @description Claude's answer */
+                /** @description Per-op results */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["AskResponse"];
-                    };
-                };
-                /** @description Missing or invalid `question` field */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ValidationErrorResponse"];
-                    };
-                };
-                /** @description Server error */
-                500: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorResponse"];
+                        "application/json": components["schemas"]["BulkResponse"];
                     };
                 };
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/transactions/{id}/postings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add a posting to a transaction */
+        post: {
+            parameters: {
+                query?: never;
+                header: {
+                    "If-Match": string;
+                };
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["NewPosting"];
+                };
+            };
+            responses: {
+                /** @description Posting added */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Posting"];
+                    };
+                };
+                /** @description Imbalance */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/transactions/{tid}/postings/{pid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a posting */
+        delete: {
+            parameters: {
+                query?: never;
+                header: {
+                    "If-Match": string;
+                };
+                path: {
+                    tid: string;
+                    pid: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Deleted */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Would leave <2 postings */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        /** Update a posting */
+        patch: {
+            parameters: {
+                query?: never;
+                header: {
+                    "If-Match": string;
+                };
+                path: {
+                    tid: string;
+                    pid: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["UpdatePostingRequest"];
+                };
+            };
+            responses: {
+                /** @description Updated */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Posting"];
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/v1/postings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List postings */
+        get: {
+            parameters: {
+                query?: {
+                    transaction_id?: string;
+                    account_id?: string;
+                    from?: string;
+                    to?: string;
+                    cursor?: string;
+                    limit?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            items: components["schemas"]["Posting"][];
+                            next_cursor: string | null;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/postings/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a posting */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Posting"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/documents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Upload a document (multipart, sha256 content-dedup) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "multipart/form-data": components["schemas"]["UploadDocumentForm"];
+                };
+            };
+            responses: {
+                /** @description Duplicate upload detected — returns the existing document row */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Document"];
+                    };
+                };
+                /** @description Document created */
+                201: {
+                    headers: {
+                        Location?: string;
+                        ETag?: string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Document"];
+                    };
+                };
+                /** @description Validation failed */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/documents/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get document metadata */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Document */
+                200: {
+                    headers: {
+                        ETag?: string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Document"];
+                    };
+                };
+                /** @description Not modified (If-None-Match matched) */
+                304: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        /** Hard-delete a document (only if it has no links) */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Deleted */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+                /** @description Document has links — unlink first */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/documents/{id}/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Stream document binary content */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Raw file bytes */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/octet-stream": string;
+                    };
+                };
+                /** @description Not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/documents/{id}/links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Link a document to a transaction (idempotent) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CreateDocumentLinkRequest"];
+                };
+            };
+            responses: {
+                /** @description Linked (or already linked — idempotent) */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Document or transaction not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+                /** @description Validation failed */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/documents/{id}/links/{txn_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Unlink a document from a transaction */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    txn_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Unlinked */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Link not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/ingest/batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Upload N files for agent classification + extraction. Returns 202 with per-file ingest ids. */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "multipart/form-data": components["schemas"]["CreateBatchForm"];
+                };
+            };
+            responses: {
+                /** @description Batch accepted — poll /v1/batches/:id for results */
+                202: {
+                    headers: {
+                        Location?: string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CreateBatchResponse"];
+                    };
+                };
+                /** @description No files / validation failed */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/batches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List ingestion batches (most recent first) */
+        get: {
+            parameters: {
+                query?: {
+                    cursor?: string;
+                    limit?: number;
+                    status?: components["schemas"]["BatchStatus"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Paginated batch summaries */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            items: components["schemas"]["BatchSummary"][];
+                            next_cursor: string | null;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/batches/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get one batch with all child ingests */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Batch + items */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Batch"];
+                    };
+                };
+                /** @description Batch not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/batches/{id}/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Server-Sent Events stream of per-ingest + per-batch + reconcile events. Connects, sends a `hello` catch-up frame with current counts + status, then relays `job.*`, `batch.*`, and `reconcile.*` events as they fire. Closes on terminal status (reconciled / failed) or client disconnect. */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Event stream. `event:` names: `hello`, `batch.status`, `job.started`, `job.done`, `job.error`, `batch.extracted`, `batch.failed`, `batch.reconciled`, `reconcile.started`, `reconcile.proposal`, `reconcile.done`. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/event-stream": string;
+                    };
+                };
+                /** @description Batch not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/ingests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List ingests across batches */
+        get: {
+            parameters: {
+                query?: {
+                    cursor?: string;
+                    limit?: number;
+                    batch_id?: string;
+                    status?: components["schemas"]["IngestStatus"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Paginated ingests */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            items: components["schemas"]["Ingest"][];
+                            next_cursor: string | null;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/ingests/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get one ingest with produced reverse-lookup */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Ingest row */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Ingest"];
+                    };
+                };
+                /** @description Ingest not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/batches/{id}/reconcile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Fetch the latest reconcile result for a batch. */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Reconcile snapshot */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ReconcileResult"];
+                    };
+                };
+                /** @description Batch not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        /** Run the reconcile pipeline over an extracted batch. Idempotent: a second call on a reconciled batch returns the stored result. */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["ReconcileRequest"];
+                };
+            };
+            responses: {
+                /** @description Reconcile completed (or replayed) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ReconcileResult"];
+                    };
+                };
+                /** @description Batch is already mid-reconcile on another caller; response carries a `poll` URL to fetch the final result. */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ReconcileResult"];
+                    };
+                };
+                /** @description Batch not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+                /** @description Batch is not in a reconcilable state (still extracting, or entered reconcile_error). */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ReconcileResult"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/batches/{id}/reconcile/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Apply one or more reconcile proposals. For dedup proposals this voids the duplicate via the ledger service. */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["ApplyRequest"];
+                };
+            };
+            responses: {
+                /** @description Per-id apply/skip outcomes */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApplyResult"];
+                    };
+                };
+                /** @description Batch not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+                /** @description Validation failed */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/batches/{id}/reconcile/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reject one or more reconcile proposals. Marks proposals as rejected with no ledger mutation. */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["RejectRequest"];
+                };
+            };
+            responses: {
+                /** @description Per-id reject/skip outcomes */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RejectResult"];
+                    };
+                };
+                /** @description Batch not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+                /** @description Validation failed */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/reports/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Spend aggregated by category / account / payee */
+        get: {
+            parameters: {
+                query?: {
+                    from?: string;
+                    to?: string;
+                    group_by?: "category" | "account" | "payee";
+                    currency?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Summary report */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SummaryReport"];
+                    };
+                };
+                /** @description Workspace not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/reports/trends": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Time-series trend (MoM / YoY) of expense spend */
+        get: {
+            parameters: {
+                query?: {
+                    period?: "month" | "year";
+                    from?: string;
+                    to?: string;
+                    group_by?: "category" | "total";
+                    currency?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Trends report */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TrendsReport"];
+                    };
+                };
+                /** @description Workspace not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/reports/net_worth": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Assets - liabilities at a point in time */
+        get: {
+            parameters: {
+                query?: {
+                    as_of?: string;
+                    currency?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Net worth report */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NetWorthReport"];
+                    };
+                };
+                /** @description Workspace not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/reports/cashflow": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Inflows vs outflows over a range, bucketed by month */
+        get: {
+            parameters: {
+                query?: {
+                    from?: string;
+                    to?: string;
+                    currency?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Cashflow report */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CashflowReport"];
+                    };
+                };
+                /** @description Workspace not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -502,97 +2014,854 @@ export interface components {
             /** @example 1.0.0 */
             version: string;
         };
-        ExtractionMeta: {
-            quality: {
-                confidence_score: number;
-                missing_fields: string[];
-                warnings: string[];
-            };
-            business: {
-                is_reimbursable: boolean;
-                is_tax_deductible: boolean;
-                is_recurring: boolean;
-                is_split_bill: boolean;
-            };
-        } | null;
-        Receipt: {
-            id: string;
-            merchant: string;
+        Violation: {
+            path: string;
+            code: string;
+            message?: string;
+        };
+        ProblemDetails: {
+            /** Format: uri */
+            type: string;
+            title: string;
+            status: number;
+            detail?: string;
+            instance?: string;
+            trace_id?: string;
+            violations?: components["schemas"]["Violation"][];
+        };
+        Account: {
             /**
-             * @description ISO date YYYY-MM-DD
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            id: string;
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            workspace_id: string;
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            parent_id: string | null;
+            code: string | null;
+            name: string;
+            /** @enum {string} */
+            type: "asset" | "liability" | "equity" | "income" | "expense";
+            subtype: string | null;
+            /** @example USD */
+            currency: string;
+            institution: string | null;
+            last4: string | null;
+            /**
+             * @description Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.
+             * @example 14723
+             */
+            opening_balance_minor: number;
+            /** Format: date-time */
+            closed_at: string | null;
+            /**
+             * @description User-defined JSON object; not schema-validated.
+             * @default {}
+             */
+            metadata: {
+                [key: string]: unknown;
+            };
+            version: number;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        CreateAccountRequest: {
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            parent_id?: string;
+            code?: string;
+            name: string;
+            /** @enum {string} */
+            type: "asset" | "liability" | "equity" | "income" | "expense";
+            subtype?: string;
+            /** @example USD */
+            currency?: string;
+            institution?: string;
+            last4?: string;
+            /**
+             * @description Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.
+             * @example 14723
+             */
+            opening_balance_minor?: number;
+            /**
+             * @description User-defined JSON object; not schema-validated.
+             * @default {}
+             */
+            metadata: {
+                [key: string]: unknown;
+            };
+        };
+        UpdateAccountRequest: {
+            code?: string | null;
+            name?: string;
+            subtype?: string | null;
+            institution?: string | null;
+            last4?: string | null;
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            parent_id?: string | null;
+            /** Format: date-time */
+            closed_at?: string | null;
+            /**
+             * @description User-defined JSON object; not schema-validated.
+             * @default {}
+             */
+            metadata: {
+                [key: string]: unknown;
+            };
+        };
+        AccountBalance: {
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            account_id: string;
+            /**
+             * Format: date
              * @example 2026-04-19
              */
-            date: string;
-            total: number;
-            currency?: string | null;
-            category?: string | null;
-            payment_method?: string | null;
-            tax?: number | null;
-            tip?: number | null;
-            notes?: string | null;
-            raw_text?: string | null;
-            image_path?: string | null;
-            address?: string | null;
-            latitude?: number | null;
-            longitude?: number | null;
-            place_id?: string | null;
-            /** @enum {string} */
-            status?: "processing" | "done" | "error";
-            extraction_meta?: components["schemas"]["ExtractionMeta"];
-            created_at?: string;
-            updated_at?: string;
+            as_of: string;
+            /**
+             * @description Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.
+             * @example 14723
+             */
+            balance_minor: number;
+            /** @example USD */
+            currency: string;
+            posting_count: number;
+            includes_children: boolean;
         };
-        ReceiptItem: {
+        RegisterCounterPosting: {
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            account_id: string;
             name: string;
-            quantity?: number | null;
-            unit_price?: number | null;
-            total_price?: number | null;
-            category?: string | null;
+            /**
+             * @description Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.
+             * @example 14723
+             */
+            amount_minor: number;
         };
-        ReceiptWithItems: components["schemas"]["Receipt"] & {
-            items: components["schemas"]["ReceiptItem"][];
+        RegisterDocumentRef: {
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            id: string;
+            kind: string;
         };
-        JobUploadResponse: {
-            jobId: string;
-            receiptId: string;
+        RegisterItem: {
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            posting_id: string;
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            transaction_id: string;
+            transaction_version: number;
+            /**
+             * Format: date
+             * @example 2026-04-19
+             */
+            occurred_on: string;
+            payee: string | null;
+            narration: string | null;
+            /**
+             * @description Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.
+             * @example 14723
+             */
+            amount_minor: number;
+            /** @example USD */
+            currency: string;
+            /**
+             * @description Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.
+             * @example 14723
+             */
+            running_balance_after_minor: number;
+            counter_postings: components["schemas"]["RegisterCounterPosting"][];
+            documents: components["schemas"]["RegisterDocumentRef"][];
+        };
+        AccountRegister: {
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            account_id: string;
+            items: components["schemas"]["RegisterItem"][];
+            next_cursor: string | null;
+        };
+        Posting: {
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            id: string;
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            transaction_id: string;
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            account_id: string;
+            /**
+             * @description Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.
+             * @example 14723
+             */
+            amount_minor: number;
+            /** @example USD */
+            currency: string;
+            fx_rate: string | null;
+            /**
+             * @description Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.
+             * @example 14723
+             */
+            amount_base_minor: number | null;
+            memo: string | null;
+            /** Format: date-time */
+            created_at: string;
+        };
+        TransactionDocumentRef: {
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            id: string;
+            kind: string;
+        };
+        Transaction: {
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            id: string;
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            workspace_id: string;
+            /**
+             * Format: date
+             * @example 2026-04-19
+             */
+            occurred_on: string;
+            /** Format: date-time */
+            occurred_at: string | null;
+            payee: string | null;
+            narration: string | null;
             /** @enum {string} */
-            status: "processing";
-            /** @example /jobs/abc/stream */
-            stream: string;
-            /** @example /jobs/abc */
-            poll: string;
+            status: "draft" | "posted" | "voided" | "reconciled" | "error";
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            voided_by_id: string | null;
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            source_ingest_id: string | null;
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            trip_id: string | null;
+            /**
+             * @description User-defined JSON object; not schema-validated.
+             * @default {}
+             */
+            metadata: {
+                [key: string]: unknown;
+            };
+            version: number;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+            postings: components["schemas"]["Posting"][];
+            documents: components["schemas"]["TransactionDocumentRef"][];
+        };
+        BulkResultItem: {
+            index: number;
+            status: number;
+            body?: unknown;
+        };
+        BulkResponse: {
+            results: components["schemas"]["BulkResultItem"][];
+        };
+        Document: {
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            id: string;
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            workspace_id: string;
+            /** @enum {string} */
+            kind: "receipt_image" | "receipt_email" | "receipt_pdf" | "statement_pdf" | "other";
+            file_path: string | null;
+            mime_type: string | null;
+            sha256: string;
+            ocr_text: string | null;
+            extraction_meta: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            source_ingest_id: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
         };
         /** @enum {string} */
-        JobStatus: "queued" | "processing" | "done" | "error";
-        JobStatusResponse: {
-            jobId: string;
-            receiptId: string;
-            status: components["schemas"]["JobStatus"];
-            error: string | null;
-        };
-        SpendingSummaryItem: {
-            category: string | null;
-            count: number;
-            total_spent: number;
-            avg_per_receipt: number;
-        };
-        SpendingSummary: components["schemas"]["SpendingSummaryItem"][];
-        AskRequest: {
-            /** @example How much did I spend on groceries last month? */
-            question: string;
-        };
-        AskResponse: {
-            answer: string;
-        };
-        UploadReceiptForm: {
+        DocumentKind: "receipt_image" | "receipt_email" | "receipt_pdf" | "statement_pdf" | "other";
+        UploadDocumentForm: {
             /** Format: binary */
-            image: string;
-            notes?: string;
+            file?: string;
+            /** @enum {string} */
+            kind?: "receipt_image" | "receipt_email" | "receipt_pdf" | "statement_pdf" | "other";
         };
-        DeleteReceiptResponse: {
-            /** @enum {boolean} */
-            success: true;
+        CreateDocumentLinkRequest: {
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            transaction_id: string;
+        };
+        /** @enum {string} */
+        BatchStatus: "pending" | "processing" | "extracted" | "reconciling" | "reconciled" | "failed" | "reconcile_error";
+        BatchCounts: {
+            total: number;
+            queued: number;
+            processing: number;
+            done: number;
+            error: number;
+            unsupported: number;
+        };
+        /** @enum {string} */
+        IngestStatus: "queued" | "processing" | "done" | "error" | "unsupported";
+        /** @enum {string|null} */
+        IngestClassification: "receipt_image" | "receipt_email" | "receipt_pdf" | "statement_pdf" | "unsupported" | null;
+        IngestProduced: {
+            /** @default [] */
+            receipt_ids: string[];
+            /** @default [] */
+            transaction_ids: string[];
+            /** @default [] */
+            document_ids: string[];
+        } | null;
+        Ingest: {
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
             id: string;
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            workspace_id: string;
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            batch_id: string | null;
+            filename: string;
+            mime_type: string | null;
+            file_path: string;
+            status: components["schemas"]["IngestStatus"];
+            classification: components["schemas"]["IngestClassification"];
+            produced: components["schemas"]["IngestProduced"];
+            error: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            completed_at: string | null;
+        };
+        Batch: {
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            id: string;
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            workspace_id: string;
+            status: components["schemas"]["BatchStatus"];
+            file_count: number;
+            auto_reconcile: boolean;
+            counts: components["schemas"]["BatchCounts"];
+            items: components["schemas"]["Ingest"][];
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            completed_at: string | null;
+            /** Format: date-time */
+            reconciled_at: string | null;
+        };
+        BatchSummary: {
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            id: string;
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            workspace_id: string;
+            status: components["schemas"]["BatchStatus"];
+            file_count: number;
+            auto_reconcile: boolean;
+            counts: components["schemas"]["BatchCounts"];
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            completed_at: string | null;
+            /** Format: date-time */
+            reconciled_at: string | null;
+        };
+        CreateBatchForm: {
+            files?: string[];
+            auto_reconcile?: boolean | ("true" | "false");
+        };
+        CreateBatchResponse: {
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            batchId: string;
+            status: components["schemas"]["BatchStatus"];
+            items: {
+                /**
+                 * Format: uuid
+                 * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+                 */
+                ingestId: string;
+                filename: string;
+                mime_type: string | null;
+            }[];
+            poll: string;
+        };
+        /**
+         * @default batch
+         * @enum {string}
+         */
+        ReconcileScope: "batch" | "batch_plus_recent_90d";
+        /** @enum {string} */
+        ReconcileKind: "dedup" | "payment_link" | "trip_group" | "inventory";
+        ReconcileRequest: {
+            scope?: components["schemas"]["ReconcileScope"];
+            enable?: components["schemas"]["ReconcileKind"][];
+            /** @default 0.95 */
+            auto_apply_threshold: number;
+        };
+        /** @enum {string} */
+        ReconcileBatchStatus: "extracted" | "reconciling" | "reconciled" | "reconcile_error";
+        ReconcileApplied: {
+            /** @default [] */
+            duplicates: {
+                /**
+                 * Format: uuid
+                 * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+                 */
+                receiptId: string;
+                /**
+                 * Format: uuid
+                 * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+                 */
+                duplicateOf: string;
+            }[];
+            /** @default [] */
+            payment_links: unknown[];
+            /** @default [] */
+            inventory: unknown[];
+            proposals_total: number;
+        };
+        /** @enum {string} */
+        ReconcileProposalStatus: "proposed" | "auto_applied" | "user_applied" | "rejected";
+        ReconcileProposal: {
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            id: string;
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            batch_id: string;
+            kind: components["schemas"]["ReconcileKind"];
+            payload: {
+                [key: string]: unknown;
+            };
+            score: number | null;
+            status: components["schemas"]["ReconcileProposalStatus"];
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            resolved_at: string | null;
+        };
+        ReconcileResult: {
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            batchId: string;
+            status: components["schemas"]["ReconcileBatchStatus"];
+            applied: components["schemas"]["ReconcileApplied"];
+            proposals: components["schemas"]["ReconcileProposal"][];
+            poll?: string;
+        };
+        ApplyRequest: {
+            proposal_ids: string[];
+        };
+        ApplyResult: {
+            applied: string[];
+            skipped: {
+                /**
+                 * Format: uuid
+                 * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+                 */
+                id: string;
+                reason: string;
+            }[];
+        };
+        RejectRequest: {
+            proposal_ids: string[];
+            reason?: string;
+        };
+        RejectResult: {
+            rejected: string[];
+            skipped: {
+                /**
+                 * Format: uuid
+                 * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+                 */
+                id: string;
+                reason: string;
+            }[];
+        };
+        SummaryItem: {
+            key: string;
+            count: number;
+            /**
+             * @description Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.
+             * @example 14723
+             */
+            total_minor: number;
+            /**
+             * @description Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.
+             * @example 14723
+             */
+            avg_per_txn_minor: number;
+        };
+        SummaryReport: {
+            /**
+             * Format: date
+             * @example 2026-04-19
+             */
+            from: string | null;
+            /**
+             * Format: date
+             * @example 2026-04-19
+             */
+            to: string | null;
+            /** @enum {string} */
+            group_by: "category" | "account" | "payee";
+            /** @example USD */
+            currency: string;
+            items: components["schemas"]["SummaryItem"][];
+            /**
+             * @description Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.
+             * @example 14723
+             */
+            grand_total_minor: number;
+        };
+        TrendsItem: {
+            key: string;
+            /**
+             * @description Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.
+             * @example 14723
+             */
+            total_minor: number;
+            count: number;
+        };
+        TrendsBucket: {
+            bucket: string;
+            items: components["schemas"]["TrendsItem"][];
+            /**
+             * @description Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.
+             * @example 14723
+             */
+            total_minor: number;
+        };
+        TrendsReport: {
+            /**
+             * Format: date
+             * @example 2026-04-19
+             */
+            from: string | null;
+            /**
+             * Format: date
+             * @example 2026-04-19
+             */
+            to: string | null;
+            /** @enum {string} */
+            period: "month" | "year";
+            /** @enum {string} */
+            group_by: "category" | "total";
+            /** @example USD */
+            currency: string;
+            buckets: components["schemas"]["TrendsBucket"][];
+        };
+        NetWorthAccount: {
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            account_id: string;
+            name: string;
+            /** @enum {string} */
+            type: "asset" | "liability" | "equity" | "income" | "expense";
+            /**
+             * @description Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.
+             * @example 14723
+             */
+            balance_minor: number;
+        };
+        NetWorthReport: {
+            /**
+             * Format: date
+             * @example 2026-04-19
+             */
+            as_of: string;
+            /** @example USD */
+            currency: string;
+            /**
+             * @description Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.
+             * @example 14723
+             */
+            assets_minor: number;
+            /**
+             * @description Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.
+             * @example 14723
+             */
+            liabilities_minor: number;
+            /**
+             * @description Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.
+             * @example 14723
+             */
+            equity_minor: number;
+            /**
+             * @description Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.
+             * @example 14723
+             */
+            net_worth_minor: number;
+            by_account: components["schemas"]["NetWorthAccount"][];
+        };
+        CashflowBucket: {
+            month: string;
+            /**
+             * @description Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.
+             * @example 14723
+             */
+            income_minor: number;
+            /**
+             * @description Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.
+             * @example 14723
+             */
+            expense_minor: number;
+            /**
+             * @description Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.
+             * @example 14723
+             */
+            net_minor: number;
+        };
+        CashflowReport: {
+            /**
+             * Format: date
+             * @example 2026-04-19
+             */
+            from: string | null;
+            /**
+             * Format: date
+             * @example 2026-04-19
+             */
+            to: string | null;
+            /** @example USD */
+            currency: string;
+            /**
+             * @description Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.
+             * @example 14723
+             */
+            income_minor: number;
+            /**
+             * @description Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.
+             * @example 14723
+             */
+            expense_minor: number;
+            /**
+             * @description Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.
+             * @example 14723
+             */
+            net_minor: number;
+            buckets: components["schemas"]["CashflowBucket"][];
+        };
+        NewPosting: {
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            account_id: string;
+            /**
+             * @description Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.
+             * @example 14723
+             */
+            amount_minor: number;
+            /** @example USD */
+            currency?: string;
+            fx_rate?: string;
+            /**
+             * @description Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.
+             * @example 14723
+             */
+            amount_base_minor?: number;
+            memo?: string;
+        };
+        CreateTransactionRequest: {
+            /**
+             * Format: date
+             * @example 2026-04-19
+             */
+            occurred_on: string;
+            /** Format: date-time */
+            occurred_at?: string;
+            payee?: string;
+            narration?: string;
+            /** @enum {string} */
+            status?: "draft" | "posted" | "voided" | "reconciled" | "error";
+            postings: components["schemas"]["NewPosting"][];
+            document_ids?: string[];
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            trip_id?: string;
+            /**
+             * @description User-defined JSON object; not schema-validated.
+             * @default {}
+             */
+            metadata: {
+                [key: string]: unknown;
+            };
+        };
+        UpdateTransactionRequest: {
+            /**
+             * Format: date
+             * @example 2026-04-19
+             */
+            occurred_on?: string;
+            /** Format: date-time */
+            occurred_at?: string | null;
+            payee?: string | null;
+            narration?: string | null;
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            trip_id?: string | null;
+            /**
+             * @description User-defined JSON object; not schema-validated.
+             * @default {}
+             */
+            metadata: {
+                [key: string]: unknown;
+            };
+        };
+        VoidTransactionRequest: {
+            reason?: string;
+        };
+        BulkRequest: {
+            operations: ({
+                /** @enum {string} */
+                op: "update";
+                /**
+                 * Format: uuid
+                 * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+                 */
+                id: string;
+                if_match: string;
+                patch: components["schemas"]["UpdateTransactionRequest"];
+            } | {
+                /** @enum {string} */
+                op: "void";
+                /**
+                 * Format: uuid
+                 * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+                 */
+                id: string;
+                if_match: string;
+                reason?: string;
+            } | {
+                /** @enum {string} */
+                op: "reconcile";
+                /**
+                 * Format: uuid
+                 * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+                 */
+                id: string;
+                if_match: string;
+            })[];
+        };
+        UpdatePostingRequest: {
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            account_id?: string;
+            /**
+             * @description Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.
+             * @example 14723
+             */
+            amount_minor?: number;
+            /** @example USD */
+            currency?: string;
+            fx_rate?: string;
+            /**
+             * @description Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.
+             * @example 14723
+             */
+            amount_base_minor?: number;
+            memo?: string | null;
         };
     };
     responses: never;

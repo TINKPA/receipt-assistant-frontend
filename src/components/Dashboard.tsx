@@ -21,6 +21,8 @@ import {
   Cell
 } from 'recharts';
 import { fetchTransactions, fetchSummary, type SpendingSummary } from '../lib/api';
+// `fetchSummary` remains a shim over GET /v1/reports/summary?group_by=category;
+// `SpendingSummary` is the legacy {category,count,total_spent} shape.
 import { cn } from '../lib/utils';
 import type { Transaction } from '../types';
 

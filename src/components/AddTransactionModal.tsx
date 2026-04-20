@@ -1,13 +1,15 @@
 import React from 'react';
 import { X, Upload, ArrowRight, Loader2, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { uploadReceipt } from '../lib/api';
+import { ingestBatch, extractProblemMessage } from '../lib/api';
 import { cn } from '../lib/utils';
 
 interface AddTransactionModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onComplete?: (job: { jobId: string; receiptId: string }) => void;
+  /** Emitted once the upload is accepted. `batchId` drives the
+   *  ProcessingToast polling → eventual `transactionId`. */
+  onComplete?: (job: { batchId: string; ingestId: string; filename: string }) => void;
 }
 
 type UploadState = 'idle' | 'uploading' | 'error';
@@ -40,13 +42,21 @@ export default function AddTransactionModal({ isOpen, onClose, onComplete }: Add
     setError(null);
 
     try {
-      const result = await uploadReceipt(file);
-      // Close immediately — processing happens in background
-      onComplete?.({ jobId: result.jobId, receiptId: result.receiptId });
+      const result = await ingestBatch([file]);
+      const first = result.items[0];
+      if (!first) {
+        throw new Error('Upload accepted but server returned no ingest items.');
+      }
+      // Close immediately — processing happens in background.
+      onComplete?.({
+        batchId: result.batchId,
+        ingestId: first.ingestId,
+        filename: first.filename,
+      });
       handleClose();
-    } catch (err: any) {
+    } catch (err: unknown) {
       setState('error');
-      setError(err.message);
+      setError(extractProblemMessage(err));
     }
   };
 

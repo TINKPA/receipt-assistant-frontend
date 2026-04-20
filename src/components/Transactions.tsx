@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { TrendingDown, Filter, Utensils, Plane, Zap, Film, Landmark, ShoppingBag, Car, Loader2 } from 'lucide-react';
-import { fetchTransactions } from '../lib/api';
+import { fetchTransactions, extractProblemMessage } from '../lib/api';
 import { cn } from '../lib/utils';
 import type { Transaction } from '../types';
 
@@ -14,9 +14,10 @@ export default function Transactions({ onSelectReceipt }: TransactionsProps) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchTransactions({ limit: 50 })
+    // "Receipt history" == transactions with at least one linked document.
+    fetchTransactions({ limit: 50, has_document: true })
       .then(setTransactions)
-      .catch((e) => setError(e.message))
+      .catch((e: unknown) => setError(extractProblemMessage(e)))
       .finally(() => setLoading(false));
   }, []);
 
