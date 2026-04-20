@@ -1,0 +1,31 @@
+# receipt-assistant-frontend — standalone Docker stack.
+#
+#   docker compose up -d --build
+#
+# Independent of the backend stack: no shared network, no shared
+# volumes. Connection is HTTP-only, made at runtime by the browser
+# through the nginx /api proxy defined in nginx.conf.
+#
+# BACKEND_URL is the address the CONTAINER (not the browser) uses to
+# reach the backend. Default targets a backend running on the host via
+# Docker Desktop's `host.docker.internal`. Override for remote backends:
+#
+#   BACKEND_URL=https://receipts.example.com docker compose up -d --build
+
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: receipt-assistant-frontend:local
+    container_name: receipt-assistant-frontend
+    ports:
+      - "8080:80"
+    environment:
+      BACKEND_URL: ${BACKEND_URL:-http://host.docker.internal:3000}
+    # Linux doesn't know `host.docker.internal` by default; this line is
+    # a no-op on Docker Desktop (Mac/Win) and resolves it to the host
+    # gateway on Linux.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped

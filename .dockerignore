@@ -1,0 +1,25 @@
+# Keep the build context small and prevent stale host artifacts from
+# leaking into the image. Anything the Dockerfile doesn't COPY can be
+# excluded here — and critically, `dist/` must stay out so that we can
+# never accidentally ship a host-built bundle (see project CLAUDE.md).
+
+node_modules
+dist
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+
+# Editor / OS noise
+.vscode
+.idea
+.DS_Store
+*.swp
+
+# Docs — not needed inside the image.
+*.md
+
+# Local data
+coverage
+.nyc_output
