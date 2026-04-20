@@ -263,15 +263,21 @@ export default function Dashboard({ onSelectReceipt }: DashboardProps) {
           </p>
         </div>
 
-        <div className="md:col-span-2 bg-gradient-to-br from-surface-container-high to-surface-container-low rounded-xl p-6 flex items-center justify-between group cursor-pointer hover:border-primary/20 border border-transparent transition-all">
+        <a
+          href="http://localhost:3333"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="md:col-span-2 bg-gradient-to-br from-surface-container-high to-surface-container-low rounded-xl p-6 flex items-center justify-between group cursor-pointer hover:border-primary/20 border border-transparent transition-all"
+        >
           <div>
             <h4 className="text-lg font-bold text-white mb-1">Langfuse Monitoring</h4>
             <p className="text-sm text-on-surface-variant">Every AI extraction is traced and monitored.</p>
+            <p className="text-xs text-on-surface-variant/60 mt-2 font-mono">admin@local.dev / admin123</p>
           </div>
           <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center text-primary group-hover:scale-110 transition-transform">
             <ArrowRight size={20} />
           </div>
-        </div>
+        </a>
       </section>
     </div>
   );
