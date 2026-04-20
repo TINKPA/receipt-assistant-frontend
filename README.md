@@ -44,6 +44,24 @@ npm run dev
 
 The Vite dev server proxies `/api/*` to `localhost:3000` automatically. No env vars needed for local dev.
 
+## Running with Docker
+
+An independent nginx-based stack is provided for self-hosting. It does **not** share a network with the backend — the two stacks communicate at the HTTP level, via the browser.
+
+```bash
+docker compose up -d --build
+# frontend → http://localhost:8080
+# expects backend at http://localhost:3000 (see receipt-assistant)
+```
+
+The container proxies `/api/*` to the backend URL configured via `BACKEND_URL` (default `http://host.docker.internal:3000`, which resolves to the host on Docker Desktop and — thanks to the `extra_hosts: host-gateway` line — on Linux too). To point at a remote backend instead:
+
+```bash
+BACKEND_URL=https://receipts.example.com docker compose up -d --build
+```
+
+`npm run dev` / `npm run build` continue to work unchanged for host development — the container is purely for production-style serving.
+
 ## Project Structure
 
 ```
