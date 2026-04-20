@@ -1,11 +1,12 @@
 import React from 'react';
-import { 
-  LayoutDashboard, 
-  ReceiptText, 
-  CalendarDays, 
-  CalendarRange, 
-  Settings, 
-  Plus
+import {
+  LayoutDashboard,
+  ReceiptText,
+  CalendarDays,
+  CalendarRange,
+  FileStack,
+  Settings,
+  Plus,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 
@@ -19,6 +20,7 @@ export default function Sidebar({ activeTab, onTabChange, onAddTransaction }: Si
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'transactions', label: 'Transactions', icon: ReceiptText },
+    { id: 'batches', label: 'Uploads', icon: FileStack },
     { id: 'monthly', label: 'Monthly Review', icon: CalendarDays },
     { id: 'yearly', label: 'Yearly Review', icon: CalendarRange },
     { id: 'settings', label: 'Settings', icon: Settings },

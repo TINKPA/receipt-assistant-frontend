@@ -4,6 +4,8 @@ import Dashboard from './components/Dashboard';
 import Transactions from './components/Transactions';
 import MonthlyReview from './components/MonthlyReview';
 import YearlyReview from './components/YearlyReview';
+import Batches from './components/Batches';
+import BatchDetail from './components/BatchDetail';
 import AddTransactionModal from './components/AddTransactionModal';
 import ProcessingToast from './components/ProcessingToast';
 import { useProcessingJobs } from './components/useProcessingJobs';
@@ -14,6 +16,7 @@ export default function App() {
   const [isModalOpen, setIsModalOpen] = React.useState(false);
   const [refreshKey, setRefreshKey] = React.useState(0);
   const [selectedReceiptId, setSelectedReceiptId] = React.useState<string | null>(null);
+  const [selectedBatchId, setSelectedBatchId] = React.useState<string | null>(null);
   const { jobs, addJob, removeJob } = useProcessingJobs();
 
   const handleUploadComplete = (job: { batchId: string; ingestId: string; filename: string }) => {
@@ -29,10 +32,29 @@ export default function App() {
     setSelectedReceiptId(null);
   };
 
+  const handleSelectBatch = (batchId: string) => {
+    setSelectedBatchId(batchId);
+  };
+
+  const handleBackFromBatch = () => {
+    setSelectedBatchId(null);
+  };
+
   const renderContent = () => {
-    // Receipt detail view takes priority
+    // Receipt detail view takes priority — can be opened from anywhere.
     if (selectedReceiptId) {
       return <ReceiptDetail receiptId={selectedReceiptId} onBack={handleBackFromDetail} />;
+    }
+
+    // Batch detail takes priority within the Uploads tab.
+    if (activeTab === 'batches' && selectedBatchId) {
+      return (
+        <BatchDetail
+          batchId={selectedBatchId}
+          onBack={handleBackFromBatch}
+          onSelectTransaction={handleSelectReceipt}
+        />
+      );
     }
 
     switch (activeTab) {
@@ -40,6 +62,8 @@ export default function App() {
         return <Dashboard key={refreshKey} onSelectReceipt={handleSelectReceipt} />;
       case 'transactions':
         return <Transactions key={refreshKey} onSelectReceipt={handleSelectReceipt} />;
+      case 'batches':
+        return <Batches key={refreshKey} onSelectBatch={handleSelectBatch} />;
       case 'monthly':
         return <MonthlyReview />;
       case 'yearly':
@@ -68,6 +92,7 @@ export default function App() {
         activeTab={activeTab}
         onTabChange={(tab) => {
           setSelectedReceiptId(null);
+          setSelectedBatchId(null);
           setActiveTab(tab);
         }}
         onAddTransaction={() => setIsModalOpen(true)}
