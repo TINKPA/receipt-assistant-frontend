@@ -17,6 +17,14 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        # Baked into the JS bundle at build time by Vite. Set
+        # GOOGLE_MAPS_API_KEY in this repo's .env (gitignored). Empty
+        # is fine — the frontend simply hides the map block when
+        # unset. Anyone with browser DevTools can read this key once
+        # it's in the bundle; for a public deploy, restrict the key
+        # in Google Cloud Console to the deploy origin.
+        VITE_GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
     image: receipt-assistant-frontend:local
     container_name: receipt-assistant-frontend
     ports:

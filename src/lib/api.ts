@@ -30,6 +30,7 @@ const client = createClient<paths>({ baseUrl: '/api' });
 
 export type BackendTransaction = components['schemas']['Transaction'];
 export type BackendPosting = components['schemas']['Posting'];
+export type BackendPlace = components['schemas']['Place'];
 export type BackendDocument = components['schemas']['Document'];
 export type BackendBatch = components['schemas']['Batch'];
 export type BackendBatchSummary = components['schemas']['BatchSummary'];
@@ -80,6 +81,8 @@ export interface ReceiptView {
   documentKind: string | null;
   documents: BackendTransaction['documents'];
   postings: BackendPosting[];
+  /** Google Places entry for the merchant location, if geocoded. */
+  place: BackendPlace | null;
   etag: string | null;
 }
 
@@ -179,6 +182,7 @@ export function toReceiptView(t: BackendTransaction, etag: string | null = null)
     documentKind: doc?.kind ?? null,
     documents: t.documents,
     postings: t.postings,
+    place: t.place ?? null,
     etag,
   };
 }

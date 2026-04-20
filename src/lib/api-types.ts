@@ -2249,6 +2249,19 @@ export interface components {
             id: string;
             kind: string;
         };
+        Place: {
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            id: string;
+            google_place_id: string;
+            formatted_address: string;
+            lat: number;
+            lng: number;
+            /** @enum {string} */
+            source: "google_geocode" | "google_places";
+        } | null;
         Transaction: {
             /**
              * Format: uuid
@@ -2300,6 +2313,7 @@ export interface components {
             updated_at: string;
             postings: components["schemas"]["Posting"][];
             documents: components["schemas"]["TransactionDocumentRef"][];
+            place: components["schemas"]["Place"];
         };
         BulkResultItem: {
             index: number;
