@@ -1,13 +1,19 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowLeft, Loader2, Receipt, CreditCard, Calendar, Tag, FileText, ChevronDown, ChevronUp, MapPin } from 'lucide-react';
+import { ArrowLeft, Loader2, Receipt, CreditCard, Calendar, Tag, FileText, ChevronDown, ChevronUp, MapPin, Pencil, Ban, Trash2 } from 'lucide-react';
 import { APIProvider, Map, Marker } from '@vis.gl/react-google-maps';
 import {
   fetchReceiptDetail,
   documentContentUrl,
   extractProblemMessage,
+  toReceiptView,
+  voidTransaction,
+  deleteTransaction,
   type ReceiptView,
+  type BackendTransaction,
 } from '../lib/api';
 import { cn } from '../lib/utils';
+import EditReceiptModal from './EditReceiptModal';
+import ConfirmActionDialog from './ConfirmActionDialog';
 
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined;
 
@@ -40,12 +46,35 @@ export default function ReceiptDetail({ receiptId, onBack }: ReceiptDetailProps)
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showRawText, setShowRawText] = useState(false);
+  const [activeDialog, setActiveDialog] = useState<'edit' | 'void' | 'delete' | null>(null);
 
   const loadReceipt = () => {
     fetchReceiptDetail(receiptId)
       .then(setReceipt)
       .catch((e: unknown) => setError(extractProblemMessage(e)))
       .finally(() => setLoading(false));
+  };
+
+  const handleUpdated = (txn: BackendTransaction, etag: string | null) => {
+    setReceipt(toReceiptView(txn, etag));
+  };
+
+  const handleVoidConfirm = async (reason: string) => {
+    if (!receipt?.etag) throw new Error('No ETag — reload and retry.');
+    const updated = await voidTransaction(receipt.id, reason, receipt.etag);
+    // `voidTransaction` returns the mirror (reversing) txn, which has a
+    // different id. Refetch the current receipt so we see its new
+    // `voided` status and fresh ETag.
+    void updated;
+    setActiveDialog(null);
+    loadReceipt();
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!receipt?.etag) throw new Error('No ETag — reload and retry.');
+    await deleteTransaction(receipt.id, receipt.etag);
+    setActiveDialog(null);
+    onBack();
   };
 
   useEffect(() => {
@@ -113,12 +142,50 @@ export default function ReceiptDetail({ receiptId, onBack }: ReceiptDetailProps)
   );
   const merchantLabel = receipt.payee ?? receipt.narration ?? 'Unknown';
 
+  const canDelete = receipt.status === 'draft' || receipt.status === 'error';
+  const canVoid = receipt.status === 'posted' || receipt.status === 'reconciled';
+  const canEdit = receipt.status !== 'voided';
+
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700 max-w-4xl">
-      <button onClick={onBack} className="flex items-center gap-2 text-primary font-bold hover:opacity-80 transition-opacity">
-        <ArrowLeft size={20} />
-        Back to transactions
-      </button>
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <button onClick={onBack} className="flex items-center gap-2 text-primary font-bold hover:opacity-80 transition-opacity">
+          <ArrowLeft size={20} />
+          Back to transactions
+        </button>
+
+        {!isProcessing && (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setActiveDialog('edit')}
+              disabled={!canEdit}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-surface-container-high text-white font-bold hover:bg-surface-container-highest transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              title={canEdit ? 'Edit receipt' : 'Voided receipts cannot be edited'}
+            >
+              <Pencil size={16} />
+              Edit
+            </button>
+            <button
+              onClick={() => setActiveDialog('void')}
+              disabled={!canVoid}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-surface-container-high text-white font-bold hover:bg-surface-container-highest transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              title={canVoid ? 'Void (reverse) this receipt' : 'Only posted receipts can be voided'}
+            >
+              <Ban size={16} />
+              Void
+            </button>
+            <button
+              onClick={() => setActiveDialog('delete')}
+              disabled={!canDelete}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-error/10 text-error font-bold hover:bg-error/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              title={canDelete ? 'Delete this draft' : 'Only draft/error receipts can be deleted — use Void instead'}
+            >
+              <Trash2 size={16} />
+              Delete
+            </button>
+          </div>
+        )}
+      </div>
 
       {isProcessing && (
         <div className="flex items-center gap-4 p-5 rounded-xl bg-tertiary/10 border border-tertiary/20">
@@ -286,6 +353,51 @@ export default function ReceiptDetail({ receiptId, onBack }: ReceiptDetailProps)
           )}
         </div>
       )}
+
+      <EditReceiptModal
+        isOpen={activeDialog === 'edit'}
+        onClose={() => setActiveDialog(null)}
+        receipt={receipt}
+        onUpdated={handleUpdated}
+        onStale={loadReceipt}
+      />
+
+      <ConfirmActionDialog
+        isOpen={activeDialog === 'void'}
+        onClose={() => setActiveDialog(null)}
+        title="Void this receipt?"
+        message={
+          <>
+            <p>
+              Voiding creates a reversing entry in the ledger — the original transaction stays,
+              but its balance cancels out. Use this for posted receipts you can't simply delete.
+            </p>
+            <p className="mt-2 text-xs text-on-surface-variant/70">
+              This action can be reversed only by creating a new offsetting transaction.
+            </p>
+          </>
+        }
+        confirmLabel="Void receipt"
+        destructive
+        requireReason
+        reasonPlaceholder="Why are you voiding this? (optional)"
+        onConfirm={handleVoidConfirm}
+      />
+
+      <ConfirmActionDialog
+        isOpen={activeDialog === 'delete'}
+        onClose={() => setActiveDialog(null)}
+        title="Delete this draft?"
+        message={
+          <p>
+            This permanently removes the draft transaction and unlinks any attached documents.
+            Only drafts and errored extractions can be deleted — posted receipts must be voided.
+          </p>
+        }
+        confirmLabel="Delete forever"
+        destructive
+        onConfirm={handleDeleteConfirm}
+      />
 
       {!isProcessing && confidence != null && (
         <div className="glass-panel rounded-xl p-6 border border-outline-variant/10">
