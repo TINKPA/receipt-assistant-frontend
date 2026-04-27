@@ -7,9 +7,10 @@ interface LayoutProps {
   activeTab: string;
   onTabChange: (tab: string) => void;
   onAddTransaction: () => void;
+  rightSlot?: React.ReactNode;
 }
 
-export default function Layout({ children, activeTab, onTabChange, onAddTransaction }: LayoutProps) {
+export default function Layout({ children, activeTab, onTabChange, onAddTransaction, rightSlot }: LayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
@@ -22,7 +23,7 @@ export default function Layout({ children, activeTab, onTabChange, onAddTransact
         setSidebarOpen={setSidebarOpen}
       />
       <div className="flex-1 lg:ml-64 flex flex-col">
-        <TopBar onToggleSidebar={() => setSidebarOpen(!sidebarOpen)} sidebarOpen={sidebarOpen} />
+        <TopBar onToggleSidebar={() => setSidebarOpen(!sidebarOpen)} sidebarOpen={sidebarOpen} rightSlot={rightSlot} />
         <main className="flex-1 pt-24 pb-12 px-6 lg:px-10 overflow-x-hidden">
           {children}
         </main>

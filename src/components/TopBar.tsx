@@ -4,9 +4,10 @@ import { Search, Bell, UserCircle, Menu } from 'lucide-react';
 interface TopBarProps {
   onToggleSidebar: () => void;
   sidebarOpen: boolean;
+  rightSlot?: React.ReactNode;
 }
 
-export default function TopBar({ onToggleSidebar, sidebarOpen }: TopBarProps) {
+export default function TopBar({ onToggleSidebar, sidebarOpen, rightSlot }: TopBarProps) {
   return (
     <header
       className="fixed top-0 right-0 left-0 lg:left-64 h-16 z-40 bg-background/70 backdrop-blur-xl flex justify-between items-center gap-4 px-4 lg:px-8 border-b border-outline-variant/15"
@@ -43,7 +44,10 @@ export default function TopBar({ onToggleSidebar, sidebarOpen }: TopBarProps) {
             <UserCircle size={20} />
           </button>
         </div>
-        <span className="hidden sm:inline text-base lg:text-lg font-black text-white font-headline tracking-tight whitespace-nowrap">Financial Gallery</span>
+        <div className="flex items-center gap-3">
+          {rightSlot}
+          <span className="hidden sm:inline text-base lg:text-lg font-black text-white font-headline tracking-tight whitespace-nowrap">Financial Gallery</span>
+        </div>
       </div>
     </header>
   );

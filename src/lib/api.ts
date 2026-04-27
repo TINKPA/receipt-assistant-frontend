@@ -26,6 +26,15 @@ import type { Transaction } from '@/types';
 
 const client = createClient<paths>({ baseUrl: '/api' });
 
+export interface BuildInfo {
+  service: string;
+  version: string;
+  gitSha: string;
+  gitShortSha: string;
+  gitBranch: string;
+  builtAt: string;
+}
+
 // ── Backend type aliases (derived from the OpenAPI spec) ────────
 
 export type BackendTransaction = components['schemas']['Transaction'];
@@ -50,6 +59,14 @@ export type CreateTransactionRequest = components['schemas']['CreateTransactionR
 export type DocumentKind = components['schemas']['DocumentKind'];
 export type BatchStatus = components['schemas']['BatchStatus'];
 export type IngestStatus = components['schemas']['IngestStatus'];
+
+export async function fetchBackendBuildInfo(): Promise<BuildInfo> {
+  const response = await fetch('/api/version');
+  if (!response.ok) {
+    throw new Error(`fetchBackendBuildInfo failed (${response.status})`);
+  }
+  return response.json() as Promise<BuildInfo>;
+}
 
 /** An ETag-aware wrapper. Keep the ETag alongside the resource so PATCH
  *  / POST-void / DELETE calls can fill in `If-Match`. */

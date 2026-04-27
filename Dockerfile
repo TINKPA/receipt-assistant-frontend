@@ -15,6 +15,8 @@ FROM node:22-bookworm AS builder
 
 WORKDIR /app
 
+RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
+
 # Vite inlines VITE_* env vars into the JS bundle at build time, so
 # they MUST be present in the builder stage env. Empty default is fine
 # — the frontend gates its map block on the key being truthy and
@@ -28,7 +30,9 @@ RUN npm ci
 
 # Copy everything the build needs. Keep this list explicit so that the
 # build context stays predictable (see .dockerignore for the blocklist).
+COPY .git ./.git
 COPY tsconfig.json vite.config.ts eslint.config.js index.html ./
+COPY scripts/ ./scripts/
 COPY src/ ./src/
 
 RUN npm run build
@@ -42,6 +46,8 @@ RUN apk add --no-cache gettext
 
 # Static bundle from the builder stage.
 COPY --from=builder /app/dist/ /usr/share/nginx/html/
+COPY --from=builder /app/src/generated/buildInfo.json /usr/share/nginx/html/version.json
+RUN chmod 644 /usr/share/nginx/html/version.json
 
 # nginx template — $BACKEND_URL is substituted at container start by the
 # default nginx entrypoint (/docker-entrypoint.d/20-envsubst-on-templates.sh).
