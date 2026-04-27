@@ -52,9 +52,10 @@ export default function Sidebar({
   // sidebar is persistent and these effects must NOT run.
   useEffect(() => {
     if (!sidebarOpen) return;
-    const isDesktop = window.matchMedia('(min-width: 1024px)').matches;
-    if (isDesktop) return;
+    const mql = window.matchMedia('(min-width: 1024px)');
+    if (mql.matches) return;
 
+    const opener = document.activeElement as HTMLElement | null;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
 
@@ -86,9 +87,18 @@ export default function Sidebar({
     };
     document.addEventListener('keydown', handleKey);
 
+    // Cross-breakpoint safety: if the viewport grows past `lg` while the drawer is open,
+    // close it so the cleanup below runs and the persistent sidebar takes over cleanly.
+    const handleViewportChange = (e: MediaQueryListEvent) => {
+      if (e.matches) setSidebarOpen(false);
+    };
+    mql.addEventListener('change', handleViewportChange);
+
     return () => {
       document.body.style.overflow = previousOverflow;
       document.removeEventListener('keydown', handleKey);
+      mql.removeEventListener('change', handleViewportChange);
+      opener?.focus();
     };
   }, [sidebarOpen, setSidebarOpen]);
 
@@ -114,6 +124,8 @@ export default function Sidebar({
         ref={drawerRef}
         id="sidebar-drawer"
         aria-label="Primary navigation"
+        role={sidebarOpen ? 'dialog' : undefined}
+        aria-modal={sidebarOpen ? true : undefined}
         className={cn(
           "h-screen w-64 fixed left-0 top-0 bg-background flex flex-col py-8 px-4 border-r border-outline-variant/15 z-50",
           "transition-transform duration-300 ease-out",

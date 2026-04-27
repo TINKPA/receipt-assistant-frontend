@@ -22,7 +22,7 @@ export default function Layout({ children, activeTab, onTabChange, onAddTransact
         setSidebarOpen={setSidebarOpen}
       />
       <div className="flex-1 lg:ml-64 flex flex-col">
-        <TopBar onOpenSidebar={() => setSidebarOpen(true)} sidebarOpen={sidebarOpen} />
+        <TopBar onToggleSidebar={() => setSidebarOpen(!sidebarOpen)} sidebarOpen={sidebarOpen} />
         <main className="flex-1 pt-24 pb-12 px-6 lg:px-10 overflow-x-hidden">
           {children}
         </main>

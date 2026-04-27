@@ -2,11 +2,11 @@ import React from 'react';
 import { Search, Bell, UserCircle, Menu } from 'lucide-react';
 
 interface TopBarProps {
-  onOpenSidebar: () => void;
+  onToggleSidebar: () => void;
   sidebarOpen: boolean;
 }
 
-export default function TopBar({ onOpenSidebar, sidebarOpen }: TopBarProps) {
+export default function TopBar({ onToggleSidebar, sidebarOpen }: TopBarProps) {
   return (
     <header
       className="fixed top-0 right-0 left-0 lg:left-64 h-16 z-40 bg-background/70 backdrop-blur-xl flex justify-between items-center gap-4 px-4 lg:px-8 border-b border-outline-variant/15"
@@ -15,8 +15,8 @@ export default function TopBar({ onOpenSidebar, sidebarOpen }: TopBarProps) {
       <div className="flex items-center gap-3 flex-1 md:max-w-md min-w-0">
         <button
           type="button"
-          onClick={onOpenSidebar}
-          aria-label="Open navigation"
+          onClick={onToggleSidebar}
+          aria-label={sidebarOpen ? 'Close navigation' : 'Open navigation'}
           aria-expanded={sidebarOpen}
           aria-controls="sidebar-drawer"
           className="lg:hidden flex items-center justify-center w-11 h-11 -ml-2 rounded-xl text-on-surface-variant hover:text-white hover:bg-surface-container-high transition-colors"
