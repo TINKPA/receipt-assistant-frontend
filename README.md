@@ -218,6 +218,20 @@ Fonts: **Manrope** (headlines), **Inter** (body text).
 
 Custom effects: `glass-panel` (backdrop blur), `neon-glow-primary` (teal glow on key metrics).
 
+## Supported breakpoints
+
+This project uses **canonical Tailwind v4 defaults** (no overrides in `src/index.css`):
+
+| Prefix | Min-width | Typical device |
+|--------|-----------|----------------|
+| `sm`   | 640 px    | Large phones (landscape) |
+| `md`   | 768 px    | Tablets (portrait), iPad Mini |
+| `lg`   | 1024 px   | Small laptops, iPad Pro (landscape) |
+| `xl`   | 1280 px   | Standard laptops |
+| `2xl`  | 1536 px   | Large desktops |
+
+`lg` is the **desktop threshold**. Below `lg`, the sidebar collapses into a hamburger-triggered drawer; at and above `lg`, the persistent 256 px sidebar returns. Page-level grid rules should default to mobile-first (single column / stacked) and add `lg:` variants for the desktop layout.
+
 ## Development
 
 ```bash
