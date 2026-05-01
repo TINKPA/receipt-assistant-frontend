@@ -1,5 +1,12 @@
 export type Category = 'Dining' | 'Transport' | 'Utilities' | 'Fun' | 'Income' | 'Shopping' | 'Housing' | 'Investments' | 'Travel' | 'Entertainment' | 'Real Estate';
 
+export type RawTransactionStatus =
+  | 'draft'
+  | 'posted'
+  | 'voided'
+  | 'reconciled'
+  | 'error';
+
 export interface Transaction {
   id: string;
   description: string;
@@ -10,6 +17,12 @@ export interface Transaction {
   status: 'Verified' | 'Pending' | 'New Charge' | 'Surplus' | 'Peak' | 'Processing';
   icon: string;
   color: string;
+  /** The raw backend status (before UI normalization). Needed for delete /
+   *  unreconcile menus that branch on `posted` vs `reconciled` etc. */
+  rawStatus?: RawTransactionStatus;
+  /** Primary linked document id, if any — needed for tombstone toggle and
+   *  delete-receipt cascade flows from the list. */
+  documentId?: string | null;
 }
 
 export interface Metric {

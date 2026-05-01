@@ -1,25 +1,94 @@
 import React, { useEffect, useState } from 'react';
-import { TrendingDown, Filter, Utensils, Plane, Zap, Film, Landmark, ShoppingBag, Car, Loader2 } from 'lucide-react';
-import { fetchTransactions, extractProblemMessage } from '../lib/api';
+import { TrendingDown, Filter, Utensils, Plane, Zap, Film, Landmark, ShoppingBag, Car, Loader2, Eye, EyeOff, RotateCcw, FileX } from 'lucide-react';
+import {
+  fetchTransactions,
+  extractProblemMessage,
+  getDocument,
+  getTransaction,
+  hardDeleteTransaction,
+  restoreDocument,
+  documentContentUrl,
+  type BackendDocument,
+} from '../lib/api';
+import { listTombstones, removeTombstone } from '../lib/tombstones';
 import { cn } from '../lib/utils';
 import type { Transaction } from '../types';
+import TransactionRowMenu from './TransactionRowMenu';
+import ConfirmActionDialog from './ConfirmActionDialog';
+import UnreconcileDialog from './UnreconcileDialog';
+import DeletedBadge from './DeletedBadge';
 
 interface TransactionsProps {
   onSelectReceipt?: (receiptId: string) => void;
+}
+
+interface TombstoneRow {
+  status: 'loading' | 'present' | 'gone';
+  id: string;
+  doc?: BackendDocument;
 }
 
 export default function Transactions({ onSelectReceipt }: TransactionsProps) {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  // Row-action dialogs.
+  const [hardDeleteTarget, setHardDeleteTarget] = useState<{ id: string; etag: string } | null>(null);
+  const [unreconcileTarget, setUnreconcileTarget] = useState<string | null>(null);
+  const [rowError, setRowError] = useState<string | null>(null);
+
+  // "Show deleted" panel.
+  const [showDeleted, setShowDeleted] = useState(false);
+  const [tombstones, setTombstones] = useState<TombstoneRow[]>([]);
+  const [tombstoneLoading, setTombstoneLoading] = useState(false);
 
   useEffect(() => {
-    // "Receipt history" == transactions with at least one linked document.
+    setLoading(true);
     fetchTransactions({ limit: 50, has_document: true })
       .then(setTransactions)
       .catch((e: unknown) => setError(extractProblemMessage(e)))
       .finally(() => setLoading(false));
-  }, []);
+  }, [refreshKey]);
+
+  useEffect(() => {
+    if (!showDeleted) {
+      setTombstones([]);
+      return;
+    }
+    const ids = listTombstones();
+    if (ids.length === 0) {
+      setTombstones([]);
+      return;
+    }
+    setTombstoneLoading(true);
+    setTombstones(ids.map((id) => ({ status: 'loading', id })));
+    Promise.allSettled(
+      ids.map(async (id): Promise<TombstoneRow> => {
+        try {
+          const { data } = await getDocument(id, { includeDeleted: true });
+          if (!data.deleted_at) {
+            // Already restored elsewhere — drop from local cache.
+            removeTombstone(id);
+            return { status: 'gone', id };
+          }
+          return { status: 'present', id, doc: data };
+        } catch {
+          // 404 / network — assume hard-deleted, drop from cache.
+          removeTombstone(id);
+          return { status: 'gone', id };
+        }
+      }),
+    )
+      .then((results) => {
+        const next = results
+          .map((r) => (r.status === 'fulfilled' ? r.value : null))
+          .filter((x): x is TombstoneRow => x !== null && x.status !== 'gone');
+        setTombstones(next);
+      })
+      .finally(() => setTombstoneLoading(false));
+  }, [showDeleted, refreshKey]);
 
   const totalExpenses = transactions
     .filter((tx) => tx.amount < 0)
@@ -64,6 +133,41 @@ export default function Transactions({ onSelectReceipt }: TransactionsProps) {
     }
   };
 
+  const handleHardDeleteRequest = async (txnId: string) => {
+    setRowError(null);
+    try {
+      const fresh = await getTransaction(txnId);
+      if (fresh.data.status === 'reconciled') {
+        // Reconciled transactions can't be hard-deleted; offer
+        // unreconcile instead.
+        setUnreconcileTarget(txnId);
+        return;
+      }
+      if (!fresh.etag) throw new Error('Missing ETag — refresh and retry.');
+      setHardDeleteTarget({ id: txnId, etag: fresh.etag });
+    } catch (err: unknown) {
+      setRowError(extractProblemMessage(err));
+    }
+  };
+
+  const handleHardDeleteConfirm = async () => {
+    if (!hardDeleteTarget) return;
+    await hardDeleteTransaction(hardDeleteTarget.id, hardDeleteTarget.etag);
+    setHardDeleteTarget(null);
+    setRefreshKey((k) => k + 1);
+  };
+
+  const handleRestoreTombstone = async (id: string) => {
+    try {
+      await restoreDocument(id);
+      removeTombstone(id);
+      setTombstones((prev) => prev.filter((t) => t.id !== id));
+      setRefreshKey((k) => k + 1);
+    } catch (err: unknown) {
+      setRowError(extractProblemMessage(err));
+    }
+  };
+
   return (
     <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-700">
       <div className="flex justify-between items-end">
@@ -95,11 +199,96 @@ export default function Transactions({ onSelectReceipt }: TransactionsProps) {
         <div className="bg-surface-container-high px-4 py-2 rounded-xl flex items-center gap-3 border border-outline-variant/15 text-sm font-medium text-white">
           <span className="text-on-surface-variant">Category:</span> All
         </div>
+        <button
+          data-testid="toggle-show-deleted"
+          onClick={() => setShowDeleted((s) => !s)}
+          className={cn(
+            'px-4 py-2 rounded-xl flex items-center gap-2 border text-sm font-medium transition-colors',
+            showDeleted
+              ? 'bg-error/10 border-error/30 text-error'
+              : 'bg-surface-container-high border-outline-variant/15 text-white hover:border-outline-variant/30',
+          )}
+        >
+          {showDeleted ? <EyeOff size={16} /> : <Eye size={16} />}
+          {showDeleted ? 'Hide deleted' : 'Show deleted'}
+        </button>
         <button className="ml-auto flex items-center gap-2 text-primary font-bold text-sm hover:opacity-80 transition-opacity">
           <Filter size={16} />
           More Filters
         </button>
       </div>
+
+      {rowError && (
+        <div className="p-4 rounded-xl bg-error/10 border border-error/20 text-sm text-error flex items-center justify-between">
+          <span>{rowError}</span>
+          <button onClick={() => setRowError(null)} className="text-error/70 hover:text-error font-bold">
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {showDeleted && (
+        <div className="glass-panel border border-outline-variant/10 rounded-xl overflow-hidden">
+          <div className="px-8 py-5 border-b border-outline-variant/10 flex items-center gap-3">
+            <FileX className="text-error" size={20} />
+            <h3 className="font-headline font-bold text-white">Recently Deleted</h3>
+            <span className="text-xs text-on-surface-variant ml-auto">
+              Tracked locally in this browser. Restore brings the receipt back to the main list.
+            </span>
+          </div>
+          {tombstoneLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="animate-spin text-on-surface-variant" size={24} />
+            </div>
+          ) : tombstones.length === 0 ? (
+            <div className="py-12 text-center text-sm text-on-surface-variant">
+              No recently deleted receipts in this browser.
+            </div>
+          ) : (
+            <ul className="divide-y divide-outline-variant/5">
+              {tombstones.map((t) => (
+                <li
+                  key={t.id}
+                  className="px-8 py-5 flex items-center gap-4"
+                  data-testid={`tombstone-${t.id}`}
+                >
+                  <div className="w-12 h-12 rounded-xl bg-surface-container-highest flex items-center justify-center overflow-hidden flex-shrink-0">
+                    {t.doc ? (
+                      <img
+                        src={documentContentUrl(t.id)}
+                        alt=""
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).style.display = 'none';
+                        }}
+                      />
+                    ) : (
+                      <FileX className="text-on-surface-variant" size={20} />
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-white truncate">
+                      {t.doc?.file_path?.split('/').pop() ?? t.id}
+                    </p>
+                    <div className="mt-1 flex items-center gap-2">
+                      <DeletedBadge deletedAt={t.doc?.deleted_at ?? null} />
+                      <code className="text-xs text-on-surface-variant truncate">{t.id}</code>
+                    </div>
+                  </div>
+                  <button
+                    data-testid={`tombstone-restore-${t.id}`}
+                    onClick={() => handleRestoreTombstone(t.id)}
+                    className="px-4 py-2 rounded-xl bg-primary/10 text-primary font-bold hover:bg-primary/20 transition-colors flex items-center gap-2 flex-shrink-0"
+                  >
+                    <RotateCcw size={16} />
+                    Restore
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
 
       <div className="glass-panel border border-outline-variant/10 rounded-xl overflow-hidden shadow-2xl">
         {loading ? (
@@ -121,12 +310,14 @@ export default function Transactions({ onSelectReceipt }: TransactionsProps) {
                 <th className="px-8 py-5 text-xs font-bold text-on-surface-variant uppercase tracking-widest font-headline">Payment</th>
                 <th className="px-8 py-5 text-xs font-bold text-on-surface-variant uppercase tracking-widest font-headline">Status</th>
                 <th className="px-8 py-5 text-xs font-bold text-on-surface-variant uppercase tracking-widest font-headline text-right">Amount</th>
+                <th className="px-2 py-5"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-outline-variant/5">
               {transactions.map((tx) => (
                 <tr
                   key={tx.id}
+                  data-testid={`txn-row-${tx.id}`}
                   onClick={() => tx.status !== 'Processing' && onSelectReceipt?.(tx.id)}
                   className={cn(
                     "hover:bg-surface-container-high/30 transition-colors group",
@@ -181,12 +372,52 @@ export default function Transactions({ onSelectReceipt }: TransactionsProps) {
                       <>{tx.amount > 0 ? '+' : ''}{tx.amount.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}</>
                     )}
                   </td>
+                  <td className="px-2 py-6 text-right" onClick={(e) => e.stopPropagation()}>
+                    {tx.status !== 'Processing' && (
+                      <TransactionRowMenu
+                        rawStatus={tx.rawStatus}
+                        onHardDelete={() => handleHardDeleteRequest(tx.id)}
+                        onUnreconcile={() => setUnreconcileTarget(tx.id)}
+                      />
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         )}
       </div>
+
+      <ConfirmActionDialog
+        isOpen={hardDeleteTarget !== null}
+        onClose={() => setHardDeleteTarget(null)}
+        title="Permanently delete this transaction?"
+        message={
+          <>
+            <p>
+              Removes the transaction, its postings, and any document links. The
+              underlying receipt image (if any) is kept — only the transaction is
+              destroyed.
+            </p>
+            <p className="mt-2 text-xs text-on-surface-variant/70">
+              This action cannot be undone.
+            </p>
+          </>
+        }
+        confirmLabel="Delete forever"
+        destructive
+        onConfirm={handleHardDeleteConfirm}
+      />
+
+      <UnreconcileDialog
+        isOpen={unreconcileTarget !== null}
+        onClose={() => setUnreconcileTarget(null)}
+        transactionId={unreconcileTarget}
+        onUnreconciled={() => {
+          setUnreconcileTarget(null);
+          setRefreshKey((k) => k + 1);
+        }}
+      />
     </div>
   );
 }

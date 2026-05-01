@@ -40,6 +40,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/version": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Build metadata */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Deployed build metadata */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["BuildInfoResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/accounts": {
         parameters: {
             query?: never;
@@ -558,10 +594,15 @@ export interface paths {
         };
         put?: never;
         post?: never;
-        /** Delete draft/error transaction */
+        /**
+         * Delete a transaction
+         * @description Default: only draft/error transactions may be hard-deleted; posted/voided return 409 (must-void-instead). ?hard=true forces a hard delete of any non-reconciled transaction (postings + document_links cascade). Reconciled transactions always reject — unreconcile first.
+         */
         delete: {
             parameters: {
-                query?: never;
+                query?: {
+                    hard?: "true" | "false" | "1" | "0";
+                };
                 header: {
                     "If-Match": string;
                 };
@@ -579,7 +620,7 @@ export interface paths {
                     };
                     content?: never;
                 };
-                /** @description Must void instead */
+                /** @description Must void instead (posted, no ?hard=true), or transaction is reconciled. */
                 409: {
                     headers: {
                         [name: string]: unknown;
@@ -715,6 +756,80 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["Transaction"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/transactions/{id}/unreconcile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Unreconcile a transaction (reconciled → posted)
+         * @description Pure state flip: `reconciled` → `posted`, with an audit event. Match-side state (e.g. bank-line associations) is intentionally NOT cleaned up here — callers compose this with their own match cleanup. Used as the escape hatch before `DELETE /v1/transactions/:id?hard=true` or `DELETE /v1/documents/:id?cascade=true&hard=true` on a reconciled row.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header: {
+                    "If-Match": string;
+                };
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["UnreconcileTransactionRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Transaction"];
+                    };
+                };
+                /** @description Transaction is not in reconciled state */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+                /** @description Version mismatch */
+                412: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+                /** @description If-Match required */
+                428: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
                     };
                 };
             };
@@ -1058,7 +1173,9 @@ export interface paths {
         /** Get document metadata */
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    include_deleted?: "true" | "false" | "1" | "0";
+                };
                 header?: never;
                 path: {
                     id: string;
@@ -1097,10 +1214,16 @@ export interface paths {
         };
         put?: never;
         post?: never;
-        /** Hard-delete a document (only if it has no links) */
+        /**
+         * Delete a document. Soft-deletes by default; ?hard=true removes the row + file; ?cascade=true also handles linked transactions.
+         * @description Default: soft delete (sets deleted_at). ?hard=true: hard delete (row + file); requires no remaining links unless ?cascade=true is also set. ?cascade=true: linked posted transactions are voided, draft/error transactions are hard-deleted, voided transactions are left intact, reconciled transactions abort the operation with 409. ?cascade=true&hard=true: every linked transaction is hard-deleted (postings cascade), the document is hard-deleted, and the image file is removed. Reconciled transactions always block hard cascades — unreconcile first.
+         */
         delete: {
             parameters: {
-                query?: never;
+                query?: {
+                    hard?: "true" | "false" | "1" | "0";
+                    cascade?: "true" | "false" | "1" | "0";
+                };
                 header?: never;
                 path: {
                     id: string;
@@ -1125,7 +1248,7 @@ export interface paths {
                         "application/problem+json": components["schemas"]["ProblemDetails"];
                     };
                 };
-                /** @description Document has links — unlink first */
+                /** @description Hard delete refused because document has links (use cascade), or cascade refused because a linked transaction is reconciled. */
                 409: {
                     headers: {
                         [name: string]: unknown;
@@ -1287,6 +1410,53 @@ export interface paths {
                 };
             };
         };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/documents/{id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Restore a soft-deleted document */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Restored */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Document"];
+                    };
+                };
+                /** @description Document not found or not deleted */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -2006,6 +2176,23 @@ export interface components {
                 message: string;
             }[];
         };
+        BuildInfoResponse: {
+            /** @example receipt-assistant */
+            service: string;
+            /** @example 1.0.0 */
+            version: string;
+            /** @example a02db01234567890abcdef1234567890abcdef12 */
+            gitSha: string;
+            /** @example a02db01 */
+            gitShortSha: string;
+            /** @example main */
+            gitBranch: string;
+            /**
+             * Format: date-time
+             * @example 2026-04-27T22:00:35.000Z
+             */
+            builtAt: string;
+        };
         HealthResponse: {
             /** @enum {string} */
             status: "ok";
@@ -2013,6 +2200,7 @@ export interface components {
             service: string;
             /** @example 1.0.0 */
             version: string;
+            build: components["schemas"]["BuildInfoResponse"];
         };
         Violation: {
             path: string;
@@ -2348,6 +2536,8 @@ export interface components {
              * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
              */
             source_ingest_id: string | null;
+            /** Format: date-time */
+            deleted_at: string | null;
             /** Format: date-time */
             created_at: string;
             /** Format: date-time */
@@ -2822,6 +3012,9 @@ export interface components {
             };
         };
         VoidTransactionRequest: {
+            reason?: string;
+        };
+        UnreconcileTransactionRequest: {
             reason?: string;
         };
         BulkRequest: {

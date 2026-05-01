@@ -226,6 +226,8 @@ export function mapTransaction(t: BackendTransaction): Transaction {
     status,
     icon: ICON_MAP[category] ?? 'receipt',
     color: 'primary',
+    rawStatus: t.status,
+    documentId: rv.documentId,
   };
 }
 
@@ -242,6 +244,48 @@ async function compressImage(file: File): Promise<File> {
 }
 
 // ── Error helpers (RFC 7807) ───────────────────────────────────
+
+/** Known backend problem types — extend as the backend adds more.
+ *  Code consuming `parseProblem` should switch on `.type` so unknown
+ *  values fall through to a generic error path. */
+export type ProblemErrorType =
+  | 'errors/cascade-blocked-reconciled'
+  | 'errors/cannot-delete-reconciled'
+  | 'errors/document-has-links'
+  | 'errors/precondition-failed'
+  | (string & {});
+
+export interface ParsedProblem {
+  type?: ProblemErrorType;
+  title?: string;
+  detail?: string;
+  status?: number;
+  /** Any non-canonical fields the server attached
+   *  (e.g. `reconciled_transaction_ids`, `link_count`). */
+  extensions: Record<string, unknown>;
+}
+
+/** Parse an error thrown by the api wrappers into a typed problem-details
+ *  shape. The thrown Error already carries `.problem` (see `unwrap`); this
+ *  walks that body and the canonical RFC 7807 fields. */
+export function parseProblem(err: unknown): ParsedProblem {
+  const empty: ParsedProblem = { extensions: {} };
+  if (!err || typeof err !== 'object') return empty;
+  const candidate =
+    (err as { problem?: unknown }).problem ?? err;
+  if (!candidate || typeof candidate !== 'object') return empty;
+  const body = candidate as Record<string, unknown>;
+  const out: ParsedProblem = { extensions: {} };
+  if (typeof body.type === 'string') out.type = body.type as ProblemErrorType;
+  if (typeof body.title === 'string') out.title = body.title;
+  if (typeof body.detail === 'string') out.detail = body.detail;
+  if (typeof body.status === 'number') out.status = body.status;
+  for (const [k, v] of Object.entries(body)) {
+    if (k === 'type' || k === 'title' || k === 'detail' || k === 'status') continue;
+    out.extensions[k] = v;
+  }
+  return out;
+}
 
 /** Extract a human-visible message from a Problem Details payload
  *  (or any unknown error shape we get handed back). */
@@ -442,7 +486,53 @@ export async function deleteTransaction(id: string, etag: string): Promise<void>
       header: { 'If-Match': etag },
     },
   });
-  if (error) throw new Error(`deleteTransaction failed (${response.status}): ${extractProblemMessage(error)}`);
+  if (error) {
+    const e = new Error(
+      `deleteTransaction failed (${response.status}): ${extractProblemMessage(error)}`,
+    );
+    (e as Error & { problem?: unknown }).problem = error;
+    throw e;
+  }
+}
+
+/** Force a hard delete of a posted/voided/draft/error transaction
+ *  (postings + document_links cascade via FK). Reconciled is still
+ *  rejected with 409; caller must `unreconcileTransaction` first. */
+export async function hardDeleteTransaction(id: string, etag: string): Promise<void> {
+  const { error, response } = await client.DELETE('/v1/transactions/{id}', {
+    params: {
+      path: { id },
+      header: { 'If-Match': etag },
+      query: { hard: 'true' },
+    },
+  });
+  if (error) {
+    const e = new Error(
+      `hardDeleteTransaction failed (${response.status}): ${extractProblemMessage(error)}`,
+    );
+    (e as Error & { problem?: unknown }).problem = error;
+    throw e;
+  }
+}
+
+/** Pure state flip `reconciled → posted`. Required before any hard
+ *  delete on a reconciled row. */
+export async function unreconcileTransaction(
+  id: string,
+  reason: string | undefined,
+  etag: string,
+): Promise<BackendTransaction> {
+  const { data, error, response } = await client.POST(
+    '/v1/transactions/{id}/unreconcile',
+    {
+      params: {
+        path: { id },
+        header: { 'If-Match': etag },
+      },
+      body: reason ? { reason } : {},
+    },
+  );
+  return unwrap('unreconcileTransaction', data, error, response.status);
 }
 
 // ── Documents ───────────────────────────────────────────────────
@@ -462,14 +552,83 @@ export async function uploadDocument(
   return unwrap('uploadDocument', data, error, response.status);
 }
 
-export async function getDocument(id: string): Promise<WithETag<BackendDocument>> {
+export async function getDocument(
+  id: string,
+  opts: { includeDeleted?: boolean } = {},
+): Promise<WithETag<BackendDocument>> {
   const { data, error, response } = await client.GET('/v1/documents/{id}', {
-    params: { path: { id } },
+    params: {
+      path: { id },
+      query: opts.includeDeleted ? { include_deleted: 'true' } : undefined,
+    },
   });
   return {
     data: unwrap('getDocument', data, error, response.status),
     etag: etagFrom(response),
   };
+}
+
+/** Soft-delete a document. Sets `deleted_at`. Hidden from default
+ *  GETs and link creation. Reversible via `restoreDocument`. */
+export async function softDeleteDocument(id: string): Promise<void> {
+  const { error, response } = await client.DELETE('/v1/documents/{id}', {
+    params: { path: { id } },
+  });
+  if (error) {
+    const e = new Error(
+      `softDeleteDocument failed (${response.status}): ${extractProblemMessage(error)}`,
+    );
+    (e as Error & { problem?: unknown }).problem = error;
+    throw e;
+  }
+}
+
+/** Cascade delete: also handles linked transactions (posted → voided
+ *  mirror, draft/error → hard-deleted, voided → left alone). Reconciled
+ *  links abort the whole op with 409 `errors/cascade-blocked-reconciled`.
+ *  With `hard=true`, every linked txn is hard-deleted (postings cascade)
+ *  and the document file is removed too. */
+export async function cascadeDeleteDocument(
+  id: string,
+  opts: { hard?: boolean } = {},
+): Promise<void> {
+  const query: Record<string, 'true'> = { cascade: 'true' };
+  if (opts.hard) query.hard = 'true';
+  const { error, response } = await client.DELETE('/v1/documents/{id}', {
+    params: { path: { id }, query },
+  });
+  if (error) {
+    const e = new Error(
+      `cascadeDeleteDocument failed (${response.status}): ${extractProblemMessage(error)}`,
+    );
+    (e as Error & { problem?: unknown }).problem = error;
+    throw e;
+  }
+}
+
+/** Hard-delete a document with no linked transactions (file + row gone).
+ *  Returns 409 `errors/document-has-links` if links exist — caller should
+ *  switch to `cascadeDeleteDocument`. */
+export async function hardDeleteDocument(id: string): Promise<void> {
+  const { error, response } = await client.DELETE('/v1/documents/{id}', {
+    params: { path: { id }, query: { hard: 'true' } },
+  });
+  if (error) {
+    const e = new Error(
+      `hardDeleteDocument failed (${response.status}): ${extractProblemMessage(error)}`,
+    );
+    (e as Error & { problem?: unknown }).problem = error;
+    throw e;
+  }
+}
+
+/** Clear `deleted_at` on a soft-deleted document. */
+export async function restoreDocument(id: string): Promise<BackendDocument> {
+  const { data, error, response } = await client.POST(
+    '/v1/documents/{id}/restore',
+    { params: { path: { id } } },
+  );
+  return unwrap('restoreDocument', data, error, response.status);
 }
 
 /** URL for `<img src="…">` / direct download. Goes through the Vite

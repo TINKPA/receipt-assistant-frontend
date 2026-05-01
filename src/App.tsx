@@ -51,7 +51,13 @@ export default function App() {
   const renderContent = () => {
     // Receipt detail view takes priority — can be opened from anywhere.
     if (selectedReceiptId) {
-      return <ReceiptDetail receiptId={selectedReceiptId} onBack={handleBackFromDetail} />;
+      return (
+        <ReceiptDetail
+          receiptId={selectedReceiptId}
+          onBack={handleBackFromDetail}
+          onAfterMutation={() => setRefreshKey((k) => k + 1)}
+        />
+      );
     }
 
     // Batch detail takes priority within the Uploads tab.

@@ -1,19 +1,23 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowLeft, Loader2, Receipt, CreditCard, Calendar, Tag, FileText, ChevronDown, ChevronUp, MapPin, Pencil, Ban, Trash2 } from 'lucide-react';
+import { ArrowLeft, Loader2, Receipt, CreditCard, Calendar, Tag, FileText, ChevronDown, ChevronUp, MapPin, Pencil, Ban, Trash2, RotateCcw } from 'lucide-react';
 import { APIProvider, Map, Marker } from '@vis.gl/react-google-maps';
 import {
   fetchReceiptDetail,
   documentContentUrl,
   extractProblemMessage,
+  getTransaction,
   toReceiptView,
   voidTransaction,
-  deleteTransaction,
+  restoreDocument,
   type ReceiptView,
   type BackendTransaction,
 } from '../lib/api';
 import { cn } from '../lib/utils';
 import EditReceiptModal from './EditReceiptModal';
 import ConfirmActionDialog from './ConfirmActionDialog';
+import DeleteReceiptDialog from './DeleteReceiptDialog';
+import DeletedBadge from './DeletedBadge';
+import { removeTombstone } from '../lib/tombstones';
 
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined;
 
@@ -31,6 +35,9 @@ const DARK_MAP_STYLES: google.maps.MapTypeStyle[] = [
 interface ReceiptDetailProps {
   receiptId: string;
   onBack: () => void;
+  /** Bumped when a delete completes so the parent's transaction list
+   *  refetches. */
+  onAfterMutation?: () => void;
 }
 
 type Metadata = Record<string, unknown>;
@@ -41,12 +48,14 @@ function md<T = unknown>(meta: Metadata | undefined, key: string): T | undefined
   return v as T | undefined;
 }
 
-export default function ReceiptDetail({ receiptId, onBack }: ReceiptDetailProps) {
+export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: ReceiptDetailProps) {
   const [receipt, setReceipt] = useState<ReceiptView | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showRawText, setShowRawText] = useState(false);
   const [activeDialog, setActiveDialog] = useState<'edit' | 'void' | 'delete' | null>(null);
+  const [restoring, setRestoring] = useState(false);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
 
   const loadReceipt = () => {
     fetchReceiptDetail(receiptId)
@@ -60,21 +69,42 @@ export default function ReceiptDetail({ receiptId, onBack }: ReceiptDetailProps)
   };
 
   const handleVoidConfirm = async (reason: string) => {
-    if (!receipt?.etag) throw new Error('No ETag — reload and retry.');
-    const updated = await voidTransaction(receipt.id, reason, receipt.etag);
-    // `voidTransaction` returns the mirror (reversing) txn, which has a
-    // different id. Refetch the current receipt so we see its new
-    // `voided` status and fresh ETag.
-    void updated;
+    if (!receipt?.etag) {
+      // ETag may be null if the row was just refetched without one;
+      // re-fetch to get a fresh one before retrying.
+      const fresh = await getTransaction(receipt!.id);
+      if (!fresh.etag) throw new Error('No ETag — reload and retry.');
+      const updated = await voidTransaction(receipt!.id, reason, fresh.etag);
+      void updated;
+    } else {
+      const updated = await voidTransaction(receipt.id, reason, receipt.etag);
+      void updated;
+    }
     setActiveDialog(null);
     loadReceipt();
+    onAfterMutation?.();
   };
 
-  const handleDeleteConfirm = async () => {
-    if (!receipt?.etag) throw new Error('No ETag — reload and retry.');
-    await deleteTransaction(receipt.id, receipt.etag);
+  const handleDeleted = () => {
     setActiveDialog(null);
+    onAfterMutation?.();
     onBack();
+  };
+
+  const handleRestore = async () => {
+    if (!receipt?.documentId) return;
+    setRestoring(true);
+    setRestoreError(null);
+    try {
+      await restoreDocument(receipt.documentId);
+      removeTombstone(receipt.documentId);
+      onAfterMutation?.();
+      loadReceipt();
+    } catch (err: unknown) {
+      setRestoreError(extractProblemMessage(err));
+    } finally {
+      setRestoring(false);
+    }
   };
 
   useEffect(() => {
@@ -145,19 +175,39 @@ export default function ReceiptDetail({ receiptId, onBack }: ReceiptDetailProps)
   );
   const merchantLabel = receipt.payee ?? receipt.narration ?? 'Unknown';
 
-  const canDelete = receipt.status === 'draft' || receipt.status === 'error';
+  const canDelete = receipt.status !== 'voided';
   const canVoid = receipt.status === 'posted' || receipt.status === 'reconciled';
   const canEdit = receipt.status !== 'voided';
+
+  const primaryDoc = receipt.documents.find((d) => d.id === receipt.documentId) ?? receipt.documents[0];
+  const docDeletedAt = (primaryDoc as { deleted_at?: string | null } | undefined)?.deleted_at ?? null;
+  const isTombstoned = docDeletedAt != null;
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700 max-w-4xl">
       <div className="flex items-center justify-between gap-4 flex-wrap">
-        <button onClick={onBack} className="flex items-center gap-2 text-primary font-bold hover:opacity-80 transition-opacity">
-          <ArrowLeft size={20} />
-          Back to transactions
-        </button>
+        <div className="flex items-center gap-3 flex-wrap">
+          <button onClick={onBack} className="flex items-center gap-2 text-primary font-bold hover:opacity-80 transition-opacity">
+            <ArrowLeft size={20} />
+            Back to transactions
+          </button>
+          {isTombstoned && <DeletedBadge deletedAt={docDeletedAt} />}
+        </div>
 
-        {!isProcessing && (
+        {!isProcessing && isTombstoned && (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleRestore}
+              disabled={restoring}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary/10 text-primary font-bold hover:bg-primary/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {restoring ? <Loader2 size={16} className="animate-spin" /> : <RotateCcw size={16} />}
+              Restore
+            </button>
+          </div>
+        )}
+
+        {!isProcessing && !isTombstoned && (
           <div className="flex items-center gap-2">
             <button
               onClick={() => setActiveDialog('edit')}
@@ -181,10 +231,10 @@ export default function ReceiptDetail({ receiptId, onBack }: ReceiptDetailProps)
               onClick={() => setActiveDialog('delete')}
               disabled={!canDelete}
               className="flex items-center gap-2 px-4 py-2 rounded-xl bg-error/10 text-error font-bold hover:bg-error/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-              title={canDelete ? 'Delete this draft' : 'Only draft/error receipts can be deleted — use Void instead'}
+              title={canDelete ? 'Delete this receipt' : 'Voided receipts cannot be deleted again'}
             >
               <Trash2 size={16} />
-              Delete
+              Delete...
             </button>
           </div>
         )}
@@ -197,6 +247,12 @@ export default function ReceiptDetail({ receiptId, onBack }: ReceiptDetailProps)
             <p className="text-sm font-bold text-white">Still processing...</p>
             <p className="text-xs text-on-surface-variant mt-1">Claude is reading your receipt. This page will update automatically.</p>
           </div>
+        </div>
+      )}
+
+      {restoreError && (
+        <div className="p-4 rounded-xl bg-error/10 border border-error/20 text-sm text-error">
+          Restore failed: {restoreError}
         </div>
       )}
 
@@ -387,19 +443,14 @@ export default function ReceiptDetail({ receiptId, onBack }: ReceiptDetailProps)
         onConfirm={handleVoidConfirm}
       />
 
-      <ConfirmActionDialog
+      <DeleteReceiptDialog
         isOpen={activeDialog === 'delete'}
         onClose={() => setActiveDialog(null)}
-        title="Delete this draft?"
-        message={
-          <p>
-            This permanently removes the draft transaction and unlinks any attached documents.
-            Only drafts and errored extractions can be deleted — posted receipts must be voided.
-          </p>
-        }
-        confirmLabel="Delete forever"
-        destructive
-        onConfirm={handleDeleteConfirm}
+        documentId={receipt.documentId}
+        transactionId={receipt.id}
+        transactionEtag={receipt.etag}
+        isReconciled={receipt.status === 'reconciled'}
+        onDeleted={handleDeleted}
       />
 
       {!isProcessing && confidence != null && (
