@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowLeft, Loader2, Receipt, CreditCard, Calendar, Tag, FileText, ChevronDown, ChevronUp, MapPin, Pencil, Ban, Trash2, RotateCcw } from 'lucide-react';
 import { APIProvider, Map, Marker } from '@vis.gl/react-google-maps';
 import {
   fetchReceiptDetail,
@@ -21,17 +20,6 @@ import { removeTombstone } from '../lib/tombstones';
 
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined;
 
-const DARK_MAP_STYLES: google.maps.MapTypeStyle[] = [
-  { elementType: 'geometry', stylers: [{ color: '#1f2937' }] },
-  { elementType: 'labels.text.stroke', stylers: [{ color: '#1f2937' }] },
-  { elementType: 'labels.text.fill', stylers: [{ color: '#9ca3af' }] },
-  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#374151' }] },
-  { featureType: 'road', elementType: 'labels.text.fill', stylers: [{ color: '#d1d5db' }] },
-  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#111827' }] },
-  { featureType: 'poi', elementType: 'labels.text.fill', stylers: [{ color: '#6b7280' }] },
-  { featureType: 'administrative', elementType: 'geometry.stroke', stylers: [{ color: '#4b5563' }] },
-];
-
 interface ReceiptDetailProps {
   receiptId: string;
   onBack: () => void;
@@ -48,6 +36,20 @@ function md<T = unknown>(meta: Metadata | undefined, key: string): T | undefined
   return v as T | undefined;
 }
 
+/**
+ * Receipt detail — single-entry view in Variant B (Soft / Organic).
+ * Follows docs/2026-05-10_Mockup_frontend_redesign-B-soft.html (fig.03).
+ *
+ * Functional surface is unchanged from the previous Material-3 version:
+ *   - Auto-polls every 5s while status is draft/error.
+ *   - Edit / Void / Delete / Restore actions kept (the mockup shows just
+ *     Edit + Delete; Void and Restore are conditional flows that show up
+ *     for posted/reconciled and tombstoned receipts respectively).
+ *   - Renders line items, location map, raw OCR text, extraction quality
+ *     when those metadata sub-objects exist.
+ *
+ * Data source: fetchReceiptDetail → real backend. No mocks, no fixtures.
+ */
 export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: ReceiptDetailProps) {
   const [receipt, setReceipt] = useState<ReceiptView | null>(null);
   const [loading, setLoading] = useState(true);
@@ -70,15 +72,11 @@ export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: Re
 
   const handleVoidConfirm = async (reason: string) => {
     if (!receipt?.etag) {
-      // ETag may be null if the row was just refetched without one;
-      // re-fetch to get a fresh one before retrying.
       const fresh = await getTransaction(receipt!.id);
       if (!fresh.etag) throw new Error('No ETag — reload and retry.');
-      const updated = await voidTransaction(receipt!.id, reason, fresh.etag);
-      void updated;
+      await voidTransaction(receipt!.id, reason, fresh.etag);
     } else {
-      const updated = await voidTransaction(receipt.id, reason, receipt.etag);
-      void updated;
+      await voidTransaction(receipt.id, reason, receipt.etag);
     }
     setActiveDialog(null);
     loadReceipt();
@@ -112,8 +110,7 @@ export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: Re
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [receiptId]);
 
-  // Auto-poll if the transaction is still in draft/error state — which
-  // means the extractor is either still running or needs human review.
+  // Auto-poll while extractor is still working.
   useEffect(() => {
     if (!receipt) return;
     if (receipt.status !== 'draft' && receipt.status !== 'error') return;
@@ -124,42 +121,35 @@ export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: Re
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-[60vh]">
-        <Loader2 className="animate-spin text-primary" size={32} />
-        <span className="ml-3 text-on-surface-variant">Loading receipt...</span>
+      <div className="space-y-4">
+        <Crumbs onBack={onBack} />
+        <div className="py-16 text-center">
+          <p className="font-hand text-xl text-[var(--color-ink-muted)]">loading…</p>
+        </div>
       </div>
     );
   }
 
   if (error || !receipt) {
     return (
-      <div className="space-y-6 animate-in fade-in duration-500">
-        <button onClick={onBack} className="flex items-center gap-2 text-primary font-bold hover:opacity-80 transition-opacity">
-          <ArrowLeft size={20} />
-          Back
-        </button>
-        <div className="text-center py-20 text-error">{error || 'Receipt not found'}</div>
+      <div className="space-y-4">
+        <Crumbs onBack={onBack} />
+        <div className="rounded-[18px] border border-[var(--color-rule)] bg-[var(--color-surface)] py-12 text-center text-[var(--color-stamp)]">
+          {error || 'Receipt not found'}
+        </div>
       </div>
     );
   }
 
-  // Pull extractor-stashed fields out of metadata. These are not
-  // first-class schema columns — the extraction agent writes them into
-  // `transactions.metadata` / `documents.extraction_meta`.
+  // Pull extractor-stashed fields out of metadata.
   const meta = (receipt as unknown as { documents: Array<{ extraction_meta?: Metadata }> });
   const extraction = meta.documents[0]?.extraction_meta ?? undefined;
   const txMeta = (receipt.postings[0] as unknown as { metadata?: Metadata })?.metadata;
-  const legacy: Metadata = {
-    ...(txMeta ?? {}),
-    ...(extraction ?? {}),
-  };
+  const legacy: Metadata = { ...(txMeta ?? {}), ...(extraction ?? {}) };
 
   const isProcessing = receipt.status === 'draft';
   const tax = md<number>(legacy, 'tax');
   const tip = md<number>(legacy, 'tip');
-  // Geo comes from the v1 `transactions.place` JOIN (see backend
-  // `places` table). Older transactions written before the places
-  // migration have `place: null` and render without a map block.
   const latitude = receipt.place?.lat ?? null;
   const longitude = receipt.place?.lng ?? null;
   const address = receipt.place?.formatted_address ?? md<string>(legacy, 'address');
@@ -184,235 +174,86 @@ export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: Re
   const isTombstoned = docDeletedAt != null;
 
   return (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700 max-w-4xl">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div className="flex items-center gap-3 flex-wrap">
-          <button onClick={onBack} className="flex items-center gap-2 text-primary font-bold hover:opacity-80 transition-opacity">
-            <ArrowLeft size={20} />
-            Back to transactions
-          </button>
-          {isTombstoned && <DeletedBadge deletedAt={docDeletedAt} />}
-        </div>
+    <div className="space-y-6">
+      <Crumbs onBack={onBack}>
+        {isTombstoned && <DeletedBadge deletedAt={docDeletedAt} />}
+      </Crumbs>
 
-        {!isProcessing && isTombstoned && (
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleRestore}
-              disabled={restoring}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary/10 text-primary font-bold hover:bg-primary/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              {restoring ? <Loader2 size={16} className="animate-spin" /> : <RotateCcw size={16} />}
-              Restore
-            </button>
-          </div>
-        )}
-
-        {!isProcessing && !isTombstoned && (
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setActiveDialog('edit')}
-              disabled={!canEdit}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-surface-container-high text-white font-bold hover:bg-surface-container-highest transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-              title={canEdit ? 'Edit receipt' : 'Voided receipts cannot be edited'}
-            >
-              <Pencil size={16} />
-              Edit
-            </button>
-            <button
-              onClick={() => setActiveDialog('void')}
-              disabled={!canVoid}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-surface-container-high text-white font-bold hover:bg-surface-container-highest transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-              title={canVoid ? 'Void (reverse) this receipt' : 'Only posted receipts can be voided'}
-            >
-              <Ban size={16} />
-              Void
-            </button>
-            <button
-              onClick={() => setActiveDialog('delete')}
-              disabled={!canDelete}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-error/10 text-error font-bold hover:bg-error/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-              title={canDelete ? 'Delete this receipt' : 'Voided receipts cannot be deleted again'}
-            >
-              <Trash2 size={16} />
-              Delete...
-            </button>
-          </div>
-        )}
-      </div>
+      <TitleBlock
+        date={receipt.occurred_on}
+        merchant={isProcessing ? 'Processing…' : merchantLabel}
+        sub={isProcessing ? null : receiptSubLine(receipt, address)}
+      />
 
       {isProcessing && (
-        <div className="flex items-center gap-4 p-5 rounded-xl bg-tertiary/10 border border-tertiary/20">
-          <Loader2 className="animate-spin text-tertiary" size={24} />
-          <div>
-            <p className="text-sm font-bold text-white">Still processing...</p>
-            <p className="text-xs text-on-surface-variant mt-1">Claude is reading your receipt. This page will update automatically.</p>
-          </div>
-        </div>
+        <ProcessingNote />
       )}
 
       {restoreError && (
-        <div className="p-4 rounded-xl bg-error/10 border border-error/20 text-sm text-error">
-          Restore failed: {restoreError}
-        </div>
-      )}
-
-      {/* Header */}
-      <div className="glass-panel rounded-xl p-8 border border-outline-variant/10">
-        <div className="flex items-start justify-between">
-          <div>
-            <p className="text-xs text-on-surface-variant uppercase tracking-widest mb-2">Merchant</p>
-            <h2 className="text-3xl font-extrabold text-white font-headline">
-              {isProcessing ? 'Processing...' : merchantLabel}
-            </h2>
-            <div className="flex items-center gap-6 mt-4 text-sm text-on-surface-variant">
-              <span className="flex items-center gap-2">
-                <Calendar size={16} />
-                {isProcessing ? '--' : receipt.occurred_on}
-              </span>
-              {receipt.category && (
-                <span className="flex items-center gap-2">
-                  <Tag size={16} />
-                  {receipt.category}
-                </span>
-              )}
-              {receipt.paymentMethod && (
-                <span className="flex items-center gap-2">
-                  <CreditCard size={16} />
-                  {receipt.paymentMethod.replace('_', ' ')}
-                </span>
-              )}
-            </div>
-          </div>
-          <div className="text-right">
-            <p className="text-xs text-on-surface-variant uppercase tracking-widest mb-2">Total</p>
-            <p className="text-4xl font-extrabold text-white font-headline">
-              {isProcessing ? '--' : `$${receipt.total.toFixed(2)}`}
-            </p>
-            <p className="text-sm text-on-surface-variant mt-1">{receipt.currency}</p>
-          </div>
-        </div>
-
-        {!isProcessing && ((tax != null && tax > 0) || (tip != null && tip > 0)) && (
-          <div className="flex gap-6 mt-6 pt-6 border-t border-outline-variant/10">
-            {tax != null && tax > 0 && (
-              <div>
-                <p className="text-xs text-on-surface-variant uppercase tracking-widest">Tax</p>
-                <p className="text-lg font-bold text-white">${tax.toFixed(2)}</p>
-              </div>
-            )}
-            {tip != null && tip > 0 && (
-              <div>
-                <p className="text-xs text-on-surface-variant uppercase tracking-widest">Tip</p>
-                <p className="text-lg font-bold text-white">${tip.toFixed(2)}</p>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {!isProcessing && items && items.length > 0 && (
-        <div className="glass-panel rounded-xl border border-outline-variant/10 overflow-hidden">
-          <div className="px-8 py-5 border-b border-outline-variant/10">
-            <h3 className="font-headline font-bold text-white flex items-center gap-2">
-              <Receipt size={18} />
-              Line Items ({items.length})
-            </h3>
-          </div>
-          <table className="w-full text-left">
-            <thead>
-              <tr className="bg-surface-container-low/50">
-                <th className="px-8 py-3 text-xs font-bold text-on-surface-variant uppercase tracking-widest">Item</th>
-                <th className="px-8 py-3 text-xs font-bold text-on-surface-variant uppercase tracking-widest text-center">Qty</th>
-                <th className="px-8 py-3 text-xs font-bold text-on-surface-variant uppercase tracking-widest text-right">Unit Price</th>
-                <th className="px-8 py-3 text-xs font-bold text-on-surface-variant uppercase tracking-widest text-right">Total</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-outline-variant/5">
-              {items.map((item, i) => (
-                <tr key={i} className="hover:bg-surface-container-high/20 transition-colors">
-                  <td className="px-8 py-4 text-sm font-medium text-white">{item.name}</td>
-                  <td className="px-8 py-4 text-sm text-on-surface-variant text-center">{item.quantity ?? 1}</td>
-                  <td className="px-8 py-4 text-sm text-on-surface-variant text-right">
-                    {item.unit_price != null ? `$${item.unit_price.toFixed(2)}` : '--'}
-                  </td>
-                  <td className="px-8 py-4 text-sm font-bold text-white text-right">
-                    {item.total_price != null ? `$${item.total_price.toFixed(2)}` : '--'}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <Banner tone="error">Restore failed: {restoreError}</Banner>
       )}
 
       {!isProcessing && receipt.documentId && (
-        <div className="glass-panel rounded-xl p-6 border border-outline-variant/10">
-          <h3 className="font-headline font-bold text-white mb-4">Receipt Image</h3>
-          <img
-            src={documentContentUrl(receipt.documentId)}
-            alt="Receipt"
-            className="max-w-full max-h-[500px] rounded-lg object-contain mx-auto"
-            onError={(e) => {
-              (e.target as HTMLImageElement).style.display = 'none';
-            }}
-          />
-        </div>
+        <ReceiptImageCard documentId={receipt.documentId} />
+      )}
+
+      {receipt.narration && !isProcessing && (
+        <NoteCard text={receipt.narration} />
+      )}
+
+      <FieldsGrid
+        total={receipt.total}
+        currency={receipt.currency}
+        category={receipt.category}
+        payment={receipt.paymentMethod ?? null}
+        tax={tax}
+        tip={tip}
+        isProcessing={isProcessing}
+      />
+
+      {!isProcessing && items && items.length > 0 && (
+        <LineItemsCard items={items} />
       )}
 
       {!isProcessing && latitude != null && longitude != null && GOOGLE_MAPS_API_KEY && (
-        <div className="glass-panel rounded-xl p-6 border border-outline-variant/10">
-          <h3 className="font-headline font-bold text-white mb-4 flex items-center gap-2">
-            <MapPin size={18} />
-            Location
-          </h3>
-          {address && (
-            <p className="text-sm text-on-surface-variant mb-3">{address}</p>
-          )}
-          <div className="h-[300px] rounded-lg overflow-hidden">
-            <APIProvider apiKey={GOOGLE_MAPS_API_KEY}>
-              <Map
-                defaultCenter={{ lat: latitude, lng: longitude }}
-                defaultZoom={15}
-                gestureHandling="cooperative"
-                disableDefaultUI={false}
-                styles={DARK_MAP_STYLES}
-              >
-                <Marker position={{ lat: latitude, lng: longitude }} />
-              </Map>
-            </APIProvider>
-          </div>
-        </div>
-      )}
-
-      {receipt.narration && (
-        <div className="glass-panel rounded-xl p-6 border border-outline-variant/10">
-          <h3 className="font-headline font-bold text-white mb-2">Notes</h3>
-          <p className="text-sm text-on-surface-variant">{receipt.narration}</p>
-        </div>
+        <LocationCard
+          lat={latitude}
+          lng={longitude}
+          address={address}
+          apiKey={GOOGLE_MAPS_API_KEY}
+        />
       )}
 
       {!isProcessing && rawText && (
-        <div className="glass-panel rounded-xl border border-outline-variant/10 overflow-hidden">
-          <button
-            onClick={() => setShowRawText(!showRawText)}
-            className="w-full px-6 py-4 flex items-center justify-between hover:bg-surface-container-high/30 transition-colors"
-          >
-            <span className="font-headline font-bold text-white flex items-center gap-2">
-              <FileText size={18} />
-              Raw Text
-            </span>
-            {showRawText ? <ChevronUp size={18} className="text-on-surface-variant" /> : <ChevronDown size={18} className="text-on-surface-variant" />}
-          </button>
-          {showRawText && (
-            <div className="px-6 pb-6">
-              <pre className="text-xs text-on-surface-variant whitespace-pre-wrap font-mono bg-surface-container-lowest rounded-lg p-4">
-                {rawText}
-              </pre>
-            </div>
-          )}
-        </div>
+        <RawTextCard
+          text={rawText}
+          open={showRawText}
+          onToggle={() => setShowRawText((s) => !s)}
+        />
       )}
 
+      {!isProcessing && confidence != null && (
+        <ExtractionQualityCard
+          confidence={confidence}
+          warnings={warnings}
+        />
+      )}
+
+      {/* Actions */}
+      <Actions
+        isProcessing={isProcessing}
+        isTombstoned={isTombstoned}
+        canEdit={canEdit}
+        canVoid={canVoid}
+        canDelete={canDelete}
+        restoring={restoring}
+        onEdit={() => setActiveDialog('edit')}
+        onVoid={() => setActiveDialog('void')}
+        onDelete={() => setActiveDialog('delete')}
+        onRestore={handleRestore}
+      />
+
+      {/* Dialogs */}
       <EditReceiptModal
         isOpen={activeDialog === 'edit'}
         onClose={() => setActiveDialog(null)}
@@ -431,7 +272,7 @@ export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: Re
               Voiding creates a reversing entry in the ledger — the original transaction stays,
               but its balance cancels out. Use this for posted receipts you can't simply delete.
             </p>
-            <p className="mt-2 text-xs text-on-surface-variant/70">
+            <p className="mt-2 text-xs text-[var(--color-ink-muted)]">
               This action can be reversed only by creating a new offsetting transaction.
             </p>
           </>
@@ -452,35 +293,482 @@ export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: Re
         isReconciled={receipt.status === 'reconciled'}
         onDeleted={handleDeleted}
       />
+    </div>
+  );
+}
 
-      {!isProcessing && confidence != null && (
-        <div className="glass-panel rounded-xl p-6 border border-outline-variant/10">
-          <h3 className="font-headline font-bold text-white mb-3">Extraction Quality</h3>
-          <div className="flex flex-wrap gap-4 text-sm">
-            <div>
-              <p className="text-xs text-on-surface-variant uppercase tracking-widest">Confidence</p>
-              <p className={cn(
-                "font-bold",
-                confidence >= 0.7 ? 'text-primary' : 'text-error',
-              )}>
-                {(confidence * 100).toFixed(0)}%
-              </p>
-            </div>
-            {warnings && warnings.length > 0 && (
-              <div>
-                <p className="text-xs text-on-surface-variant uppercase tracking-widest">Warnings</p>
-                <div className="flex flex-wrap gap-1 mt-1">
-                  {warnings.map((w, i) => (
-                    <span key={i} className="px-2 py-0.5 rounded bg-error/10 text-error text-[10px] font-bold uppercase">
-                      {w}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
+/* ── Pieces ───────────────────────────────────────────────────── */
+
+function Crumbs({
+  onBack,
+  children,
+}: {
+  onBack: () => void;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center justify-between text-[11px] tracking-[0.16em] uppercase text-[var(--color-ink-muted)]">
+      <button
+        type="button"
+        onClick={onBack}
+        className="flex items-center gap-2 hover:text-[var(--color-ink)] transition-colors"
+      >
+        <span className="font-display italic text-lg leading-none text-[var(--color-terracotta)]">
+          ←
+        </span>
+        Ledger
+      </button>
+      {children}
+    </div>
+  );
+}
+
+function TitleBlock({
+  date,
+  merchant,
+  sub,
+}: {
+  date: string;
+  merchant: string;
+  sub: string | null;
+}) {
+  return (
+    <div>
+      <p className="font-hand text-xl text-[var(--color-terracotta)] leading-none">
+        {timeOfDayPhrase(date)}
+      </p>
+      <h1 className="mt-2 font-display italic font-medium text-3xl sm:text-4xl leading-[1.05] tracking-tight">
+        {merchant}
+      </h1>
+      {sub && (
+        <p className="mt-2 font-display italic text-[15px] text-[var(--color-ink-muted)]">
+          {sub}
+        </p>
       )}
     </div>
   );
+}
+
+function ReceiptImageCard({ documentId }: { documentId: string }) {
+  return (
+    <div
+      className="rounded-[18px] border border-[var(--color-rule)] overflow-hidden p-4"
+      style={{
+        background:
+          'linear-gradient(180deg, rgba(245, 230, 195, 0.4) 0%, rgba(201, 123, 92, 0.06) 100%), var(--color-surface)',
+      }}
+    >
+      <img
+        src={documentContentUrl(documentId)}
+        alt="Receipt"
+        className="block max-w-full max-h-[500px] object-contain mx-auto rounded-[10px]"
+        onError={(e) => {
+          (e.target as HTMLImageElement).style.display = 'none';
+        }}
+      />
+      <p className="mt-3 font-display italic text-xs text-[var(--color-ink-muted)] text-center">
+        fig. — original receipt, scanned.
+      </p>
+    </div>
+  );
+}
+
+function NoteCard({ text }: { text: string }) {
+  return (
+    <div
+      className="relative rounded-[16px] px-4 py-4 leading-snug"
+      style={{ background: 'var(--color-butter)' }}
+    >
+      <span
+        className={cn(
+          'absolute -top-2 left-4 inline-block rounded-full px-2 py-[3px]',
+          'bg-[var(--color-terracotta)] text-white',
+          'text-[10px] font-medium tracking-[0.16em] uppercase',
+        )}
+      >
+        your note
+      </span>
+      <p className="font-hand text-lg text-[var(--color-ink)]">{text}</p>
+    </div>
+  );
+}
+
+function FieldsGrid({
+  total,
+  currency,
+  category,
+  payment,
+  tax,
+  tip,
+  isProcessing,
+}: {
+  total: number;
+  currency: string;
+  category: string | null;
+  payment: string | null;
+  tax: number | undefined;
+  tip: number | undefined;
+  isProcessing: boolean;
+}) {
+  return (
+    <div className="grid grid-cols-2 gap-3">
+      <div
+        className={cn(
+          'col-span-2 rounded-[16px] px-5 py-4',
+          'bg-[var(--color-terracotta)] text-white',
+        )}
+      >
+        <p className="text-[11px] font-medium tracking-[0.16em] uppercase text-white/70">
+          Total
+        </p>
+        <p className="mt-1 font-display italic font-medium text-[2rem] leading-none tnum">
+          {isProcessing ? '—' : `$${total.toFixed(2)}`}
+        </p>
+        <p className="mt-1 text-[11px] tracking-[0.12em] uppercase text-white/70">
+          {currency}
+        </p>
+      </div>
+
+      {tax != null && tax > 0 && (
+        <SmallFieldCard label="Tax" value={`$${tax.toFixed(2)}`} numeric />
+      )}
+      {tip != null && tip > 0 && (
+        <SmallFieldCard label="Tip" value={`$${tip.toFixed(2)}`} numeric />
+      )}
+      {payment && (
+        <SmallFieldCard
+          label="Payment"
+          value={payment.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
+        />
+      )}
+      {category && (
+        <SmallFieldCard label="Category" value={category} />
+      )}
+    </div>
+  );
+}
+
+function SmallFieldCard({
+  label,
+  value,
+  numeric = false,
+}: {
+  label: string;
+  value: string;
+  numeric?: boolean;
+}) {
+  return (
+    <div className="rounded-[14px] border border-[var(--color-rule)] bg-[var(--color-surface)] px-4 py-3">
+      <p className="text-[11px] font-medium tracking-[0.14em] uppercase text-[var(--color-ink-muted)]">
+        {label}
+      </p>
+      <p
+        className={cn(
+          'mt-1 text-[15px] font-medium',
+          numeric && 'font-display italic font-medium text-lg tnum',
+        )}
+      >
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function LineItemsCard({
+  items,
+}: {
+  items: Array<{ name: string; quantity?: number; unit_price?: number; total_price?: number }>;
+}) {
+  return (
+    <div className="rounded-[18px] border border-[var(--color-rule)] bg-[var(--color-surface)] overflow-hidden">
+      <div className="px-5 py-4 border-b border-[var(--color-rule)]">
+        <h3 className="font-display italic font-medium text-lg leading-none">
+          Items <span className="text-[var(--color-ink-muted)]">({items.length})</span>
+        </h3>
+      </div>
+      <ul className="divide-y divide-[var(--color-rule-soft)]">
+        {items.map((item, i) => (
+          <li
+            key={i}
+            className="grid grid-cols-[1fr_auto_auto] items-baseline gap-4 px-5 py-3"
+          >
+            <span className="text-sm font-medium truncate">{item.name}</span>
+            <span className="text-xs text-[var(--color-ink-muted)] tnum">
+              {item.quantity ?? 1}×
+            </span>
+            <span className="font-display italic font-medium text-base tnum">
+              {item.total_price != null ? `$${item.total_price.toFixed(2)}` : '—'}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function LocationCard({
+  lat,
+  lng,
+  address,
+  apiKey,
+}: {
+  lat: number;
+  lng: number;
+  address: string | undefined;
+  apiKey: string;
+}) {
+  return (
+    <div className="rounded-[18px] border border-[var(--color-rule)] bg-[var(--color-surface)] overflow-hidden">
+      <div className="px-5 py-4 border-b border-[var(--color-rule)]">
+        <h3 className="font-display italic font-medium text-lg leading-none">Where</h3>
+        {address && (
+          <p className="mt-1 text-sm text-[var(--color-ink-muted)]">{address}</p>
+        )}
+      </div>
+      <div className="h-[280px]">
+        <APIProvider apiKey={apiKey}>
+          <Map
+            defaultCenter={{ lat, lng }}
+            defaultZoom={15}
+            gestureHandling="cooperative"
+            disableDefaultUI={false}
+          >
+            <Marker position={{ lat, lng }} />
+          </Map>
+        </APIProvider>
+      </div>
+    </div>
+  );
+}
+
+function RawTextCard({
+  text,
+  open,
+  onToggle,
+}: {
+  text: string;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div className="rounded-[18px] border border-[var(--color-rule)] bg-[var(--color-surface)] overflow-hidden">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="w-full px-5 py-4 flex items-center justify-between text-left hover:bg-[var(--color-paper-deep)]/30 transition-colors"
+      >
+        <span className="font-display italic font-medium text-lg leading-none">
+          Raw OCR text
+        </span>
+        <span className="font-hand text-base text-[var(--color-terracotta)]">
+          {open ? 'hide' : 'show ↓'}
+        </span>
+      </button>
+      {open && (
+        <pre className="px-5 pb-5 text-xs text-[var(--color-ink-muted)] whitespace-pre-wrap font-mono">
+          {text}
+        </pre>
+      )}
+    </div>
+  );
+}
+
+function ExtractionQualityCard({
+  confidence,
+  warnings,
+}: {
+  confidence: number;
+  warnings: string[] | undefined;
+}) {
+  const isHigh = confidence >= 0.7;
+  return (
+    <div className="rounded-[18px] border border-[var(--color-rule)] bg-[var(--color-surface)] px-5 py-4">
+      <h3 className="font-display italic font-medium text-lg leading-none mb-3">
+        Extraction
+      </h3>
+      <div className="flex flex-wrap gap-6">
+        <div>
+          <p className="text-[11px] font-medium tracking-[0.14em] uppercase text-[var(--color-ink-muted)]">
+            Confidence
+          </p>
+          <p
+            className={cn(
+              'mt-1 font-display italic font-medium text-xl tnum',
+              isHigh ? 'text-[var(--color-sage)]' : 'text-[var(--color-stamp)]',
+            )}
+          >
+            {(confidence * 100).toFixed(0)}%
+          </p>
+        </div>
+        {warnings && warnings.length > 0 && (
+          <div>
+            <p className="text-[11px] font-medium tracking-[0.14em] uppercase text-[var(--color-ink-muted)]">
+              Warnings
+            </p>
+            <div className="mt-1 flex flex-wrap gap-1">
+              {warnings.map((w, i) => (
+                <span
+                  key={i}
+                  className="px-2 py-0.5 rounded-full bg-[var(--color-stamp)]/10 text-[var(--color-stamp)] text-[10px] tracking-[0.08em] uppercase"
+                >
+                  {w}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ProcessingNote() {
+  return (
+    <div
+      className={cn(
+        'rounded-[16px] px-4 py-4 flex items-start gap-3',
+        'border border-[var(--color-rule)] bg-[var(--color-butter)]/40',
+      )}
+    >
+      <span
+        aria-hidden="true"
+        className="mt-1 inline-block h-2.5 w-2.5 rounded-full bg-[var(--color-terracotta)] animate-pulse"
+      />
+      <div>
+        <p className="font-display italic font-medium">Still reading your receipt</p>
+        <p className="mt-1 text-sm text-[var(--color-ink-muted)]">
+          Claude is extracting fields — this page will refresh on its own.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function Banner({
+  tone,
+  children,
+}: {
+  tone: 'error';
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      className={cn(
+        'rounded-[16px] px-4 py-3 text-sm',
+        tone === 'error'
+          ? 'border border-[var(--color-stamp)]/30 bg-[var(--color-stamp)]/5 text-[var(--color-stamp)]'
+          : '',
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
+function Actions({
+  isProcessing,
+  isTombstoned,
+  canEdit,
+  canVoid,
+  canDelete,
+  restoring,
+  onEdit,
+  onVoid,
+  onDelete,
+  onRestore,
+}: {
+  isProcessing: boolean;
+  isTombstoned: boolean;
+  canEdit: boolean;
+  canVoid: boolean;
+  canDelete: boolean;
+  restoring: boolean;
+  onEdit: () => void;
+  onVoid: () => void;
+  onDelete: () => void;
+  onRestore: () => void;
+}) {
+  if (isProcessing) return null;
+  if (isTombstoned) {
+    return (
+      <div className="pt-2">
+        <button
+          type="button"
+          onClick={onRestore}
+          disabled={restoring}
+          className={cn(
+            'w-full rounded-[14px] py-3 text-sm font-medium tracking-[0.14em] uppercase',
+            'bg-[var(--color-terracotta)] text-white hover:bg-[var(--color-terracotta-deep)]',
+            'transition-colors disabled:opacity-50 disabled:cursor-not-allowed',
+          )}
+        >
+          {restoring ? 'Restoring…' : 'Restore receipt'}
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div className="grid grid-cols-2 gap-3 pt-2">
+      <button
+        type="button"
+        onClick={onDelete}
+        disabled={!canDelete}
+        className={cn(
+          'rounded-[14px] py-3 text-sm font-medium tracking-[0.14em] uppercase',
+          'border border-[var(--color-rule)] bg-[var(--color-surface)] text-[var(--color-ink)]',
+          'hover:border-[var(--color-stamp)]/40 hover:text-[var(--color-stamp)]',
+          'transition-colors disabled:opacity-40 disabled:cursor-not-allowed',
+        )}
+      >
+        Delete…
+      </button>
+      <button
+        type="button"
+        onClick={onEdit}
+        disabled={!canEdit}
+        className={cn(
+          'rounded-[14px] py-3 text-sm font-medium tracking-[0.14em] uppercase',
+          'bg-[var(--color-ink)] text-[var(--color-paper)] hover:bg-[#3a322c]',
+          'transition-colors disabled:opacity-40 disabled:cursor-not-allowed',
+        )}
+      >
+        Edit fields
+      </button>
+      {canVoid && (
+        <button
+          type="button"
+          onClick={onVoid}
+          className={cn(
+            'col-span-2 rounded-[14px] py-2 text-xs font-medium tracking-[0.14em] uppercase',
+            'text-[var(--color-ink-muted)] hover:text-[var(--color-stamp)] transition-colors',
+          )}
+        >
+          Void (post a reversing entry) →
+        </button>
+      )}
+    </div>
+  );
+}
+
+/* ── Helpers ──────────────────────────────────────────────────── */
+
+function timeOfDayPhrase(isoDate: string): string {
+  const [y, m, d] = isoDate.split('-').map(Number);
+  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return isoDate;
+  const dt = new Date(y, m - 1, d);
+  const dow = dt.toLocaleString('en-US', { weekday: 'long' }).toLowerCase();
+  return `${dow}, ${dt.toLocaleString('en-US', { month: 'long' }).toLowerCase()} ${d}`;
+}
+
+function receiptSubLine(receipt: ReceiptView, address: string | undefined): string | null {
+  const bits: string[] = [];
+  if (address) {
+    // Keep just the first comma-separated chunk for the title — full address
+    // shows up in the LocationCard.
+    bits.push(address.split(',')[0].trim());
+  }
+  if (receipt.category) {
+    bits.push(receipt.category);
+  }
+  return bits.length > 0 ? bits.join(' · ') : null;
 }
