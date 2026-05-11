@@ -1,5 +1,6 @@
 import React from 'react';
 import Layout from './components/Layout';
+import type { DockDestination } from './components/FloatingDock';
 import Dashboard from './components/Dashboard';
 import Transactions from './components/Transactions';
 import MonthlyReview from './components/MonthlyReview';
@@ -11,11 +12,26 @@ import ProcessingToast from './components/ProcessingToast';
 import { useProcessingJobs } from './components/useProcessingJobs';
 import ReceiptDetail from './components/ReceiptDetail';
 import BuildInfoPanel from './components/BuildInfoPanel';
-import { buildInfo as frontendBuildInfo } from './generated/buildInfo';
 import { fetchBackendBuildInfo, type BuildInfo } from './lib/api';
 
+type ActiveTab =
+  | 'dashboard'
+  | 'transactions'
+  | 'batches'
+  | 'monthly'
+  | 'yearly'
+  | 'settings';
+
+/** Map App.tsx's fine-grained tab state onto the 3-pill dock. */
+function dockDestinationFor(tab: ActiveTab): DockDestination {
+  if (tab === 'monthly' || tab === 'yearly') return 'review';
+  // dashboard / transactions / batches / settings → Books
+  // Settings is reached from a Books-page utility, not a dock pill (DESIGN.md §9 — 3 dest only).
+  return 'books';
+}
+
 export default function App() {
-  const [activeTab, setActiveTab] = React.useState('dashboard');
+  const [activeTab, setActiveTab] = React.useState<ActiveTab>('dashboard');
   const [isModalOpen, setIsModalOpen] = React.useState(false);
   const [refreshKey, setRefreshKey] = React.useState(0);
   const [selectedReceiptId, setSelectedReceiptId] = React.useState<string | null>(null);
@@ -33,24 +49,27 @@ export default function App() {
     setRefreshKey((k) => k + 1);
   };
 
-  const handleSelectReceipt = (receiptId: string) => {
-    setSelectedReceiptId(receiptId);
-  };
-
-  const handleBackFromDetail = () => {
+  const goToTab = (tab: ActiveTab) => {
     setSelectedReceiptId(null);
-  };
-
-  const handleSelectBatch = (batchId: string) => {
-    setSelectedBatchId(batchId);
-  };
-
-  const handleBackFromBatch = () => {
     setSelectedBatchId(null);
+    setTransactionsSearch('');
+    setActiveTab(tab);
   };
+
+  const handleDockNavigate = (dest: 'books' | 'review') => {
+    if (dest === 'books') {
+      goToTab('dashboard');
+    } else {
+      goToTab('monthly');
+    }
+  };
+
+  const handleSelectReceipt = (receiptId: string) => setSelectedReceiptId(receiptId);
+  const handleBackFromDetail = () => setSelectedReceiptId(null);
+  const handleSelectBatch = (batchId: string) => setSelectedBatchId(batchId);
+  const handleBackFromBatch = () => setSelectedBatchId(null);
 
   const renderContent = () => {
-    // Receipt detail view takes priority — can be opened from anywhere.
     if (selectedReceiptId) {
       return (
         <ReceiptDetail
@@ -61,7 +80,6 @@ export default function App() {
       );
     }
 
-    // Batch detail takes priority within the Uploads tab.
     if (activeTab === 'batches' && selectedBatchId) {
       return (
         <BatchDetail
@@ -98,44 +116,27 @@ export default function App() {
         return <YearlyReview />;
       case 'settings':
         return (
-          <div className="space-y-6 animate-in fade-in duration-700">
+          <div className="space-y-6">
             <div className="space-y-2">
-              <h2 className="text-2xl font-bold text-white font-headline">Build & Deploy Info</h2>
-              <p className="text-on-surface-variant max-w-2xl">Use this to verify exactly which frontend and backend build is currently deployed.</p>
+              <h2 className="font-display text-3xl italic font-medium tracking-tight">Build &amp; Deploy</h2>
+              <p className="text-[color:var(--color-ink-muted)] max-w-2xl">
+                Verify which frontend and backend build is currently deployed.
+              </p>
             </div>
             <BuildInfoPanel backendBuildInfo={backendBuildInfo} />
           </div>
         );
       default:
-        return (
-          <Dashboard
-            key={refreshKey}
-            onSelectReceipt={handleSelectReceipt}
-            onViewAllTransactions={() => setActiveTab('transactions')}
-          />
-        );
+        return null;
     }
   };
 
   return (
     <>
       <Layout
-        activeTab={activeTab}
-        onTabChange={(tab) => {
-          setSelectedReceiptId(null);
-          setSelectedBatchId(null);
-          setTransactionsSearch('');
-          setActiveTab(tab);
-        }}
+        dockActive={dockDestinationFor(activeTab)}
+        onDockNavigate={handleDockNavigate}
         onAddTransaction={() => setIsModalOpen(true)}
-        showSearch={activeTab === 'transactions' && !selectedReceiptId}
-        searchQuery={transactionsSearch}
-        onSearchChange={setTransactionsSearch}
-        rightSlot={
-          <span className="hidden xl:inline rounded-full border border-primary/20 bg-surface-container-high px-3 py-1 text-xs font-medium text-on-surface-variant">
-            {frontendBuildInfo.gitShortSha}
-          </span>
-        }
       >
         {renderContent()}
       </Layout>
