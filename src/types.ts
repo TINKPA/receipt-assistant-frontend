@@ -1,4 +1,18 @@
-export type Category = 'Dining' | 'Transport' | 'Utilities' | 'Fun' | 'Income' | 'Shopping' | 'Housing' | 'Investments' | 'Travel' | 'Entertainment' | 'Real Estate';
+export const CATEGORIES = [
+  'Dining',
+  'Transport',
+  'Utilities',
+  'Fun',
+  'Income',
+  'Shopping',
+  'Housing',
+  'Investments',
+  'Travel',
+  'Entertainment',
+  'Real Estate',
+] as const;
+
+export type Category = typeof CATEGORIES[number];
 
 export type RawTransactionStatus =
   | 'draft'

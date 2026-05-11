@@ -382,19 +382,34 @@ export async function listTransactions(
  *  up at the top regardless of their `occurred_on` date — matches the
  *  user's mental model after upload. Reports / monthly views should
  *  call `listTransactions` directly with `sort: 'occurred_on'`. */
-export async function fetchTransactions(opts?: {
+export interface FetchTransactionsOpts {
   from?: string;
   to?: string;
   limit?: number;
   has_document?: boolean;
-}): Promise<Transaction[]> {
+  // Extended filter surface used by the Transactions tab UI.
+  q?: string;
+  status?: BackendTransaction['status'];
+  payee_contains?: string;
+  amount_min_minor?: number;
+  amount_max_minor?: number;
+  sort?: 'occurred_on' | 'amount' | 'created_at';
+  order?: 'asc' | 'desc';
+}
+
+export async function fetchTransactions(opts?: FetchTransactionsOpts): Promise<Transaction[]> {
   const { items } = await listTransactions({
     occurred_from: opts?.from,
     occurred_to: opts?.to,
     limit: opts?.limit,
     has_document: opts?.has_document,
-    sort: 'created_at',
-    order: 'desc',
+    q: opts?.q,
+    status: opts?.status,
+    payee_contains: opts?.payee_contains,
+    amount_min_minor: opts?.amount_min_minor,
+    amount_max_minor: opts?.amount_max_minor,
+    sort: opts?.sort ?? 'created_at',
+    order: opts?.order ?? 'desc',
   });
   return items.map(mapTransaction);
 }

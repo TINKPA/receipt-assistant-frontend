@@ -87,6 +87,7 @@ export default function App() {
             key={refreshKey}
             onSelectReceipt={handleSelectReceipt}
             searchQuery={transactionsSearch}
+            onClearSearch={() => setTransactionsSearch('')}
           />
         );
       case 'batches':

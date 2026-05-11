@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { TrendingDown, Filter, Utensils, Plane, Zap, Film, Landmark, ShoppingBag, Car, Loader2, Eye, EyeOff, RotateCcw, FileX } from 'lucide-react';
+import { TrendingDown, Utensils, Plane, Zap, Film, Landmark, ShoppingBag, Car, Loader2, RotateCcw, FileX } from 'lucide-react';
 import {
   fetchTransactions,
   extractProblemMessage,
@@ -11,16 +11,29 @@ import {
   type BackendDocument,
 } from '../lib/api';
 import { listTombstones, removeTombstone } from '../lib/tombstones';
+import { useDebouncedValue } from '../lib/useDebouncedValue';
 import { cn } from '../lib/utils';
 import type { Transaction } from '../types';
 import TransactionRowMenu from './TransactionRowMenu';
 import ConfirmActionDialog from './ConfirmActionDialog';
 import UnreconcileDialog from './UnreconcileDialog';
 import DeletedBadge from './DeletedBadge';
+import TransactionsFilters from './TransactionsFilters';
+import {
+  DEFAULT_FILTERS,
+  effectiveDateRange,
+  isFilterActive,
+  type FilterState,
+} from '../lib/transactionsFilterState';
 
 interface TransactionsProps {
   onSelectReceipt?: (receiptId: string) => void;
   searchQuery?: string;
+  /** Reset the top-bar search input. The search lives in App.tsx so
+   *  the table's `Clear filters` button needs a hook to reach it —
+   *  without this, the q parameter would survive a "clear all" click
+   *  even though the user clearly meant to wipe the slate. */
+  onClearSearch?: () => void;
 }
 
 interface TombstoneRow {
@@ -29,7 +42,7 @@ interface TombstoneRow {
   doc?: BackendDocument;
 }
 
-export default function Transactions({ onSelectReceipt, searchQuery = '' }: TransactionsProps) {
+export default function Transactions({ onSelectReceipt, searchQuery = '', onClearSearch }: TransactionsProps) {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -45,13 +58,57 @@ export default function Transactions({ onSelectReceipt, searchQuery = '' }: Tran
   const [tombstones, setTombstones] = useState<TombstoneRow[]>([]);
   const [tombstoneLoading, setTombstoneLoading] = useState(false);
 
+  // Filter state. Server-side filters (date, status, payee, amount, q)
+  // trigger a re-fetch via the effect below; category filtering is
+  // applied client-side over the loaded page because the backend has
+  // no first-class category column.
+  const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
+  const debouncedSearch = useDebouncedValue(searchQuery, 300);
+  const debouncedPayee = useDebouncedValue(filters.payeeContains, 300);
+  const debouncedAmountMin = useDebouncedValue(filters.amountMinDollars, 300);
+  const debouncedAmountMax = useDebouncedValue(filters.amountMaxDollars, 300);
+
+  // Stable per-filter-state derived range used in deps.
+  const dateRange = useMemo(() => effectiveDateRange(filters), [filters]);
+
+  const hasActiveFilter = isFilterActive(filters, searchQuery);
+
   useEffect(() => {
     setLoading(true);
-    fetchTransactions({ limit: 50, has_document: true })
-      .then(setTransactions)
+    const dollarsToMinor = (s: string): number | undefined => {
+      const trimmed = s.trim();
+      if (!trimmed) return undefined;
+      const n = Number(trimmed);
+      if (!Number.isFinite(n)) return undefined;
+      return Math.round(n * 100);
+    };
+    fetchTransactions({
+      limit: 50,
+      has_document: true,
+      q: debouncedSearch.trim() || undefined,
+      status: filters.status,
+      payee_contains: debouncedPayee.trim() || undefined,
+      amount_min_minor: dollarsToMinor(debouncedAmountMin),
+      amount_max_minor: dollarsToMinor(debouncedAmountMax),
+      from: dateRange.occurred_from,
+      to: dateRange.occurred_to,
+    })
+      .then((rows) => {
+        setTransactions(rows);
+        setError(null);
+      })
       .catch((e: unknown) => setError(extractProblemMessage(e)))
       .finally(() => setLoading(false));
-  }, [refreshKey]);
+  }, [
+    refreshKey,
+    debouncedSearch,
+    debouncedPayee,
+    debouncedAmountMin,
+    debouncedAmountMax,
+    filters.status,
+    dateRange.occurred_from,
+    dateRange.occurred_to,
+  ]);
 
   useEffect(() => {
     if (!showDeleted) {
@@ -91,23 +148,14 @@ export default function Transactions({ onSelectReceipt, searchQuery = '' }: Tran
       .finally(() => setTombstoneLoading(false));
   }, [showDeleted, refreshKey]);
 
+  // Server-side filters (q, date, status, payee, amount) already
+  // narrowed the result set; this memo only applies the client-side
+  // category filter on top.
   const filteredTransactions = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return transactions;
-    return transactions.filter((tx) => {
-      const haystack = [
-        tx.description,
-        tx.category,
-        tx.date,
-        tx.paymentMethod,
-        tx.status,
-      ]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase();
-      return haystack.includes(q);
-    });
-  }, [transactions, searchQuery]);
+    if (filters.categories.length === 0) return transactions;
+    const set = new Set<string>(filters.categories);
+    return transactions.filter((tx) => set.has(tx.category));
+  }, [transactions, filters.categories]);
 
   const totalExpenses = filteredTransactions
     .filter((tx) => tx.amount < 0)
@@ -211,30 +259,18 @@ export default function Transactions({ onSelectReceipt, searchQuery = '' }: Tran
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-4">
-        <div className="bg-surface-container-high px-4 py-2 rounded-xl flex items-center gap-3 border border-outline-variant/15 text-sm font-medium text-white">
-          <span className="text-on-surface-variant">Date:</span> All Time
-        </div>
-        <div className="bg-surface-container-high px-4 py-2 rounded-xl flex items-center gap-3 border border-outline-variant/15 text-sm font-medium text-white">
-          <span className="text-on-surface-variant">Category:</span> All
-        </div>
-        <button
-          data-testid="toggle-show-deleted"
-          onClick={() => setShowDeleted((s) => !s)}
-          className={cn(
-            'px-4 py-2 rounded-xl flex items-center gap-2 border text-sm font-medium transition-colors',
-            showDeleted
-              ? 'bg-error/10 border-error/30 text-error'
-              : 'bg-surface-container-high border-outline-variant/15 text-white hover:border-outline-variant/30',
-          )}
-        >
-          {showDeleted ? <EyeOff size={16} /> : <Eye size={16} />}
-          {showDeleted ? 'Hide deleted' : 'Show deleted'}
-        </button>
-        <button className="ml-auto flex items-center gap-2 text-primary font-bold text-sm hover:opacity-80 transition-opacity">
-          <Filter size={16} />
-          More Filters
-        </button>
+      <div className="space-y-4">
+        <TransactionsFilters
+          filters={filters}
+          onChange={setFilters}
+          hasActiveFilter={hasActiveFilter}
+          onClear={() => {
+            setFilters(DEFAULT_FILTERS);
+            onClearSearch?.();
+          }}
+          showDeleted={showDeleted}
+          onToggleShowDeleted={() => setShowDeleted((s) => !s)}
+        />
       </div>
 
       {rowError && (
@@ -317,10 +353,16 @@ export default function Transactions({ onSelectReceipt, searchQuery = '' }: Tran
           </div>
         ) : error ? (
           <div className="text-center py-20 text-error">{error}</div>
-        ) : transactions.length === 0 ? (
-          <div className="text-center py-20 text-on-surface-variant">No transactions yet. Upload a receipt to get started.</div>
         ) : filteredTransactions.length === 0 ? (
-          <div className="text-center py-20 text-on-surface-variant">No transactions match “{searchQuery}”.</div>
+          hasActiveFilter ? (
+            <div className="text-center py-20 text-on-surface-variant">
+              No transactions match the current filters.
+            </div>
+          ) : (
+            <div className="text-center py-20 text-on-surface-variant">
+              No transactions yet. Upload a receipt to get started.
+            </div>
+          )
         ) : (
           <table className="w-full text-left border-collapse">
             <thead>
