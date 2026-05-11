@@ -29,6 +29,11 @@ import {
 interface TransactionsProps {
   onSelectReceipt?: (receiptId: string) => void;
   searchQuery?: string;
+  /** Reset the top-bar search input. The search lives in App.tsx so
+   *  the table's `Clear filters` button needs a hook to reach it —
+   *  without this, the q parameter would survive a "clear all" click
+   *  even though the user clearly meant to wipe the slate. */
+  onClearSearch?: () => void;
 }
 
 interface TombstoneRow {
@@ -37,7 +42,7 @@ interface TombstoneRow {
   doc?: BackendDocument;
 }
 
-export default function Transactions({ onSelectReceipt, searchQuery = '' }: TransactionsProps) {
+export default function Transactions({ onSelectReceipt, searchQuery = '', onClearSearch }: TransactionsProps) {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -259,7 +264,10 @@ export default function Transactions({ onSelectReceipt, searchQuery = '' }: Tran
           filters={filters}
           onChange={setFilters}
           hasActiveFilter={hasActiveFilter}
-          onClear={() => setFilters(DEFAULT_FILTERS)}
+          onClear={() => {
+            setFilters(DEFAULT_FILTERS);
+            onClearSearch?.();
+          }}
           showDeleted={showDeleted}
           onToggleShowDeleted={() => setShowDeleted((s) => !s)}
         />
