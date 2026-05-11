@@ -105,6 +105,7 @@ export default function App() {
             key={refreshKey}
             onSelectReceipt={handleSelectReceipt}
             searchQuery={transactionsSearch}
+            onSearchChange={setTransactionsSearch}
             onClearSearch={() => setTransactionsSearch('')}
           />
         );

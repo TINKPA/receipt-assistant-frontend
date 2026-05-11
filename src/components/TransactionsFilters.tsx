@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react';
-import { Calendar, ChevronDown, Eye, EyeOff, Filter, Tag, X } from 'lucide-react';
 import { cn } from '../lib/utils';
 import {
   DATE_PRESET_LABEL,
@@ -33,6 +32,13 @@ interface TransactionsFiltersProps {
   onToggleShowDeleted: () => void;
 }
 
+/**
+ * Filter chip row + collapsible "fine-tune" panel for the Ledger page.
+ * Variant B styling — paper surface, terracotta active, no icons.
+ *
+ * Behavior is unchanged from the previous Material-3 version. All test IDs
+ * are preserved.
+ */
 export default function TransactionsFilters({
   filters,
   onChange,
@@ -72,29 +78,19 @@ export default function TransactionsFilters({
 
   return (
     <>
-      <div className="flex flex-wrap gap-3 items-center">
+      <div className="flex flex-wrap items-center gap-2">
         {/* Date chip */}
         <div ref={dateRef} className="relative">
-          <button
-            type="button"
+          <Chip
             data-testid="filter-date"
+            active={filters.datePreset !== 'all'}
             onClick={() => setOpenPopover((p) => (p === 'date' ? null : 'date'))}
-            className={cn(
-              'px-4 py-2 rounded-xl flex items-center gap-2 border text-sm font-medium transition-colors',
-              filters.datePreset !== 'all'
-                ? 'bg-primary/10 border-primary/30 text-primary'
-                : 'bg-surface-container-high border-outline-variant/15 text-white hover:border-outline-variant/30',
-            )}
           >
-            <Calendar size={16} />
-            <span className="text-on-surface-variant">Date:</span> {dateLabel}
-            <ChevronDown size={14} />
-          </button>
+            <span className="text-[var(--color-ink-muted)] mr-1">Date:</span>
+            {dateLabel}
+          </Chip>
           {openPopover === 'date' && (
-            <div
-              data-testid="filter-date-popover"
-              className="absolute z-30 mt-2 left-0 min-w-[240px] bg-surface-container-highest border border-outline-variant/20 rounded-xl shadow-2xl p-2"
-            >
+            <Popover testid="filter-date-popover">
               {(Object.keys(DATE_PRESET_LABEL) as DatePreset[]).map((preset) => (
                 <button
                   type="button"
@@ -105,124 +101,115 @@ export default function TransactionsFilters({
                     if (preset !== 'custom') setOpenPopover(null);
                   }}
                   className={cn(
-                    'w-full text-left px-3 py-2 rounded-lg text-sm transition-colors',
+                    'w-full text-left px-3 py-2 rounded-[10px] text-sm transition-colors',
                     filters.datePreset === preset
-                      ? 'bg-primary/15 text-primary font-bold'
-                      : 'text-white hover:bg-surface-container-high',
+                      ? 'bg-[var(--color-terracotta-soft)] text-[var(--color-terracotta-deep)] font-medium'
+                      : 'text-[var(--color-ink)] hover:bg-[var(--color-paper-deep)]',
                   )}
                 >
                   {DATE_PRESET_LABEL[preset]}
                 </button>
               ))}
               {filters.datePreset === 'custom' && (
-                <div className="mt-2 pt-3 border-t border-outline-variant/15 px-1 space-y-2">
-                  <label className="block text-xs text-on-surface-variant">
+                <div className="mt-2 pt-3 border-t border-[var(--color-rule)] px-1 space-y-2">
+                  <label className="block text-xs text-[var(--color-ink-muted)]">
                     From
                     <input
                       type="date"
                       data-testid="filter-date-custom-from"
                       value={filters.customFrom}
                       onChange={(e) => onChange({ ...filters, customFrom: e.target.value })}
-                      className="mt-1 w-full bg-surface-container-low border border-outline-variant/15 rounded-lg px-2 py-1.5 text-sm text-white"
+                      className="mt-1 w-full bg-[var(--color-paper)] border border-[var(--color-rule)] rounded-[10px] px-2 py-1.5 text-sm text-[var(--color-ink)]"
                     />
                   </label>
-                  <label className="block text-xs text-on-surface-variant">
+                  <label className="block text-xs text-[var(--color-ink-muted)]">
                     To
                     <input
                       type="date"
                       data-testid="filter-date-custom-to"
                       value={filters.customTo}
                       onChange={(e) => onChange({ ...filters, customTo: e.target.value })}
-                      className="mt-1 w-full bg-surface-container-low border border-outline-variant/15 rounded-lg px-2 py-1.5 text-sm text-white"
+                      className="mt-1 w-full bg-[var(--color-paper)] border border-[var(--color-rule)] rounded-[10px] px-2 py-1.5 text-sm text-[var(--color-ink)]"
                     />
                   </label>
                 </div>
               )}
-            </div>
+            </Popover>
           )}
         </div>
 
         {/* Category chip */}
         <div ref={categoryRef} className="relative">
-          <button
-            type="button"
+          <Chip
             data-testid="filter-category"
+            active={filters.categories.length > 0}
             onClick={() => setOpenPopover((p) => (p === 'category' ? null : 'category'))}
-            className={cn(
-              'px-4 py-2 rounded-xl flex items-center gap-2 border text-sm font-medium transition-colors',
-              filters.categories.length > 0
-                ? 'bg-primary/10 border-primary/30 text-primary'
-                : 'bg-surface-container-high border-outline-variant/15 text-white hover:border-outline-variant/30',
-            )}
           >
-            <Tag size={16} />
-            <span className="text-on-surface-variant">Category:</span> {categoryLabel}
-            <ChevronDown size={14} />
-          </button>
+            <span className="text-[var(--color-ink-muted)] mr-1">Category:</span>
+            {categoryLabel}
+          </Chip>
           {openPopover === 'category' && (
-            <div
-              data-testid="filter-category-popover"
-              className="absolute z-30 mt-2 left-0 min-w-[220px] max-h-72 overflow-y-auto bg-surface-container-highest border border-outline-variant/20 rounded-xl shadow-2xl p-2"
-            >
-              {CATEGORIES.map((c) => {
-                const checked = filters.categories.includes(c);
-                return (
-                  <label
-                    key={c}
-                    data-testid={`filter-category-${c}`}
-                    className={cn(
-                      'flex items-center gap-2 px-3 py-2 rounded-lg text-sm cursor-pointer transition-colors',
-                      checked ? 'bg-primary/10 text-primary' : 'text-white hover:bg-surface-container-high',
-                    )}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => toggleCategory(c)}
-                      className="accent-primary"
-                    />
-                    {c}
-                  </label>
-                );
-              })}
+            <Popover testid="filter-category-popover">
+              <div className="max-h-72 overflow-y-auto">
+                {CATEGORIES.map((c) => {
+                  const checked = filters.categories.includes(c);
+                  return (
+                    <label
+                      key={c}
+                      data-testid={`filter-category-${c}`}
+                      className={cn(
+                        'flex items-center gap-2 px-3 py-2 rounded-[10px] text-sm cursor-pointer transition-colors',
+                        checked
+                          ? 'bg-[var(--color-terracotta-soft)] text-[var(--color-terracotta-deep)]'
+                          : 'text-[var(--color-ink)] hover:bg-[var(--color-paper-deep)]',
+                      )}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleCategory(c)}
+                        className="accent-[var(--color-terracotta)]"
+                      />
+                      {c}
+                    </label>
+                  );
+                })}
+              </div>
               {filters.categories.length > 0 && (
                 <button
                   type="button"
                   data-testid="filter-category-clear"
                   onClick={() => onChange({ ...filters, categories: [] })}
-                  className="w-full mt-1 px-3 py-2 rounded-lg text-xs text-on-surface-variant hover:text-white hover:bg-surface-container-high transition-colors"
+                  className={cn(
+                    'w-full mt-1 px-3 py-2 rounded-[10px] text-xs',
+                    'text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] hover:bg-[var(--color-paper-deep)]',
+                    'transition-colors',
+                  )}
                 >
                   Clear category selection
                 </button>
               )}
-            </div>
+            </Popover>
           )}
         </div>
 
-        <button
-          type="button"
+        <Chip
           data-testid="toggle-show-deleted"
+          active={showDeleted}
           onClick={onToggleShowDeleted}
-          className={cn(
-            'px-4 py-2 rounded-xl flex items-center gap-2 border text-sm font-medium transition-colors',
-            showDeleted
-              ? 'bg-error/10 border-error/30 text-error'
-              : 'bg-surface-container-high border-outline-variant/15 text-white hover:border-outline-variant/30',
-          )}
+          variant={showDeleted ? 'stamp' : 'default'}
         >
-          {showDeleted ? <EyeOff size={16} /> : <Eye size={16} />}
           {showDeleted ? 'Hide deleted' : 'Show deleted'}
-        </button>
+        </Chip>
 
         {hasActiveFilter && (
           <button
             type="button"
             data-testid="filter-clear-all"
             onClick={onClear}
-            className="px-3 py-2 rounded-xl flex items-center gap-1 text-sm text-on-surface-variant hover:text-white transition-colors"
+            className="font-hand text-base text-[var(--color-terracotta)] hover:text-[var(--color-terracotta-deep)] px-2"
           >
-            <X size={14} />
-            Clear filters
+            clear all ×
           </button>
         )}
 
@@ -231,32 +218,36 @@ export default function TransactionsFilters({
           data-testid="filter-more-toggle"
           onClick={() => setMoreOpen((s) => !s)}
           className={cn(
-            'ml-auto flex items-center gap-2 font-bold text-sm transition-opacity',
-            moreOpen ? 'text-white' : 'text-primary hover:opacity-80',
+            'ml-auto font-hand text-lg leading-none',
+            moreOpen ? 'text-[var(--color-ink)]' : 'text-[var(--color-terracotta)] hover:text-[var(--color-terracotta-deep)]',
           )}
         >
-          <Filter size={16} />
-          {moreOpen ? 'Hide filters' : 'More Filters'}
+          {moreOpen ? 'hide' : 'fine-tune ↗'}
         </button>
       </div>
 
       {moreOpen && (
         <div
           data-testid="filter-more-panel"
-          className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 rounded-xl bg-surface-container-low border border-outline-variant/10"
+          className={cn(
+            'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 p-4',
+            'rounded-[18px] border border-[var(--color-rule)] bg-[var(--color-surface)]',
+          )}
         >
-          <label className="block text-xs text-on-surface-variant">
-            Status
+          <FieldLabel label="Status">
             <select
               data-testid="filter-status"
               value={filters.status ?? ''}
               onChange={(e) =>
                 onChange({
                   ...filters,
-                  status: e.target.value === '' ? undefined : (e.target.value as RawTransactionStatus),
+                  status:
+                    e.target.value === ''
+                      ? undefined
+                      : (e.target.value as RawTransactionStatus),
                 })
               }
-              className="mt-1 w-full bg-surface-container-low border border-outline-variant/15 rounded-lg px-2 py-1.5 text-sm text-white"
+              className="mt-1 w-full bg-[var(--color-paper)] border border-[var(--color-rule)] rounded-[10px] px-2 py-1.5 text-sm text-[var(--color-ink)]"
             >
               <option value="">Any status</option>
               {STATUS_OPTIONS.map((opt) => (
@@ -265,22 +256,20 @@ export default function TransactionsFilters({
                 </option>
               ))}
             </select>
-          </label>
+          </FieldLabel>
 
-          <label className="block text-xs text-on-surface-variant">
-            Payee contains
+          <FieldLabel label="Payee contains">
             <input
               type="text"
               data-testid="filter-payee"
               value={filters.payeeContains}
               onChange={(e) => onChange({ ...filters, payeeContains: e.target.value })}
               placeholder="e.g. Costco"
-              className="mt-1 w-full bg-surface-container-low border border-outline-variant/15 rounded-lg px-2 py-1.5 text-sm text-white"
+              className="mt-1 w-full bg-[var(--color-paper)] border border-[var(--color-rule)] rounded-[10px] px-2 py-1.5 text-sm text-[var(--color-ink)] placeholder:text-[var(--color-ink-muted)]"
             />
-          </label>
+          </FieldLabel>
 
-          <label className="block text-xs text-on-surface-variant">
-            Min amount ($)
+          <FieldLabel label="Min amount ($)">
             <input
               type="number"
               inputMode="decimal"
@@ -289,12 +278,11 @@ export default function TransactionsFilters({
               value={filters.amountMinDollars}
               onChange={(e) => onChange({ ...filters, amountMinDollars: e.target.value })}
               placeholder="0.00"
-              className="mt-1 w-full bg-surface-container-low border border-outline-variant/15 rounded-lg px-2 py-1.5 text-sm text-white"
+              className="mt-1 w-full bg-[var(--color-paper)] border border-[var(--color-rule)] rounded-[10px] px-2 py-1.5 text-sm text-[var(--color-ink)] placeholder:text-[var(--color-ink-muted)]"
             />
-          </label>
+          </FieldLabel>
 
-          <label className="block text-xs text-on-surface-variant">
-            Max amount ($)
+          <FieldLabel label="Max amount ($)">
             <input
               type="number"
               inputMode="decimal"
@@ -303,11 +291,82 @@ export default function TransactionsFilters({
               value={filters.amountMaxDollars}
               onChange={(e) => onChange({ ...filters, amountMaxDollars: e.target.value })}
               placeholder="0.00"
-              className="mt-1 w-full bg-surface-container-low border border-outline-variant/15 rounded-lg px-2 py-1.5 text-sm text-white"
+              className="mt-1 w-full bg-[var(--color-paper)] border border-[var(--color-rule)] rounded-[10px] px-2 py-1.5 text-sm text-[var(--color-ink)] placeholder:text-[var(--color-ink-muted)]"
             />
-          </label>
+          </FieldLabel>
         </div>
       )}
     </>
+  );
+}
+
+/* ── Tiny presentational primitives ──────────────────────────── */
+
+function Chip({
+  children,
+  active,
+  onClick,
+  variant = 'default',
+  ...rest
+}: {
+  children: React.ReactNode;
+  active: boolean;
+  onClick: () => void;
+  variant?: 'default' | 'stamp';
+} & React.ButtonHTMLAttributes<HTMLButtonElement>) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      {...rest}
+      className={cn(
+        'rounded-full px-4 py-2 text-sm font-medium border transition-colors',
+        active
+          ? variant === 'stamp'
+            ? 'bg-[var(--color-stamp)]/10 border-[var(--color-stamp)]/30 text-[var(--color-stamp)]'
+            : 'bg-[var(--color-ink)] border-[var(--color-ink)] text-[var(--color-paper)]'
+          : 'bg-[var(--color-surface)] border-[var(--color-rule)] text-[var(--color-ink)] hover:border-[var(--color-ink)]/30',
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+function Popover({
+  testid,
+  children,
+}: {
+  testid: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      data-testid={testid}
+      className={cn(
+        'absolute z-30 mt-2 left-0 min-w-[240px] p-2',
+        'rounded-[14px] bg-[var(--color-surface)] border border-[var(--color-rule)]',
+        'shadow-[0_12px_32px_-10px_rgba(45,37,32,0.18)]',
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
+function FieldLabel({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="block">
+      <span className="text-[11px] font-medium tracking-[0.14em] uppercase text-[var(--color-ink-muted)]">
+        {label}
+      </span>
+      {children}
+    </label>
   );
 }
