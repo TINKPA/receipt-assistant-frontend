@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { TrendingDown, Utensils, Plane, Zap, Film, Landmark, ShoppingBag, Car, Loader2, RotateCcw, FileX } from 'lucide-react';
 import {
   fetchTransactions,
   extractProblemMessage,
@@ -29,10 +28,9 @@ import {
 interface TransactionsProps {
   onSelectReceipt?: (receiptId: string) => void;
   searchQuery?: string;
+  onSearchChange?: (q: string) => void;
   /** Reset the top-bar search input. The search lives in App.tsx so
-   *  the table's `Clear filters` button needs a hook to reach it —
-   *  without this, the q parameter would survive a "clear all" click
-   *  even though the user clearly meant to wipe the slate. */
+   *  the table's `Clear filters` button needs a hook to reach it. */
   onClearSearch?: () => void;
 }
 
@@ -42,35 +40,41 @@ interface TombstoneRow {
   doc?: BackendDocument;
 }
 
-export default function Transactions({ onSelectReceipt, searchQuery = '', onClearSearch }: TransactionsProps) {
+/**
+ * Ledger — the transactions browser in Variant B (Soft / Organic).
+ * Visual language follows docs/2026-05-10_Mockup_frontend_redesign-B-soft.html
+ * (fig.02): handwritten section labels, week-grouped entries, rounded cards.
+ *
+ * Backend wiring is unchanged from the previous Material-3 version: server-
+ * side filters (date / status / payee / amount / q) re-fetch on debounced
+ * change; category filtering stays client-side.
+ */
+export default function Transactions({
+  onSelectReceipt,
+  searchQuery = '',
+  onSearchChange,
+  onClearSearch,
+}: TransactionsProps) {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
-  // Row-action dialogs.
   const [hardDeleteTarget, setHardDeleteTarget] = useState<{ id: string; etag: string } | null>(null);
   const [unreconcileTarget, setUnreconcileTarget] = useState<string | null>(null);
   const [rowError, setRowError] = useState<string | null>(null);
 
-  // "Show deleted" panel.
   const [showDeleted, setShowDeleted] = useState(false);
   const [tombstones, setTombstones] = useState<TombstoneRow[]>([]);
   const [tombstoneLoading, setTombstoneLoading] = useState(false);
 
-  // Filter state. Server-side filters (date, status, payee, amount, q)
-  // trigger a re-fetch via the effect below; category filtering is
-  // applied client-side over the loaded page because the backend has
-  // no first-class category column.
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
   const debouncedSearch = useDebouncedValue(searchQuery, 300);
   const debouncedPayee = useDebouncedValue(filters.payeeContains, 300);
   const debouncedAmountMin = useDebouncedValue(filters.amountMinDollars, 300);
   const debouncedAmountMax = useDebouncedValue(filters.amountMaxDollars, 300);
 
-  // Stable per-filter-state derived range used in deps.
   const dateRange = useMemo(() => effectiveDateRange(filters), [filters]);
-
   const hasActiveFilter = isFilterActive(filters, searchQuery);
 
   useEffect(() => {
@@ -127,13 +131,11 @@ export default function Transactions({ onSelectReceipt, searchQuery = '', onClea
         try {
           const { data } = await getDocument(id, { includeDeleted: true });
           if (!data.deleted_at) {
-            // Already restored elsewhere — drop from local cache.
             removeTombstone(id);
             return { status: 'gone', id };
           }
           return { status: 'present', id, doc: data };
         } catch {
-          // 404 / network — assume hard-deleted, drop from cache.
           removeTombstone(id);
           return { status: 'gone', id };
         }
@@ -148,9 +150,6 @@ export default function Transactions({ onSelectReceipt, searchQuery = '', onClea
       .finally(() => setTombstoneLoading(false));
   }, [showDeleted, refreshKey]);
 
-  // Server-side filters (q, date, status, payee, amount) already
-  // narrowed the result set; this memo only applies the client-side
-  // category filter on top.
   const filteredTransactions = useMemo(() => {
     if (filters.categories.length === 0) return transactions;
     const set = new Set<string>(filters.categories);
@@ -161,52 +160,14 @@ export default function Transactions({ onSelectReceipt, searchQuery = '', onClea
     .filter((tx) => tx.amount < 0)
     .reduce((sum, tx) => sum + tx.amount, 0);
 
-  const getIcon = (category: string) => {
-    switch (category) {
-      case 'Dining': return <Utensils size={18} />;
-      case 'Transport': return <Car size={18} />;
-      case 'Utilities': return <Zap size={18} />;
-      case 'Fun': return <Film size={18} />;
-      case 'Income': return <Landmark size={18} />;
-      case 'Shopping': return <ShoppingBag size={18} />;
-      case 'Travel': return <Plane size={18} />;
-      default: return <Landmark size={18} />;
-    }
-  };
-
-  const getColorClass = (category: string) => {
-    switch (category) {
-      case 'Dining': return 'text-primary border-primary/20';
-      case 'Transport': return 'text-tertiary border-tertiary/20';
-      case 'Utilities': return 'text-secondary border-secondary/20';
-      case 'Fun': return 'text-error border-error/20';
-      case 'Income': return 'text-primary border-primary/40 bg-primary-container';
-      case 'Shopping': return 'text-secondary border-secondary/20';
-      case 'Travel': return 'text-tertiary border-tertiary/20';
-      default: return 'text-on-surface-variant border-outline-variant/20';
-    }
-  };
-
-  const getBadgeClass = (category: string) => {
-    switch (category) {
-      case 'Dining': return 'bg-primary/10 text-primary';
-      case 'Transport': return 'bg-tertiary/10 text-tertiary';
-      case 'Utilities': return 'bg-secondary/10 text-secondary';
-      case 'Fun': return 'bg-error/10 text-error';
-      case 'Income': return 'bg-primary/20 text-primary';
-      case 'Shopping': return 'bg-secondary/10 text-secondary';
-      case 'Travel': return 'bg-tertiary/10 text-tertiary';
-      default: return 'bg-surface-container-highest text-on-surface-variant';
-    }
-  };
+  // Group by ISO week (Mon-anchored) for the fig.02 week banners.
+  const weeks = useMemo(() => groupByWeek(filteredTransactions), [filteredTransactions]);
 
   const handleHardDeleteRequest = async (txnId: string) => {
     setRowError(null);
     try {
       const fresh = await getTransaction(txnId);
       if (fresh.data.status === 'reconciled') {
-        // Reconciled transactions can't be hard-deleted; offer
-        // unreconcile instead.
         setUnreconcileTarget(txnId);
         return;
       }
@@ -236,220 +197,75 @@ export default function Transactions({ onSelectReceipt, searchQuery = '', onClea
   };
 
   return (
-    <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-700">
-      <div className="flex justify-between items-end">
-        <div>
-          <h2 className="text-4xl font-extrabold text-white font-headline tracking-tight">Transaction History</h2>
-          <p className="text-on-surface-variant mt-2 font-inter">Manage and monitor your digital private banking activity.</p>
-        </div>
+    <div className="space-y-6">
+      <Header total={Math.abs(totalExpenses)} count={filteredTransactions.length} />
 
-        <div className="bg-surface-container-low p-6 rounded-xl border border-outline-variant/10 flex items-center gap-6">
-          <div className="p-3 bg-error-container/20 rounded-full">
-            <TrendingDown className="text-error" size={24} />
-          </div>
-          <div>
-            <p className="text-on-surface-variant text-xs font-medium uppercase tracking-widest mb-1">Total Expenses</p>
-            <div className="flex items-baseline gap-2">
-              <span className="text-2xl font-bold text-white font-headline">
-                {totalExpenses.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
-              </span>
-              <span className="text-on-surface-variant text-xs">{filteredTransactions.length} transactions</span>
-            </div>
-          </div>
-        </div>
-      </div>
+      <SearchSoft
+        value={searchQuery}
+        onChange={(v) => onSearchChange?.(v)}
+      />
 
-      <div className="space-y-4">
-        <TransactionsFilters
-          filters={filters}
-          onChange={setFilters}
-          hasActiveFilter={hasActiveFilter}
-          onClear={() => {
-            setFilters(DEFAULT_FILTERS);
-            onClearSearch?.();
-          }}
-          showDeleted={showDeleted}
-          onToggleShowDeleted={() => setShowDeleted((s) => !s)}
-        />
-      </div>
+      <TransactionsFilters
+        filters={filters}
+        onChange={setFilters}
+        hasActiveFilter={hasActiveFilter}
+        onClear={() => {
+          setFilters(DEFAULT_FILTERS);
+          onClearSearch?.();
+        }}
+        showDeleted={showDeleted}
+        onToggleShowDeleted={() => setShowDeleted((s) => !s)}
+      />
 
       {rowError && (
-        <div className="p-4 rounded-xl bg-error/10 border border-error/20 text-sm text-error flex items-center justify-between">
+        <div className="rounded-[16px] border border-[var(--color-stamp)]/30 bg-[var(--color-stamp)]/5 px-4 py-3 text-sm text-[var(--color-stamp)] flex items-center justify-between">
           <span>{rowError}</span>
-          <button onClick={() => setRowError(null)} className="text-error/70 hover:text-error font-bold">
+          <button
+            onClick={() => setRowError(null)}
+            className="font-medium text-[var(--color-stamp)]/80 hover:text-[var(--color-stamp)]"
+          >
             Dismiss
           </button>
         </div>
       )}
 
       {showDeleted && (
-        <div className="glass-panel border border-outline-variant/10 rounded-xl overflow-hidden">
-          <div className="px-8 py-5 border-b border-outline-variant/10 flex items-center gap-3">
-            <FileX className="text-error" size={20} />
-            <h3 className="font-headline font-bold text-white">Recently Deleted</h3>
-            <span className="text-xs text-on-surface-variant ml-auto">
-              Tracked locally in this browser. Restore brings the receipt back to the main list.
-            </span>
-          </div>
-          {tombstoneLoading ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="animate-spin text-on-surface-variant" size={24} />
-            </div>
-          ) : tombstones.length === 0 ? (
-            <div className="py-12 text-center text-sm text-on-surface-variant">
-              No recently deleted receipts in this browser.
-            </div>
-          ) : (
-            <ul className="divide-y divide-outline-variant/5">
-              {tombstones.map((t) => (
-                <li
-                  key={t.id}
-                  className="px-8 py-5 flex items-center gap-4"
-                  data-testid={`tombstone-${t.id}`}
-                >
-                  <div className="w-12 h-12 rounded-xl bg-surface-container-highest flex items-center justify-center overflow-hidden flex-shrink-0">
-                    {t.doc ? (
-                      <img
-                        src={documentContentUrl(t.id)}
-                        alt=""
-                        className="w-full h-full object-cover"
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).style.display = 'none';
-                        }}
-                      />
-                    ) : (
-                      <FileX className="text-on-surface-variant" size={20} />
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold text-white truncate">
-                      {t.doc?.file_path?.split('/').pop() ?? t.id}
-                    </p>
-                    <div className="mt-1 flex items-center gap-2">
-                      <DeletedBadge deletedAt={t.doc?.deleted_at ?? null} />
-                      <code className="text-xs text-on-surface-variant truncate">{t.id}</code>
-                    </div>
-                  </div>
-                  <button
-                    data-testid={`tombstone-restore-${t.id}`}
-                    onClick={() => handleRestoreTombstone(t.id)}
-                    className="px-4 py-2 rounded-xl bg-primary/10 text-primary font-bold hover:bg-primary/20 transition-colors flex items-center gap-2 flex-shrink-0"
-                  >
-                    <RotateCcw size={16} />
-                    Restore
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+        <TombstonePanel
+          loading={tombstoneLoading}
+          rows={tombstones}
+          onRestore={handleRestoreTombstone}
+        />
       )}
 
-      <div className="glass-panel border border-outline-variant/10 rounded-xl overflow-hidden shadow-2xl">
-        {loading ? (
-          <div className="flex items-center justify-center py-20">
-            <Loader2 className="animate-spin text-primary" size={32} />
-            <span className="ml-3 text-on-surface-variant">Loading transactions...</span>
-          </div>
-        ) : error ? (
-          <div className="text-center py-20 text-error">{error}</div>
-        ) : filteredTransactions.length === 0 ? (
-          hasActiveFilter ? (
-            <div className="text-center py-20 text-on-surface-variant">
-              No transactions match the current filters.
-            </div>
-          ) : (
-            <div className="text-center py-20 text-on-surface-variant">
-              No transactions yet. Upload a receipt to get started.
-            </div>
-          )
-        ) : (
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-surface-container-low/50">
-                <th className="px-8 py-5 text-xs font-bold text-on-surface-variant uppercase tracking-widest font-headline">Description</th>
-                <th className="px-8 py-5 text-xs font-bold text-on-surface-variant uppercase tracking-widest font-headline">Category</th>
-                <th className="px-8 py-5 text-xs font-bold text-on-surface-variant uppercase tracking-widest font-headline">Date</th>
-                <th className="px-8 py-5 text-xs font-bold text-on-surface-variant uppercase tracking-widest font-headline">Payment</th>
-                <th className="px-8 py-5 text-xs font-bold text-on-surface-variant uppercase tracking-widest font-headline">Status</th>
-                <th className="px-8 py-5 text-xs font-bold text-on-surface-variant uppercase tracking-widest font-headline text-right">Amount</th>
-                <th className="px-2 py-5"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-outline-variant/5">
-              {filteredTransactions.map((tx) => (
-                <tr
-                  key={tx.id}
-                  data-testid={`txn-row-${tx.id}`}
-                  onClick={() => tx.status !== 'Processing' && onSelectReceipt?.(tx.id)}
-                  className={cn(
-                    "hover:bg-surface-container-high/30 transition-colors group",
-                    tx.status === 'Processing' ? 'cursor-default opacity-70' : 'cursor-pointer'
-                  )}
-                >
-                  <td className="px-8 py-6">
-                    <div className="flex items-center gap-4">
-                      <div className={cn(
-                        "w-10 h-10 rounded-xl bg-surface-container-highest flex items-center justify-center border",
-                        tx.status === 'Processing' ? 'text-tertiary border-tertiary/20 animate-pulse' : getColorClass(tx.category)
-                      )}>
-                        {tx.status === 'Processing' ? <Loader2 className="animate-spin" size={18} /> : getIcon(tx.category)}
-                      </div>
-                      <span className={cn(
-                        "font-bold transition-colors",
-                        tx.status === 'Processing' ? 'text-on-surface-variant' : 'text-white group-hover:text-primary'
-                      )}>
-                        {tx.description}
-                      </span>
-                    </div>
-                  </td>
-                  <td className="px-8 py-6">
-                    {tx.status !== 'Processing' && (
-                      <span className={cn(
-                        "px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider",
-                        getBadgeClass(tx.category)
-                      )}>
-                        {tx.category}
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-8 py-6 text-sm text-on-surface-variant">{tx.status === 'Processing' ? '--' : tx.date}</td>
-                  <td className="px-8 py-6 text-sm text-on-surface-variant">{tx.status === 'Processing' ? '--' : tx.paymentMethod}</td>
-                  <td className="px-8 py-6">
-                    <span className={cn(
-                      "px-2 py-0.5 rounded text-[10px] font-bold uppercase",
-                      tx.status === 'Processing' ? 'bg-tertiary/10 text-tertiary animate-pulse' :
-                      tx.status === 'Verified' ? 'bg-primary/10 text-primary' :
-                      tx.status === 'Pending' ? 'bg-error/10 text-error' :
-                      'bg-tertiary/10 text-tertiary'
-                    )}>
-                      {tx.status}
-                    </span>
-                  </td>
-                  <td className={cn(
-                    "px-8 py-6 text-right font-headline font-bold",
-                    tx.status === 'Processing' ? 'text-on-surface-variant' :
-                    tx.amount > 0 ? "text-primary neon-glow-primary" : "text-white"
-                  )}>
-                    {tx.status === 'Processing' ? '--' : (
-                      <>{tx.amount > 0 ? '+' : ''}{tx.amount.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}</>
-                    )}
-                  </td>
-                  <td className="px-2 py-6 text-right" onClick={(e) => e.stopPropagation()}>
-                    {tx.status !== 'Processing' && (
-                      <TransactionRowMenu
-                        rawStatus={tx.rawStatus}
-                        onHardDelete={() => handleHardDeleteRequest(tx.id)}
-                        onUnreconcile={() => setUnreconcileTarget(tx.id)}
-                      />
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+      {loading ? (
+        <EmptyState>
+          <p className="font-hand text-xl text-[var(--color-ink-muted)]">loading…</p>
+        </EmptyState>
+      ) : error ? (
+        <EmptyState>
+          <p className="text-[var(--color-stamp)]">{error}</p>
+        </EmptyState>
+      ) : filteredTransactions.length === 0 ? (
+        <EmptyState>
+          <p className="font-display italic text-[var(--color-ink-muted)] text-lg">
+            {hasActiveFilter
+              ? 'No entries match the current filters.'
+              : 'No entries yet — capture your first receipt.'}
+          </p>
+        </EmptyState>
+      ) : (
+        <div className="space-y-7">
+          {weeks.map((wk) => (
+            <WeekGroup
+              key={wk.startIso}
+              week={wk}
+              onSelect={(id) => onSelectReceipt?.(id)}
+              onHardDelete={handleHardDeleteRequest}
+              onUnreconcile={(id) => setUnreconcileTarget(id)}
+            />
+          ))}
+        </div>
+      )}
 
       <ConfirmActionDialog
         isOpen={hardDeleteTarget !== null}
@@ -462,7 +278,7 @@ export default function Transactions({ onSelectReceipt, searchQuery = '', onClea
               underlying receipt image (if any) is kept — only the transaction is
               destroyed.
             </p>
-            <p className="mt-2 text-xs text-on-surface-variant/70">
+            <p className="mt-2 text-xs text-[var(--color-ink-muted)]">
               This action cannot be undone.
             </p>
           </>
@@ -483,4 +299,381 @@ export default function Transactions({ onSelectReceipt, searchQuery = '', onClea
       />
     </div>
   );
+}
+
+/* ── Header ───────────────────────────────────────────────────── */
+
+function Header({ total, count }: { total: number; count: number }) {
+  const now = new Date();
+  const monthShort = now.toLocaleString('en-US', { month: 'long' });
+  const weekIn = Math.max(1, Math.ceil(now.getDate() / 7));
+  const weekIn_text =
+    weekIn === 1 ? 'first week in' :
+    weekIn === 2 ? 'two weeks in' :
+    weekIn === 3 ? 'three weeks in' :
+    'a full month';
+  return (
+    <div className="flex items-start justify-between gap-4">
+      <div>
+        <h1 className="font-display italic font-medium text-4xl leading-none tracking-tight">
+          Ledger
+        </h1>
+        <p className="mt-2 font-hand text-2xl text-[var(--color-terracotta)] leading-none">
+          {monthShort}, {weekIn_text}
+        </p>
+      </div>
+      <div className="text-right">
+        <p className="text-[11px] font-medium tracking-[0.18em] uppercase text-[var(--color-ink-muted)]">
+          TOTAL
+        </p>
+        <p className="mt-1 font-display italic font-medium text-2xl tnum">
+          ${Math.round(total).toLocaleString()}
+        </p>
+        <p className="text-xs text-[var(--color-ink-muted)]">
+          {count} {count === 1 ? 'entry' : 'entries'}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/* ── Search ───────────────────────────────────────────────────── */
+
+function SearchSoft({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <label
+      className={cn(
+        'flex items-center gap-3 rounded-[16px] border border-[var(--color-rule)]',
+        'bg-[var(--color-surface)] px-4 py-3',
+        'focus-within:border-[var(--color-terracotta)] transition-colors',
+      )}
+    >
+      <span
+        aria-hidden="true"
+        className="relative inline-block h-[18px] w-[18px] flex-shrink-0"
+      >
+        <span className="absolute inset-0 border-2 border-[var(--color-ink-muted)] rounded-full" />
+        <span
+          className="absolute bottom-[-3px] right-[-4px] h-[2px] w-2 bg-[var(--color-ink-muted)] rounded"
+          style={{ transform: 'rotate(45deg)' }}
+        />
+      </span>
+      <input
+        type="search"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="Search merchants, notes…"
+        className={cn(
+          'flex-1 bg-transparent outline-none border-none',
+          'text-[15px] text-[var(--color-ink)]',
+          'placeholder:font-display placeholder:italic placeholder:text-[var(--color-ink-muted)]',
+        )}
+      />
+      {value && (
+        <button
+          type="button"
+          onClick={() => onChange('')}
+          className="text-[var(--color-ink-muted)] text-sm font-medium hover:text-[var(--color-ink)]"
+          aria-label="Clear search"
+        >
+          ×
+        </button>
+      )}
+    </label>
+  );
+}
+
+/* ── Week group ───────────────────────────────────────────────── */
+
+interface WeekBucket {
+  startIso: string;
+  label: string;
+  total: number;
+  txs: Transaction[];
+}
+
+function WeekGroup({
+  week,
+  onSelect,
+  onHardDelete,
+  onUnreconcile,
+}: {
+  week: WeekBucket;
+  onSelect: (id: string) => void;
+  onHardDelete: (id: string) => void;
+  onUnreconcile: (id: string) => void;
+}) {
+  return (
+    <section>
+      <div className="flex items-baseline gap-3 mb-3">
+        <span className="font-hand text-xl text-[var(--color-terracotta)] leading-none">
+          {week.label}
+        </span>
+        <span className="text-[11px] tracking-[0.12em] uppercase text-[var(--color-ink-muted)]">
+          {week.txs.length} {week.txs.length === 1 ? 'entry' : 'entries'}
+        </span>
+        <span className="ml-auto font-display italic text-base font-medium tnum">
+          ${Math.round(Math.abs(week.total)).toLocaleString()}
+        </span>
+      </div>
+      <ul className="space-y-2">
+        {week.txs.map((tx) => (
+          <li key={tx.id}>
+            <LedgerRow
+              tx={tx}
+              onSelect={onSelect}
+              onHardDelete={onHardDelete}
+              onUnreconcile={onUnreconcile}
+            />
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function LedgerRow({
+  tx,
+  onSelect,
+  onHardDelete,
+  onUnreconcile,
+}: {
+  tx: Transaction;
+  onSelect: (id: string) => void;
+  onHardDelete: (id: string) => void;
+  onUnreconcile: (id: string) => void;
+}) {
+  const isProcessing = tx.status === 'Processing';
+  const hasDoc = Boolean(tx.documentId);
+  return (
+    <div
+      data-testid={`txn-row-${tx.id}`}
+      className={cn(
+        'grid grid-cols-[48px_1fr_auto_auto] items-center gap-3',
+        'rounded-[16px] border border-[var(--color-rule)] bg-[var(--color-surface)] p-3 pr-2',
+      )}
+    >
+      {/* Thumb */}
+      <div
+        className="relative h-12 w-12 rounded-[14px] flex-shrink-0"
+        style={{
+          background: hasDoc
+            ? 'linear-gradient(135deg, var(--color-butter), var(--color-paper-deep))'
+            : 'var(--color-paper-deep)',
+        }}
+        aria-hidden="true"
+      >
+        {hasDoc && (
+          <span
+            className={cn(
+              'absolute -right-1 -top-1 flex h-[18px] w-[18px] items-center justify-center',
+              'rounded-full bg-[var(--color-terracotta)] text-white text-[9px] font-medium',
+            )}
+            title="Has receipt"
+          >
+            ✦
+          </span>
+        )}
+      </div>
+
+      {/* Body */}
+      <button
+        type="button"
+        onClick={() => !isProcessing && onSelect(tx.id)}
+        disabled={isProcessing}
+        className={cn(
+          'text-left min-w-0',
+          isProcessing ? 'cursor-default opacity-60' : 'cursor-pointer',
+        )}
+      >
+        <p className="font-display italic font-medium text-[17px] leading-tight tracking-tight truncate">
+          {tx.description}
+        </p>
+        <p className="mt-0.5 text-[11px] tracking-[0.04em] uppercase text-[var(--color-ink-muted)] truncate">
+          {tx.category} · {formatDay(tx.date)}
+          {tx.status !== 'New Charge' && ` · ${tx.status}`}
+        </p>
+      </button>
+
+      {/* Amount */}
+      <span className="font-display italic font-medium text-[18px] tnum px-1">
+        ${Math.abs(tx.amount).toFixed(2)}
+      </span>
+
+      {/* Row menu */}
+      <div onClick={(e) => e.stopPropagation()}>
+        {!isProcessing && (
+          <TransactionRowMenu
+            rawStatus={tx.rawStatus}
+            onHardDelete={() => onHardDelete(tx.id)}
+            onUnreconcile={() => onUnreconcile(tx.id)}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── Tombstones ───────────────────────────────────────────────── */
+
+function TombstonePanel({
+  loading,
+  rows,
+  onRestore,
+}: {
+  loading: boolean;
+  rows: TombstoneRow[];
+  onRestore: (id: string) => void;
+}) {
+  return (
+    <div className="rounded-[18px] border border-[var(--color-rule)] bg-[var(--color-surface)] overflow-hidden">
+      <div className="px-5 py-4 border-b border-[var(--color-rule)] flex items-center gap-3">
+        <h3 className="font-display italic font-medium text-lg">Recently deleted</h3>
+        <span className="ml-auto text-xs text-[var(--color-ink-muted)] hidden sm:block">
+          Tracked locally — restore brings the receipt back.
+        </span>
+      </div>
+      {loading ? (
+        <div className="py-10 text-center">
+          <p className="font-hand text-lg text-[var(--color-ink-muted)]">loading…</p>
+        </div>
+      ) : rows.length === 0 ? (
+        <div className="py-10 text-center text-sm text-[var(--color-ink-muted)]">
+          No recently deleted receipts in this browser.
+        </div>
+      ) : (
+        <ul className="divide-y divide-[var(--color-rule-soft)]">
+          {rows.map((t) => (
+            <li
+              key={t.id}
+              className="px-5 py-4 flex items-center gap-3"
+              data-testid={`tombstone-${t.id}`}
+            >
+              <div
+                className="h-12 w-12 rounded-[14px] overflow-hidden flex-shrink-0"
+                style={{ background: 'var(--color-paper-deep)' }}
+              >
+                {t.doc && (
+                  <img
+                    src={documentContentUrl(t.id)}
+                    alt=""
+                    className="h-full w-full object-cover"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).style.display = 'none';
+                    }}
+                  />
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">
+                  {t.doc?.file_path?.split('/').pop() ?? t.id}
+                </p>
+                <div className="mt-1 flex items-center gap-2">
+                  <DeletedBadge deletedAt={t.doc?.deleted_at ?? null} />
+                  <code className="text-[11px] text-[var(--color-ink-muted)] truncate">{t.id}</code>
+                </div>
+              </div>
+              <button
+                data-testid={`tombstone-restore-${t.id}`}
+                onClick={() => onRestore(t.id)}
+                className={cn(
+                  'rounded-[10px] px-3 py-2 text-xs font-medium',
+                  'bg-[var(--color-terracotta)] text-white hover:bg-[var(--color-terracotta-deep)]',
+                  'transition-colors flex-shrink-0',
+                )}
+              >
+                Restore
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/* ── Empty / loading shells ───────────────────────────────────── */
+
+function EmptyState({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="rounded-[18px] border border-[var(--color-rule)] bg-[var(--color-surface)] px-5 py-12 text-center">
+      {children}
+    </div>
+  );
+}
+
+/* ── Helpers ──────────────────────────────────────────────────── */
+
+function groupByWeek(txs: Transaction[]): WeekBucket[] {
+  const buckets = new Map<string, WeekBucket>();
+  for (const tx of txs) {
+    const start = isoWeekStart(tx.date);
+    if (!start) continue;
+    let bucket = buckets.get(start);
+    if (!bucket) {
+      bucket = { startIso: start, label: weekLabel(start), total: 0, txs: [] };
+      buckets.set(start, bucket);
+    }
+    bucket.txs.push(tx);
+    bucket.total += tx.amount;
+  }
+  return [...buckets.values()].sort((a, b) => (a.startIso < b.startIso ? 1 : -1));
+}
+
+/** Returns the Monday of the week containing this ISO date, as YYYY-MM-DD. */
+function isoWeekStart(isoDate: string): string | null {
+  // Parse manually to avoid TZ shifts on bare YYYY-MM-DD.
+  const parts = isoDate.split('-').map(Number);
+  if (parts.length !== 3 || parts.some(Number.isNaN)) return null;
+  const [y, m, d] = parts;
+  const local = new Date(y, m - 1, d);
+  const day = local.getDay(); // 0=Sun … 6=Sat
+  const diff = (day + 6) % 7;  // distance back to Monday
+  local.setDate(local.getDate() - diff);
+  const yy = local.getFullYear();
+  const mm = String(local.getMonth() + 1).padStart(2, '0');
+  const dd = String(local.getDate()).padStart(2, '0');
+  return `${yy}-${mm}-${dd}`;
+}
+
+function weekLabel(startIso: string): string {
+  const today = new Date();
+  const thisWeek = isoWeekStart(toIso(today));
+  if (thisWeek === startIso) return 'this week';
+
+  const lastWeek = (() => {
+    const d = new Date(today);
+    d.setDate(d.getDate() - 7);
+    return isoWeekStart(toIso(d));
+  })();
+  if (lastWeek === startIso) return 'last week';
+
+  // "Week of May 5" — pulled from the Monday date.
+  const [y, m, d] = startIso.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  const monthShort = dt.toLocaleString('en-US', { month: 'short' });
+  return `week of ${monthShort} ${dt.getDate()}`;
+}
+
+function toIso(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function formatDay(isoDate: string): string {
+  // "Mon · May 5" — short, no year.
+  const [y, m, d] = isoDate.split('-').map(Number);
+  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return isoDate;
+  const dt = new Date(y, m - 1, d);
+  const dow = dt.toLocaleString('en-US', { weekday: 'short' });
+  const mo = dt.toLocaleString('en-US', { month: 'short' });
+  return `${dow.toUpperCase()} · ${mo} ${d}`;
 }

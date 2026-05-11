@@ -34,6 +34,9 @@ COPY .git ./.git
 COPY tsconfig.json vite.config.ts eslint.config.js index.html ./
 COPY scripts/ ./scripts/
 COPY src/ ./src/
+# `public/` is Vite's static-assets root — icons, manifest, OG image.
+# Vite copies its contents to dist/ verbatim at build time.
+COPY public/ ./public/
 
 RUN npm run build
 

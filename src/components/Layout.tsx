@@ -1,52 +1,53 @@
-import React, { useState } from 'react';
-import Sidebar from './Sidebar';
-import TopBar from './TopBar';
+import React from 'react';
+import FloatingDock, { type DockDestination } from './FloatingDock';
 
 interface LayoutProps {
   children: React.ReactNode;
-  activeTab: string;
-  onTabChange: (tab: string) => void;
+  dockActive: DockDestination;
+  onDockNavigate: (dest: 'books' | 'review') => void;
   onAddTransaction: () => void;
-  rightSlot?: React.ReactNode;
-  showSearch?: boolean;
-  searchQuery?: string;
-  onSearchChange?: (q: string) => void;
+  /** When true the floating dock is omitted — full-bleed surfaces like
+   *  the Capture route own the whole viewport. */
+  dockHidden?: boolean;
 }
 
+/**
+ * Variant B (Soft / Organic) app shell.
+ *
+ * Mobile-first: a single centered column on a cream paper background, with a
+ * floating ink-dark dock at the bottom. On larger viewports the column widens
+ * but the dock geometry stays the same — desktop is the scaled-up version of
+ * mobile (DESIGN.md §4.4).
+ */
 export default function Layout({
   children,
-  activeTab,
-  onTabChange,
+  dockActive,
+  onDockNavigate,
   onAddTransaction,
-  rightSlot,
-  showSearch,
-  searchQuery,
-  onSearchChange,
+  dockHidden = false,
 }: LayoutProps) {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-
   return (
-    <div className="flex min-h-screen bg-background">
-      <Sidebar
-        activeTab={activeTab}
-        onTabChange={onTabChange}
-        onAddTransaction={onAddTransaction}
-        sidebarOpen={sidebarOpen}
-        setSidebarOpen={setSidebarOpen}
-      />
-      <div className="flex-1 lg:ml-64 flex flex-col">
-        <TopBar
-          onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
-          sidebarOpen={sidebarOpen}
-          rightSlot={rightSlot}
-          showSearch={showSearch}
-          searchQuery={searchQuery}
-          onSearchChange={onSearchChange}
+    <div className="min-h-screen bg-[var(--color-paper)] text-[var(--color-ink)]">
+      <main
+        className={[
+          'mx-auto w-full max-w-[480px] sm:max-w-[640px] lg:max-w-[960px] xl:max-w-[1100px]',
+          'px-4 sm:px-6 lg:px-10',
+          'pt-4 sm:pt-6 lg:pt-10',
+          dockHidden
+            ? 'pb-[env(safe-area-inset-bottom,0px)]'
+            : 'pb-[calc(env(safe-area-inset-bottom,0px)+6.5rem)]',
+        ].join(' ')}
+      >
+        {children}
+      </main>
+
+      {!dockHidden && (
+        <FloatingDock
+          active={dockActive}
+          onNavigate={onDockNavigate}
+          onAdd={onAddTransaction}
         />
-        <main className="flex-1 pt-24 pb-12 px-6 lg:px-10 overflow-x-hidden">
-          {children}
-        </main>
-      </div>
+      )}
     </div>
   );
 }

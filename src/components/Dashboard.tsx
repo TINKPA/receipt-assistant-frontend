@@ -1,46 +1,35 @@
-import React, { useEffect, useState } from 'react';
-import {
-  TrendingUp,
-  Wallet,
-  ArrowRight,
-  Sparkles,
-  Utensils,
-  Plane,
-  Car,
-  ShoppingBag,
-  Zap,
-  Loader2
-} from 'lucide-react';
-import {
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-  PieChart,
-  Pie,
-  Cell
-} from 'recharts';
+import React, { useEffect, useMemo, useState } from 'react';
 import { fetchTransactions, fetchSummary, type SpendingSummary } from '../lib/api';
-// `fetchSummary` remains a shim over GET /v1/reports/summary?group_by=category;
-// `SpendingSummary` is the legacy {category,count,total_spent} shape.
-import { cn } from '../lib/utils';
 import type { Transaction } from '../types';
-
-const CHART_COLORS = ['#4edea3', '#d0bcff', '#7bd0ff', '#ffb4ab', '#a8c7fa'];
+import { cn } from '../lib/utils';
 
 interface DashboardProps {
   onSelectReceipt?: (receiptId: string) => void;
   onViewAllTransactions?: () => void;
 }
 
+/**
+ * Books — the home view in Variant B (Soft / Organic).
+ *
+ * Layout follows docs/2026-05-10_Mockup_frontend_redesign-B-soft.html (fig.01),
+ * scoped to the current month. All data is live from the backend: no mocks,
+ * no fixtures, no "demo mode" toggles (see memory feedback_no_mock_api.md).
+ *
+ * The mockup's "86% of $5000 plan" budget meter is intentionally omitted —
+ * there is no /budget endpoint on the backend yet. The big spend card stands
+ * on its own without an invented number.
+ */
 export default function Dashboard({ onSelectReceipt, onViewAllTransactions }: DashboardProps) {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [summary, setSummary] = useState<SpendingSummary[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const monthRange = useMemo(() => currentMonthRange(new Date()), []);
+
   useEffect(() => {
     Promise.all([
-      fetchTransactions({ limit: 5 }),
-      fetchSummary(),
+      fetchTransactions({ limit: 4, from: monthRange.from, to: monthRange.to }),
+      fetchSummary({ from: monthRange.from, to: monthRange.to }),
     ])
       .then(([txs, sum]) => {
         setTransactions(txs);
@@ -48,240 +37,353 @@ export default function Dashboard({ onSelectReceipt, onViewAllTransactions }: Da
       })
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, []);
+  }, [monthRange.from, monthRange.to]);
 
-  const totalSpent = summary.reduce((s, c) => s + Number(c.total_spent), 0);
-  const totalCount = summary.reduce((s, c) => s + c.count, 0);
+  const totalSpent = useMemo(
+    () => summary.reduce((s, c) => s + Math.abs(Number(c.total_spent)), 0),
+    [summary],
+  );
+  const totalCount = useMemo(
+    () => summary.reduce((s, c) => s + c.count, 0),
+    [summary],
+  );
 
-  const spendingData = summary.map((s, i) => ({
-    name: s.category ?? 'other',
-    value: Number(s.total_spent),
-    color: CHART_COLORS[i % CHART_COLORS.length],
-  }));
-
-  const getIcon = (category: string) => {
-    switch (category) {
-      case 'Dining': return <Utensils size={18} />;
-      case 'Transport': return <Car size={18} />;
-      case 'Shopping': return <ShoppingBag size={18} />;
-      case 'Travel': return <Plane size={18} />;
-      case 'Utilities': return <Zap size={18} />;
-      default: return <Utensils size={18} />;
-    }
-  };
+  const topCats = useMemo(
+    () =>
+      [...summary]
+        .sort((a, b) => Math.abs(Number(b.total_spent)) - Math.abs(Number(a.total_spent)))
+        .slice(0, 4),
+    [summary],
+  );
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-700">
-      <section>
-        <h2 className="text-on-surface-variant font-medium text-sm mb-4 font-label">Financial Overview</h2>
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 bg-surface-container-low rounded-xl p-8 flex flex-col justify-between relative overflow-hidden group border border-outline-variant/5">
-            <div className="absolute top-0 right-0 p-6 opacity-5 group-hover:opacity-10 transition-opacity">
-              <Wallet size={160} className="text-primary" />
-            </div>
-            <div>
-              <p className="text-on-surface-variant text-sm font-label mb-1">Total Spending</p>
-              {loading ? (
-                <Loader2 className="animate-spin text-primary mt-2" size={32} />
-              ) : (
-                <>
-                  <h3 className="text-5xl font-extrabold font-headline tracking-tight text-white neon-glow-primary">
-                    ${Math.floor(totalSpent).toLocaleString()}.<span className="text-2xl opacity-50">{(totalSpent % 1).toFixed(2).slice(2)}</span>
-                  </h3>
-                  <div className="flex items-center gap-2 mt-4">
-                    <span className="bg-primary/10 text-primary px-2 py-0.5 rounded-md text-xs font-bold flex items-center gap-1">
-                      <TrendingUp size={14} />
-                      {totalCount} receipts
-                    </span>
-                    <span className="text-on-surface-variant text-xs">processed via AI</span>
-                  </div>
-                </>
-              )}
-            </div>
-            <div className="mt-12 flex gap-12">
-              {summary.slice(0, 3).map((s, i) => (
-                <div key={i}>
-                  <p className="text-on-surface-variant text-[10px] uppercase tracking-wider mb-1">{s.category ?? 'Other'}</p>
-                  <p className="text-lg font-bold text-white">${Number(s.total_spent).toLocaleString()}</p>
-                </div>
-              ))}
-            </div>
-          </div>
+    <div className="space-y-7">
+      <GreetingRow />
+      <MonthHeading date={monthRange.now} />
 
-          <div className="bg-surface-container-high rounded-xl p-6 flex flex-col justify-between border border-outline-variant/5">
-            <div className="flex justify-between items-start mb-4">
-              <h4 className="text-sm font-bold text-white">Spending by Category</h4>
-            </div>
-            {spendingData.length > 0 ? (
-              <div className="h-32 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={spendingData}>
-                    <Bar
-                      dataKey="value"
-                      fill="#4edea3"
-                      radius={[4, 4, 0, 0]}
-                    >
-                      {spendingData.map((entry, index) => (
-                        <Cell key={index} fill={entry.color} fillOpacity={0.7} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            ) : (
-              <div className="h-32 flex items-center justify-center text-on-surface-variant text-sm">No data yet</div>
-            )}
-            <div className="flex justify-between mt-4 text-[10px] text-on-surface-variant uppercase font-bold">
-              {spendingData.slice(0, 4).map((s, i) => (
-                <span key={i}>{s.name}</span>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
+      <SpentCard amount={totalSpent} count={totalCount} loading={loading} />
 
-      <section className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        {/* Monthly Spending Pie */}
-        <div className="lg:col-span-5 bg-surface-container-low rounded-xl p-6 border border-outline-variant/5">
-          <div className="flex justify-between items-center mb-8">
-            <h4 className="font-headline font-bold text-white">Spending Breakdown</h4>
-          </div>
-          <div className="flex items-center gap-8">
-            <div className="relative w-36 h-36">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={spendingData}
-                    innerRadius={50}
-                    outerRadius={65}
-                    paddingAngle={5}
-                    dataKey="value"
-                    stroke="none"
-                  >
-                    {spendingData.map((entry, index) => (
-                      <Cell key={index} fill={entry.color} />
-                    ))}
-                  </Pie>
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <p className="text-[10px] text-on-surface-variant uppercase">Total</p>
-                <p className="text-lg font-bold text-white">${(totalSpent / 1000).toFixed(1)}k</p>
-              </div>
-            </div>
-            <div className="flex-1 space-y-4">
-              {spendingData.map((item, i) => (
-                <div key={i} className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: item.color }} />
-                    <span className="text-sm text-on-surface-variant">{item.name}</span>
-                  </div>
-                  <span className="text-sm font-bold text-white">${item.value.toLocaleString()}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
+      <SectionTitle title="where it went" more={topCats.length > 4 ? 'see all →' : undefined} />
+      <CategoryGrid items={topCats} loading={loading} />
 
-        {/* Recent Activity */}
-        <div className="lg:col-span-7 bg-surface-container-low rounded-xl p-6 border border-outline-variant/5">
-          <div className="flex justify-between items-center mb-6">
-            <h4 className="font-headline font-bold text-white">Recent Activity</h4>
-            <button
-              type="button"
-              onClick={onViewAllTransactions}
-              className="text-xs font-bold text-primary hover:underline"
-            >
-              View All
-            </button>
-          </div>
-          {loading ? (
-            <div className="flex items-center justify-center py-10">
-              <Loader2 className="animate-spin text-primary" size={24} />
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {transactions.slice(0, 5).map((tx) => (
-                <div
-                  key={tx.id}
-                  onClick={() => tx.status !== 'Processing' && onSelectReceipt?.(tx.id)}
-                  className={cn(
-                    "flex items-center justify-between p-3 rounded-xl transition-colors group",
-                    tx.status === 'Processing' ? 'cursor-default opacity-70' : 'cursor-pointer hover:bg-surface-container-high'
-                  )}
-                >
-                  <div className="flex items-center gap-4">
-                    <div className={cn(
-                      "w-10 h-10 rounded-full bg-surface-container-highest flex items-center justify-center transition-all",
-                      tx.status === 'Processing'
-                        ? 'text-tertiary animate-pulse'
-                        : 'text-primary group-hover:bg-primary group-hover:text-on-primary'
-                    )}>
-                      {tx.status === 'Processing' ? <Loader2 className="animate-spin" size={18} /> : getIcon(tx.category)}
-                    </div>
-                    <div>
-                      <p className="text-sm font-bold text-white">{tx.description}</p>
-                      <p className="text-xs text-on-surface-variant">
-                        {tx.status === 'Processing' ? 'Processing...' : `${tx.category} • ${tx.date}`}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className={cn("text-sm font-bold",
-                      tx.status === 'Processing' ? 'text-on-surface-variant' :
-                      tx.amount > 0 ? "text-primary" : "text-white"
-                    )}>
-                      {tx.status === 'Processing' ? '--' : (
-                        <>{tx.amount > 0 ? '+' : ''}{tx.amount.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}</>
-                      )}
-                    </p>
-                    <p className={cn("text-[10px]",
-                      tx.status === 'Processing' ? 'text-tertiary animate-pulse' :
-                      tx.status === 'Verified' ? 'text-primary' :
-                      tx.status === 'Pending' ? 'text-error' : 'text-tertiary'
-                    )}>{tx.status}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </section>
-
-      {/* Portfolio Highlights */}
-      <section className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <div className="md:col-span-1 glass-panel rounded-xl p-6 border border-white/5">
-          <p className="text-xs text-on-surface-variant uppercase tracking-widest mb-4">Receipts Processed</p>
-          <p className="text-3xl font-bold text-white">{totalCount}</p>
-          <p className="text-xs text-on-surface-variant mt-2">via Claude AI extraction</p>
-        </div>
-
-        <div className="md:col-span-1 glass-panel rounded-xl p-6 border border-white/5">
-          <Sparkles className="text-secondary mb-2" size={24} />
-          <p className="text-xs text-on-surface-variant uppercase tracking-widest mb-1">AI Insights</p>
-          <p className="text-sm font-medium text-white leading-relaxed">
-            {summary.length > 0
-              ? `Top category: ${summary[0].category} ($${Number(summary[0].total_spent).toLocaleString()})`
-              : 'Upload receipts to get insights'}
-          </p>
-        </div>
-
-        <a
-          href="http://localhost:3333"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="md:col-span-2 bg-gradient-to-br from-surface-container-high to-surface-container-low rounded-xl p-6 flex items-center justify-between group cursor-pointer hover:border-primary/20 border border-transparent transition-all"
-        >
-          <div>
-            <h4 className="text-lg font-bold text-white mb-1">Langfuse Monitoring</h4>
-            <p className="text-sm text-on-surface-variant">Every AI extraction is traced and monitored.</p>
-            <p className="text-xs text-on-surface-variant/60 mt-2 font-mono">admin@local.dev / admin123</p>
-          </div>
-          <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center text-primary group-hover:scale-110 transition-transform">
-            <ArrowRight size={20} />
-          </div>
-        </a>
-      </section>
+      <SectionTitle
+        title="recent"
+        more={totalCount > 0 ? `all ${totalCount} →` : undefined}
+        onMore={onViewAllTransactions}
+      />
+      <RecentList
+        items={transactions}
+        loading={loading}
+        onSelect={onSelectReceipt}
+      />
     </div>
   );
+}
+
+/* ── Greeting ─────────────────────────────────────────────────── */
+
+function GreetingRow() {
+  return (
+    <div className="flex items-center justify-between">
+      <p className="font-hand text-2xl text-[var(--color-terracotta)] leading-none">
+        Hi Daniel <span aria-hidden="true">🌿</span>
+      </p>
+      <div
+        aria-hidden="true"
+        className="h-9 w-9 rounded-full"
+        style={{
+          background: 'linear-gradient(135deg, var(--color-butter) 0%, var(--color-terracotta) 100%)',
+        }}
+      />
+    </div>
+  );
+}
+
+/* ── Month heading ────────────────────────────────────────────── */
+
+function MonthHeading({ date }: { date: Date }) {
+  const month = date.toLocaleString('en-US', { month: 'long' });
+  return (
+    <div>
+      <h1 className="font-display italic font-normal text-4xl sm:text-5xl leading-[1.05] tracking-tight">
+        Your <span className="font-medium not-italic">{month}</span>
+      </h1>
+      <p className="mt-2 text-[15px] text-[var(--color-ink-muted)]">
+        {weekProgressSentence(date)}
+      </p>
+    </div>
+  );
+}
+
+/* ── Spent card ───────────────────────────────────────────────── */
+
+function SpentCard({
+  amount,
+  count,
+  loading,
+}: {
+  amount: number;
+  count: number;
+  loading: boolean;
+}) {
+  const { whole, cents } = splitAmount(amount);
+  return (
+    <section
+      className={cn(
+        'relative overflow-hidden rounded-[18px] p-6',
+        'border border-[var(--color-rule)] bg-[var(--color-surface)]',
+        'shadow-[0_4px_16px_-8px_rgba(45,37,32,0.08)]',
+      )}
+    >
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute -top-10 -right-10 h-36 w-36 rounded-full opacity-60"
+        style={{
+          background: 'radial-gradient(circle, var(--color-butter), transparent 70%)',
+        }}
+      />
+
+      <p className="relative text-xs font-medium text-[var(--color-ink-muted)] mb-2">SPENT</p>
+
+      {loading ? (
+        <p className="relative font-display italic text-4xl text-[var(--color-ink-muted)]">
+          loading…
+        </p>
+      ) : (
+        <p className="relative font-display italic font-medium text-[clamp(2.5rem,9vw,3.5rem)] leading-none tracking-tight tnum">
+          <span className="text-[0.55em] font-normal text-[var(--color-terracotta)] align-top mr-[0.1em]">
+            $
+          </span>
+          {whole.toLocaleString()}
+          <span className="text-[0.5em] font-normal text-[var(--color-ink-muted)]">.{cents}</span>
+        </p>
+      )}
+
+      <p className="relative mt-3 text-[13px] text-[var(--color-ink-muted)]">
+        {loading
+          ? ' '
+          : count === 0
+            ? 'No entries yet — capture your first receipt below.'
+            : `${count} ${count === 1 ? 'receipt' : 'receipts'} this month`}
+      </p>
+    </section>
+  );
+}
+
+/* ── Section title ────────────────────────────────────────────── */
+
+function SectionTitle({
+  title,
+  more,
+  onMore,
+}: {
+  title: string;
+  more?: string;
+  onMore?: () => void;
+}) {
+  return (
+    <div className="flex items-center justify-between pt-2">
+      <h2 className="font-display italic font-medium text-2xl leading-none tracking-tight">
+        {title}
+      </h2>
+      {more && (
+        <button
+          type="button"
+          onClick={onMore}
+          disabled={!onMore}
+          className={cn(
+            'font-hand text-lg text-[var(--color-terracotta)]',
+            'leading-none',
+            !onMore && 'cursor-default opacity-50',
+            onMore && 'hover:text-[var(--color-terracotta-deep)]',
+          )}
+        >
+          {more}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/* ── Category grid (2×2) ─────────────────────────────────────── */
+
+const BLOB_COLORS = [
+  'var(--color-terracotta)',
+  'var(--color-sage)',
+  '#d4a574', /* sand */
+  '#b89d8a', /* earth */
+];
+
+function CategoryGrid({ items, loading }: { items: SpendingSummary[]; loading: boolean }) {
+  if (loading) {
+    return (
+      <div className="grid grid-cols-2 gap-3">
+        {[0, 1, 2, 3].map((i) => (
+          <div
+            key={i}
+            className="h-[100px] rounded-[18px] border border-[var(--color-rule)] bg-[var(--color-surface)]"
+            aria-hidden="true"
+          />
+        ))}
+      </div>
+    );
+  }
+  if (items.length === 0) {
+    return (
+      <p className="font-hand text-lg text-[var(--color-ink-muted)] py-4">
+        nothing here yet —
+      </p>
+    );
+  }
+  return (
+    <div className="grid grid-cols-2 gap-3">
+      {items.map((c, i) => (
+        <div
+          key={c.category + i}
+          className={cn(
+            'rounded-[18px] p-4 min-h-[100px]',
+            'border border-[var(--color-rule)] bg-[var(--color-surface)]',
+            'flex flex-col justify-between',
+          )}
+        >
+          <span
+            aria-hidden="true"
+            className="block h-6 w-6 rounded-lg"
+            style={{ backgroundColor: BLOB_COLORS[i % BLOB_COLORS.length] }}
+          />
+          <div>
+            <p className="text-[13px] font-medium text-[var(--color-ink-muted)] mb-0.5">
+              {prettyCategory(c.category)}
+            </p>
+            <p className="font-display italic font-medium text-[1.375rem] leading-none tracking-tight tnum">
+              ${Math.round(Math.abs(Number(c.total_spent))).toLocaleString()}
+            </p>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ── Recent list ──────────────────────────────────────────────── */
+
+function RecentList({
+  items,
+  loading,
+  onSelect,
+}: {
+  items: Transaction[];
+  loading: boolean;
+  onSelect?: (id: string) => void;
+}) {
+  if (loading) {
+    return (
+      <div className="rounded-[18px] border border-[var(--color-rule)] bg-[var(--color-surface)] px-5 py-6">
+        <p className="font-hand text-lg text-[var(--color-ink-muted)]">loading…</p>
+      </div>
+    );
+  }
+  if (items.length === 0) {
+    return (
+      <div className="rounded-[18px] border border-[var(--color-rule)] bg-[var(--color-surface)] px-5 py-6 text-center">
+        <p className="font-display italic text-[var(--color-ink-muted)]">
+          No entries this month yet.
+        </p>
+      </div>
+    );
+  }
+  const today = isoDay(new Date());
+  return (
+    <ul className="rounded-[18px] border border-[var(--color-rule)] bg-[var(--color-surface)] px-5">
+      {items.map((tx, idx) => {
+        const isProcessing = tx.status === 'Processing';
+        const isToday = tx.date === today;
+        const day = dayOfMonth(tx.date);
+        return (
+          <li
+            key={tx.id}
+            className={cn(
+              'grid grid-cols-[36px_1fr_auto] items-center gap-4 py-3',
+              idx > 0 && 'border-t border-[var(--color-rule-soft)]',
+            )}
+          >
+            <span
+              className={cn(
+                'flex h-9 w-9 items-center justify-center rounded-xl',
+                'font-display italic font-medium text-[17px] tnum',
+                isToday
+                  ? 'bg-[var(--color-terracotta)] text-white'
+                  : 'bg-[var(--color-paper-deep)] text-[var(--color-ink)]',
+              )}
+            >
+              {day}
+            </span>
+            <button
+              type="button"
+              onClick={() => !isProcessing && onSelect?.(tx.id)}
+              disabled={isProcessing}
+              className={cn(
+                'text-left min-w-0',
+                isProcessing ? 'cursor-default opacity-60' : 'cursor-pointer',
+              )}
+            >
+              <p className="text-[15px] font-medium truncate">{tx.description}</p>
+              <p className="mt-0.5 text-xs text-[var(--color-ink-muted)] truncate">
+                {prettyCategory(tx.category)}
+              </p>
+            </button>
+            <span className="font-display italic font-medium text-[17px] tnum">
+              ${Math.abs(tx.amount).toFixed(2)}
+            </span>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/* ── Helpers ──────────────────────────────────────────────────── */
+
+function currentMonthRange(now: Date): { from: string; to: string; now: Date } {
+  const y = now.getFullYear();
+  const m = now.getMonth();
+  const first = new Date(y, m, 1);
+  const last = new Date(y, m + 1, 0);
+  return { from: isoDay(first), to: isoDay(last), now };
+}
+
+function isoDay(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function dayOfMonth(isoDate: string): number {
+  // Parse the day component directly so timezone math doesn't shift it.
+  const parsed = Number(isoDate.slice(8, 10));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function weekProgressSentence(now: Date): string {
+  const dayOfMonthNum = now.getDate();
+  const weeksIn = Math.max(1, Math.floor(dayOfMonthNum / 7) + (dayOfMonthNum % 7 === 0 ? 0 : 1));
+  if (weeksIn === 1) return 'Just getting started this month.';
+  if (weeksIn === 2) return 'Two weeks in — pretty kind to you so far.';
+  if (weeksIn === 3) return 'Three weeks in — pretty kind to you so far.';
+  return 'Four weeks in — a full picture is taking shape.';
+}
+
+function splitAmount(amount: number): { whole: number; cents: string } {
+  const abs = Math.abs(amount);
+  const whole = Math.floor(abs);
+  const cents = abs.toFixed(2).split('.')[1] ?? '00';
+  return { whole, cents };
+}
+
+function prettyCategory(c: string): string {
+  if (!c) return 'Other';
+  // Backend keys are sometimes lower-case slugs ("groceries"), the Transaction
+  // type uses Title Case ("Dining"). Normalize either way to display.
+  return c.charAt(0).toUpperCase() + c.slice(1).toLowerCase();
 }
