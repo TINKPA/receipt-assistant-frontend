@@ -21,6 +21,7 @@ export default function App() {
   const [selectedReceiptId, setSelectedReceiptId] = React.useState<string | null>(null);
   const [selectedBatchId, setSelectedBatchId] = React.useState<string | null>(null);
   const [backendBuildInfo, setBackendBuildInfo] = React.useState<BuildInfo | null>(null);
+  const [transactionsSearch, setTransactionsSearch] = React.useState('');
   const { jobs, addJob, removeJob } = useProcessingJobs();
 
   React.useEffect(() => {
@@ -73,9 +74,21 @@ export default function App() {
 
     switch (activeTab) {
       case 'dashboard':
-        return <Dashboard key={refreshKey} onSelectReceipt={handleSelectReceipt} />;
+        return (
+          <Dashboard
+            key={refreshKey}
+            onSelectReceipt={handleSelectReceipt}
+            onViewAllTransactions={() => setActiveTab('transactions')}
+          />
+        );
       case 'transactions':
-        return <Transactions key={refreshKey} onSelectReceipt={handleSelectReceipt} />;
+        return (
+          <Transactions
+            key={refreshKey}
+            onSelectReceipt={handleSelectReceipt}
+            searchQuery={transactionsSearch}
+          />
+        );
       case 'batches':
         return <Batches key={refreshKey} onSelectBatch={handleSelectBatch} />;
       case 'monthly':
@@ -93,7 +106,13 @@ export default function App() {
           </div>
         );
       default:
-        return <Dashboard key={refreshKey} onSelectReceipt={handleSelectReceipt} />;
+        return (
+          <Dashboard
+            key={refreshKey}
+            onSelectReceipt={handleSelectReceipt}
+            onViewAllTransactions={() => setActiveTab('transactions')}
+          />
+        );
     }
   };
 
@@ -104,9 +123,13 @@ export default function App() {
         onTabChange={(tab) => {
           setSelectedReceiptId(null);
           setSelectedBatchId(null);
+          setTransactionsSearch('');
           setActiveTab(tab);
         }}
         onAddTransaction={() => setIsModalOpen(true)}
+        showSearch={activeTab === 'transactions' && !selectedReceiptId}
+        searchQuery={transactionsSearch}
+        onSearchChange={setTransactionsSearch}
         rightSlot={
           <span className="hidden xl:inline rounded-full border border-primary/20 bg-surface-container-high px-3 py-1 text-xs font-medium text-on-surface-variant">
             {frontendBuildInfo.gitShortSha}

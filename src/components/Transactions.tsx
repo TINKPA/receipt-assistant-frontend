@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { TrendingDown, Filter, Utensils, Plane, Zap, Film, Landmark, ShoppingBag, Car, Loader2, Eye, EyeOff, RotateCcw, FileX } from 'lucide-react';
 import {
   fetchTransactions,
@@ -20,6 +20,7 @@ import DeletedBadge from './DeletedBadge';
 
 interface TransactionsProps {
   onSelectReceipt?: (receiptId: string) => void;
+  searchQuery?: string;
 }
 
 interface TombstoneRow {
@@ -28,7 +29,7 @@ interface TombstoneRow {
   doc?: BackendDocument;
 }
 
-export default function Transactions({ onSelectReceipt }: TransactionsProps) {
+export default function Transactions({ onSelectReceipt, searchQuery = '' }: TransactionsProps) {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -90,7 +91,25 @@ export default function Transactions({ onSelectReceipt }: TransactionsProps) {
       .finally(() => setTombstoneLoading(false));
   }, [showDeleted, refreshKey]);
 
-  const totalExpenses = transactions
+  const filteredTransactions = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return transactions;
+    return transactions.filter((tx) => {
+      const haystack = [
+        tx.description,
+        tx.category,
+        tx.date,
+        tx.paymentMethod,
+        tx.status,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [transactions, searchQuery]);
+
+  const totalExpenses = filteredTransactions
     .filter((tx) => tx.amount < 0)
     .reduce((sum, tx) => sum + tx.amount, 0);
 
@@ -186,7 +205,7 @@ export default function Transactions({ onSelectReceipt }: TransactionsProps) {
               <span className="text-2xl font-bold text-white font-headline">
                 {totalExpenses.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
               </span>
-              <span className="text-on-surface-variant text-xs">{transactions.length} transactions</span>
+              <span className="text-on-surface-variant text-xs">{filteredTransactions.length} transactions</span>
             </div>
           </div>
         </div>
@@ -300,6 +319,8 @@ export default function Transactions({ onSelectReceipt }: TransactionsProps) {
           <div className="text-center py-20 text-error">{error}</div>
         ) : transactions.length === 0 ? (
           <div className="text-center py-20 text-on-surface-variant">No transactions yet. Upload a receipt to get started.</div>
+        ) : filteredTransactions.length === 0 ? (
+          <div className="text-center py-20 text-on-surface-variant">No transactions match “{searchQuery}”.</div>
         ) : (
           <table className="w-full text-left border-collapse">
             <thead>
@@ -314,7 +335,7 @@ export default function Transactions({ onSelectReceipt }: TransactionsProps) {
               </tr>
             </thead>
             <tbody className="divide-y divide-outline-variant/5">
-              {transactions.map((tx) => (
+              {filteredTransactions.map((tx) => (
                 <tr
                   key={tx.id}
                   data-testid={`txn-row-${tx.id}`}

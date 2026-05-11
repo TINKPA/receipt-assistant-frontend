@@ -9,7 +9,6 @@ import {
   Car,
   ShoppingBag,
   Zap,
-  MoreHorizontal,
   Loader2
 } from 'lucide-react';
 import {
@@ -30,9 +29,10 @@ const CHART_COLORS = ['#4edea3', '#d0bcff', '#7bd0ff', '#ffb4ab', '#a8c7fa'];
 
 interface DashboardProps {
   onSelectReceipt?: (receiptId: string) => void;
+  onViewAllTransactions?: () => void;
 }
 
-export default function Dashboard({ onSelectReceipt }: DashboardProps) {
+export default function Dashboard({ onSelectReceipt, onViewAllTransactions }: DashboardProps) {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [summary, setSummary] = useState<SpendingSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -111,9 +111,6 @@ export default function Dashboard({ onSelectReceipt }: DashboardProps) {
           <div className="bg-surface-container-high rounded-xl p-6 flex flex-col justify-between border border-outline-variant/5">
             <div className="flex justify-between items-start mb-4">
               <h4 className="text-sm font-bold text-white">Spending by Category</h4>
-              <button className="text-on-surface-variant hover:text-white transition-colors">
-                <MoreHorizontal size={18} />
-              </button>
             </div>
             {spendingData.length > 0 ? (
               <div className="h-32 w-full">
@@ -190,7 +187,13 @@ export default function Dashboard({ onSelectReceipt }: DashboardProps) {
         <div className="lg:col-span-7 bg-surface-container-low rounded-xl p-6 border border-outline-variant/5">
           <div className="flex justify-between items-center mb-6">
             <h4 className="font-headline font-bold text-white">Recent Activity</h4>
-            <button className="text-xs font-bold text-primary hover:underline">View All</button>
+            <button
+              type="button"
+              onClick={onViewAllTransactions}
+              className="text-xs font-bold text-primary hover:underline"
+            >
+              View All
+            </button>
           </div>
           {loading ? (
             <div className="flex items-center justify-center py-10">
