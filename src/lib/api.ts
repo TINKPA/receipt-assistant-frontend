@@ -376,7 +376,12 @@ export async function listTransactions(
 }
 
 /** High-level helper used by Transactions/Dashboard screens: returns
- *  the UI-row shape directly. */
+ *  the UI-row shape directly.
+ *
+ *  Default sort is `created_at desc` so freshly-uploaded receipts show
+ *  up at the top regardless of their `occurred_on` date — matches the
+ *  user's mental model after upload. Reports / monthly views should
+ *  call `listTransactions` directly with `sort: 'occurred_on'`. */
 export async function fetchTransactions(opts?: {
   from?: string;
   to?: string;
@@ -388,7 +393,7 @@ export async function fetchTransactions(opts?: {
     occurred_to: opts?.to,
     limit: opts?.limit,
     has_document: opts?.has_document,
-    sort: 'occurred_on',
+    sort: 'created_at',
     order: 'desc',
   });
   return items.map(mapTransaction);
