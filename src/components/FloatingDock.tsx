@@ -15,7 +15,7 @@ interface FloatingDockProps {
  *
  * Maps to the existing App.tsx `activeTab` state:
  *   Books   ← dashboard / transactions / batches
- *   Add     ← opens AddTransactionModal (PR 5 converts to a full-screen route)
+ *   Add     ← navigates to the full-screen Capture route
  *   Review  ← monthly / yearly
  */
 export default function FloatingDock({ active, onNavigate, onAdd }: FloatingDockProps) {

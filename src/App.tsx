@@ -7,7 +7,7 @@ import MonthlyReview from './components/MonthlyReview';
 import YearlyReview from './components/YearlyReview';
 import Batches from './components/Batches';
 import BatchDetail from './components/BatchDetail';
-import AddTransactionModal from './components/AddTransactionModal';
+import Capture from './components/Capture';
 import ProcessingToast from './components/ProcessingToast';
 import { useProcessingJobs } from './components/useProcessingJobs';
 import ReceiptDetail from './components/ReceiptDetail';
@@ -20,19 +20,19 @@ type ActiveTab =
   | 'batches'
   | 'monthly'
   | 'yearly'
-  | 'settings';
+  | 'settings'
+  | 'add';
 
 /** Map App.tsx's fine-grained tab state onto the 3-pill dock. */
 function dockDestinationFor(tab: ActiveTab): DockDestination {
+  if (tab === 'add') return 'add';
   if (tab === 'monthly' || tab === 'yearly') return 'review';
   // dashboard / transactions / batches / settings → Books
-  // Settings is reached from a Books-page utility, not a dock pill (DESIGN.md §9 — 3 dest only).
   return 'books';
 }
 
 export default function App() {
   const [activeTab, setActiveTab] = React.useState<ActiveTab>('dashboard');
-  const [isModalOpen, setIsModalOpen] = React.useState(false);
   const [refreshKey, setRefreshKey] = React.useState(0);
   const [selectedReceiptId, setSelectedReceiptId] = React.useState<string | null>(null);
   const [selectedBatchId, setSelectedBatchId] = React.useState<string | null>(null);
@@ -47,6 +47,8 @@ export default function App() {
   const handleUploadComplete = (job: { batchId: string; ingestId: string; filename: string }) => {
     addJob(job);
     setRefreshKey((k) => k + 1);
+    // After upload, drop back to Books so the user sees their entry processing.
+    goToTab('dashboard');
   };
 
   const goToTab = (tab: ActiveTab) => {
@@ -70,6 +72,15 @@ export default function App() {
   const handleBackFromBatch = () => setSelectedBatchId(null);
 
   const renderContent = () => {
+    if (activeTab === 'add') {
+      return (
+        <Capture
+          onCancel={() => goToTab('dashboard')}
+          onComplete={handleUploadComplete}
+        />
+      );
+    }
+
     if (selectedReceiptId) {
       return (
         <ReceiptDetail
@@ -137,16 +148,11 @@ export default function App() {
       <Layout
         dockActive={dockDestinationFor(activeTab)}
         onDockNavigate={handleDockNavigate}
-        onAddTransaction={() => setIsModalOpen(true)}
+        onAddTransaction={() => goToTab('add')}
+        dockHidden={activeTab === 'add'}
       >
         {renderContent()}
       </Layout>
-
-      <AddTransactionModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        onComplete={handleUploadComplete}
-      />
 
       <ProcessingToast
         jobs={jobs}
