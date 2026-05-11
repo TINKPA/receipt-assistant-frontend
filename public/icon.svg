@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180" role="img" aria-label="Receipts icon">
+  <!-- App icon — Variant B (Soft / Organic).
+       Terracotta square; iOS adds its own rounded mask on top, browsers
+       render the square as-is in the favicon. The R glyph is set in
+       Georgia italic so the icon renders correctly even without web
+       fonts loaded (favicon contexts skip @font-face). -->
+  <rect width="180" height="180" fill="#C97B5C"/>
+  <text x="90" y="139" text-anchor="middle"
+        font-family="Georgia, 'Times New Roman', serif"
+        font-size="128" font-style="italic" font-weight="500"
+        fill="#FAF6EC">R</text>
+</svg>
