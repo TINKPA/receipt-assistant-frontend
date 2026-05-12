@@ -6,6 +6,7 @@ import {
   type SpendingSummary,
 } from '../lib/api';
 import type { Transaction, Category } from '../types';
+import { isProcessing as txIsProcessing } from '../lib/transactionStatus';
 import { cn } from '../lib/utils';
 import { CategoryIcon } from './CategoryIcon';
 
@@ -307,7 +308,7 @@ function RecentList({
   return (
     <ul className="rounded-[18px] border border-[var(--color-rule)] bg-[var(--color-surface)] px-5">
       {items.map((tx, idx) => {
-        const isProcessing = tx.status === 'Processing';
+        const isProcessing = txIsProcessing(tx.rawStatus);
         const isToday = tx.date === today;
         const day = dayOfMonth(tx.date);
         return (

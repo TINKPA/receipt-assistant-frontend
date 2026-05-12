@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { APIProvider, Map, Marker } from '@vis.gl/react-google-maps';
+import React, { useEffect, useRef, useState } from 'react';
+import { MoreHorizontal, ChevronDown, ChevronRight } from 'lucide-react';
 import {
   classifyBackendCategory,
   fetchReceiptDetail,
@@ -12,6 +12,7 @@ import {
   type ReceiptView,
   type BackendTransaction,
 } from '../lib/api';
+import { statusBadge } from '../lib/transactionStatus';
 import { cn } from '../lib/utils';
 import { CategoryIcon } from './CategoryIcon';
 import EditReceiptModal from './EditReceiptModal';
@@ -19,8 +20,6 @@ import ConfirmActionDialog from './ConfirmActionDialog';
 import DeleteReceiptDialog from './DeleteReceiptDialog';
 import DeletedBadge from './DeletedBadge';
 import { removeTombstone } from '../lib/tombstones';
-
-const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined;
 
 interface ReceiptDetailProps {
   receiptId: string;
@@ -56,7 +55,6 @@ export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: Re
   const [receipt, setReceipt] = useState<ReceiptView | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [showRawText, setShowRawText] = useState(false);
   const [activeDialog, setActiveDialog] = useState<'edit' | 'void' | 'delete' | null>(null);
   const [restoring, setRestoring] = useState(false);
   const [restoreError, setRestoreError] = useState<string | null>(null);
@@ -124,7 +122,7 @@ export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: Re
   if (loading) {
     return (
       <div className="space-y-4">
-        <Crumbs onBack={onBack} />
+        <SimpleBackBar onBack={onBack} />
         <div className="py-16 text-center">
           <p className="font-hand text-xl text-[var(--color-ink-muted)]">loading…</p>
         </div>
@@ -135,7 +133,7 @@ export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: Re
   if (error || !receipt) {
     return (
       <div className="space-y-4">
-        <Crumbs onBack={onBack} />
+        <SimpleBackBar onBack={onBack} />
         <div className="rounded-[18px] border border-[var(--color-rule)] bg-[var(--color-surface)] py-12 text-center text-[var(--color-stamp)]">
           {error || 'Receipt not found'}
         </div>
@@ -152,9 +150,6 @@ export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: Re
   const isProcessing = receipt.status === 'draft';
   const tax = md<number>(legacy, 'tax');
   const tip = md<number>(legacy, 'tip');
-  const latitude = receipt.place?.lat ?? null;
-  const longitude = receipt.place?.lng ?? null;
-  const address = receipt.place?.formatted_address ?? md<string>(legacy, 'address');
   const rawText = md<string>(legacy, 'raw_text');
   const items = md<Array<{ name: string; quantity?: number; unit_price?: number; total_price?: number }>>(legacy, 'items');
   const confidence = md<number>(
@@ -175,37 +170,44 @@ export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: Re
   const docDeletedAt = (primaryDoc as { deleted_at?: string | null } | undefined)?.deleted_at ?? null;
   const isTombstoned = docDeletedAt != null;
 
+  const badge = statusBadge(receipt.status);
+  const lowConfidence = confidence != null && confidence < 0.6;
+
   return (
     <div className="space-y-6">
-      <Crumbs onBack={onBack}>
-        {isTombstoned && <DeletedBadge deletedAt={docDeletedAt} />}
-      </Crumbs>
-
-      <TitleBlock
-        date={receipt.occurred_on}
-        merchant={isProcessing ? 'Processing…' : merchantLabel}
-        sub={isProcessing ? null : receiptSubLine(receipt, address)}
+      <TopBar
+        onBack={onBack}
+        isTombstoned={isTombstoned}
+        deletedAt={docDeletedAt}
+        isProcessing={isProcessing}
+        canEdit={canEdit}
+        canVoid={canVoid}
+        canDelete={canDelete}
+        restoring={restoring}
+        onEdit={() => setActiveDialog('edit')}
+        onVoid={() => setActiveDialog('void')}
+        onDelete={() => setActiveDialog('delete')}
+        onRestore={handleRestore}
       />
 
-      {isProcessing && (
-        <ProcessingNote />
-      )}
+      <AmountHero
+        amount={receipt.total}
+        currency={receipt.currency}
+        merchant={isProcessing ? 'Processing…' : merchantLabel}
+        occurredOn={receipt.occurred_on}
+        isProcessing={isProcessing}
+        voided={receipt.status === 'voided'}
+      />
+
+      <StatusRow badge={badge} paymentMethod={receipt.paymentMethod ?? null} />
+
+      {isProcessing && <ProcessingNote />}
 
       {restoreError && (
         <Banner tone="error">Restore failed: {restoreError}</Banner>
       )}
 
-      {!isProcessing && receipt.documentId && (
-        <ReceiptImageCard documentId={receipt.documentId} />
-      )}
-
-      {receipt.narration && !isProcessing && (
-        <NoteCard text={receipt.narration} />
-      )}
-
       <FieldsGrid
-        total={receipt.total}
-        currency={receipt.currency}
         category={receipt.category}
         payment={receipt.paymentMethod ?? null}
         tax={tax}
@@ -217,43 +219,25 @@ export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: Re
         <LineItemsCard items={items} />
       )}
 
-      {!isProcessing && latitude != null && longitude != null && GOOGLE_MAPS_API_KEY && (
-        <LocationCard
-          lat={latitude}
-          lng={longitude}
-          address={address}
-          apiKey={GOOGLE_MAPS_API_KEY}
-        />
+      {receipt.narration && !isProcessing && (
+        <NoteCard text={receipt.narration} />
       )}
 
-      {!isProcessing && rawText && (
-        <RawTextCard
-          text={rawText}
-          open={showRawText}
-          onToggle={() => setShowRawText((s) => !s)}
-        />
+      {/* Related Email slot — populated once Gmail integration (#34) ships.
+       *  Hidden when there are no matches (no skeleton, no placeholder). */}
+
+      {!isProcessing && receipt.documentId && (
+        <OriginalReceiptCollapsible documentId={receipt.documentId} />
       )}
 
-      {!isProcessing && confidence != null && (
-        <ExtractionQualityCard
+      {!isProcessing && (rawText || confidence != null) && (
+        <ExtractionDetailsCollapsible
+          rawText={rawText}
           confidence={confidence}
           warnings={warnings}
+          defaultOpen={lowConfidence}
         />
       )}
-
-      {/* Actions */}
-      <Actions
-        isProcessing={isProcessing}
-        isTombstoned={isTombstoned}
-        canEdit={canEdit}
-        canVoid={canVoid}
-        canDelete={canDelete}
-        restoring={restoring}
-        onEdit={() => setActiveDialog('edit')}
-        onVoid={() => setActiveDialog('void')}
-        onDelete={() => setActiveDialog('delete')}
-        onRestore={handleRestore}
-      />
 
       {/* Dialogs */}
       <EditReceiptModal
@@ -301,13 +285,60 @@ export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: Re
 
 /* ── Pieces ───────────────────────────────────────────────────── */
 
-function Crumbs({
+function SimpleBackBar({ onBack }: { onBack: () => void }) {
+  return (
+    <div className="flex items-center text-[11px] tracking-[0.16em] uppercase text-[var(--color-ink-muted)]">
+      <button
+        type="button"
+        onClick={onBack}
+        className="flex items-center gap-2 hover:text-[var(--color-ink)] transition-colors"
+      >
+        <span className="font-display italic text-lg leading-none text-[var(--color-terracotta)]">←</span>
+        Ledger
+      </button>
+    </div>
+  );
+}
+
+function TopBar({
   onBack,
-  children,
+  isTombstoned,
+  deletedAt,
+  isProcessing,
+  canEdit,
+  canVoid,
+  canDelete,
+  restoring,
+  onEdit,
+  onVoid,
+  onDelete,
+  onRestore,
 }: {
   onBack: () => void;
-  children?: React.ReactNode;
+  isTombstoned: boolean;
+  deletedAt: string | null;
+  isProcessing: boolean;
+  canEdit: boolean;
+  canVoid: boolean;
+  canDelete: boolean;
+  restoring: boolean;
+  onEdit: () => void;
+  onVoid: () => void;
+  onDelete: () => void;
+  onRestore: () => void;
 }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [menuOpen]);
+
   return (
     <div className="flex items-center justify-between text-[11px] tracking-[0.16em] uppercase text-[var(--color-ink-muted)]">
       <button
@@ -315,62 +346,215 @@ function Crumbs({
         onClick={onBack}
         className="flex items-center gap-2 hover:text-[var(--color-ink)] transition-colors"
       >
-        <span className="font-display italic text-lg leading-none text-[var(--color-terracotta)]">
-          ←
-        </span>
+        <span className="font-display italic text-lg leading-none text-[var(--color-terracotta)]">←</span>
         Ledger
       </button>
-      {children}
+      <div className="flex items-center gap-3">
+        {isTombstoned && <DeletedBadge deletedAt={deletedAt} />}
+        {isTombstoned ? (
+          <button
+            type="button"
+            onClick={onRestore}
+            disabled={restoring}
+            className={cn(
+              'rounded-full px-3 py-1.5 text-[11px] font-medium tracking-[0.14em] uppercase',
+              'bg-[var(--color-terracotta)] text-white hover:bg-[var(--color-terracotta-deep)]',
+              'transition-colors disabled:opacity-50 disabled:cursor-not-allowed',
+            )}
+          >
+            {restoring ? 'Restoring…' : 'Restore'}
+          </button>
+        ) : (
+          !isProcessing && (
+            <div ref={menuRef} className="relative">
+              <button
+                type="button"
+                onClick={() => setMenuOpen((s) => !s)}
+                aria-label="Receipt actions"
+                className={cn(
+                  'flex h-8 w-8 items-center justify-center rounded-full',
+                  'border border-[var(--color-rule)] bg-[var(--color-surface)]',
+                  'hover:border-[var(--color-ink)]/30 transition-colors',
+                )}
+              >
+                <MoreHorizontal size={16} className="text-[var(--color-ink)]" />
+              </button>
+              {menuOpen && (
+                <div
+                  className={cn(
+                    'absolute right-0 z-30 mt-2 min-w-[180px] p-1',
+                    'rounded-[14px] bg-[var(--color-surface)] border border-[var(--color-rule)]',
+                    'shadow-[0_12px_32px_-10px_rgba(45,37,32,0.18)]',
+                  )}
+                >
+                  <MenuItem
+                    label="Edit fields"
+                    disabled={!canEdit}
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onEdit();
+                    }}
+                  />
+                  {canVoid && (
+                    <MenuItem
+                      label="Void receipt"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        onVoid();
+                      }}
+                    />
+                  )}
+                  <MenuItem
+                    label="Delete…"
+                    disabled={!canDelete}
+                    destructive
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onDelete();
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+          )
+        )}
+      </div>
     </div>
   );
 }
 
-function TitleBlock({
-  date,
-  merchant,
-  sub,
+function MenuItem({
+  label,
+  onClick,
+  disabled,
+  destructive,
 }: {
-  date: string;
-  merchant: string;
-  sub: string | null;
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+  destructive?: boolean;
 }) {
   return (
-    <div>
-      <p className="font-hand text-xl text-[var(--color-terracotta)] leading-none">
-        {timeOfDayPhrase(date)}
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={cn(
+        'w-full text-left px-3 py-2 rounded-[10px] text-sm transition-colors normal-case tracking-normal',
+        destructive
+          ? 'text-[var(--color-stamp)] hover:bg-[var(--color-stamp)]/8'
+          : 'text-[var(--color-ink)] hover:bg-[var(--color-paper-deep)]',
+        'disabled:opacity-40 disabled:cursor-not-allowed',
+      )}
+    >
+      {label}
+    </button>
+  );
+}
+
+function AmountHero({
+  amount,
+  currency,
+  merchant,
+  occurredOn,
+  isProcessing,
+  voided,
+}: {
+  amount: number;
+  currency: string;
+  merchant: string;
+  occurredOn: string;
+  isProcessing: boolean;
+  voided: boolean;
+}) {
+  return (
+    <div className="text-center pt-2">
+      <p
+        className={cn(
+          'font-display italic font-medium tracking-tight tnum',
+          'text-[3.25rem] sm:text-[4rem] leading-none',
+          voided && 'line-through text-[var(--color-ink-muted)]',
+        )}
+      >
+        {isProcessing ? '—' : `$${amount.toFixed(2)}`}
       </p>
-      <h1 className="mt-2 font-display italic font-medium text-3xl sm:text-4xl leading-[1.05] tracking-tight">
+      <p className="mt-1 text-[11px] tracking-[0.14em] uppercase text-[var(--color-ink-muted)]">
+        {currency}
+      </p>
+      <h1 className="mt-4 font-display italic font-medium text-2xl sm:text-3xl leading-tight">
         {merchant}
       </h1>
-      {sub && (
-        <p className="mt-2 font-display italic text-[15px] text-[var(--color-ink-muted)]">
-          {sub}
-        </p>
+      <p className="mt-1 text-[13px] text-[var(--color-ink-muted)]">
+        {formatDateLong(occurredOn)}
+      </p>
+    </div>
+  );
+}
+
+function StatusRow({
+  badge,
+  paymentMethod,
+}: {
+  badge: ReturnType<typeof statusBadge>;
+  paymentMethod: string | null;
+}) {
+  if (!badge && !paymentMethod) return null;
+  return (
+    <div className="flex items-center justify-center gap-2 text-[12px] text-[var(--color-ink-muted)]">
+      {badge && (
+        <span
+          className={cn(
+            'inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium',
+            badge.tone === 'red' && 'bg-[var(--color-stamp)]/10 text-[var(--color-stamp)]',
+            badge.tone === 'green' && 'bg-[color:rgba(52,168,83,0.12)] text-[color:rgb(52,168,83)]',
+            badge.tone === 'muted' && 'bg-[var(--color-paper-deep)] text-[var(--color-ink-muted)]',
+          )}
+        >
+          {badge.label}
+        </span>
+      )}
+      {badge && paymentMethod && <span aria-hidden="true">·</span>}
+      {paymentMethod && (
+        <span>
+          {paymentMethod.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
+        </span>
       )}
     </div>
   );
 }
 
-function ReceiptImageCard({ documentId }: { documentId: string }) {
+function OriginalReceiptCollapsible({ documentId }: { documentId: string }) {
+  const [open, setOpen] = useState(false);
   return (
-    <div
-      className="rounded-[18px] border border-[var(--color-rule)] overflow-hidden p-4"
-      style={{
-        background:
-          'linear-gradient(180deg, rgba(245, 230, 195, 0.4) 0%, rgba(201, 123, 92, 0.06) 100%), var(--color-surface)',
-      }}
-    >
-      <img
-        src={documentContentUrl(documentId)}
-        alt="Receipt"
-        className="block max-w-full max-h-[500px] object-contain mx-auto rounded-[10px]"
-        onError={(e) => {
-          (e.target as HTMLImageElement).style.display = 'none';
-        }}
-      />
-      <p className="mt-3 font-display italic text-xs text-[var(--color-ink-muted)] text-center">
-        fig. — original receipt, scanned.
-      </p>
+    <div className="rounded-[18px] border border-[var(--color-rule)] bg-[var(--color-surface)] overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen((s) => !s)}
+        className="w-full px-5 py-4 flex items-center justify-between text-left hover:bg-[var(--color-paper-deep)]/30 transition-colors"
+      >
+        <span className="font-display italic font-medium text-lg leading-none">
+          Original receipt
+        </span>
+        {open ? <ChevronDown size={18} className="text-[var(--color-ink-muted)]" /> : <ChevronRight size={18} className="text-[var(--color-ink-muted)]" />}
+      </button>
+      {open && (
+        <div
+          className="p-4"
+          style={{
+            background:
+              'linear-gradient(180deg, rgba(245, 230, 195, 0.4) 0%, rgba(201, 123, 92, 0.06) 100%), var(--color-surface)',
+          }}
+        >
+          <img
+            src={documentContentUrl(documentId)}
+            alt="Receipt"
+            className="block max-w-full max-h-[500px] object-contain mx-auto rounded-[10px]"
+            onError={(e) => {
+              (e.target as HTMLImageElement).style.display = 'none';
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -396,56 +580,40 @@ function NoteCard({ text }: { text: string }) {
 }
 
 function FieldsGrid({
-  total,
-  currency,
   category,
   payment,
   tax,
   tip,
   isProcessing,
 }: {
-  total: number;
-  currency: string;
   category: string | null;
   payment: string | null;
   tax: number | undefined;
   tip: number | undefined;
   isProcessing: boolean;
 }) {
-  return (
-    <div className="grid grid-cols-2 gap-3">
-      <div
-        className={cn(
-          'col-span-2 rounded-[16px] px-5 py-4',
-          'bg-[var(--color-terracotta)] text-white',
-        )}
-      >
-        <p className="text-[11px] font-medium tracking-[0.16em] uppercase text-white/70">
-          Total
-        </p>
-        <p className="mt-1 font-display italic font-medium text-[2rem] leading-none tnum">
-          {isProcessing ? '—' : `$${total.toFixed(2)}`}
-        </p>
-        <p className="mt-1 text-[11px] tracking-[0.12em] uppercase text-white/70">
-          {currency}
-        </p>
-      </div>
-
-      {tax != null && tax > 0 && (
-        <SmallFieldCard label="Tax" value={`$${tax.toFixed(2)}`} numeric />
-      )}
-      {tip != null && tip > 0 && (
-        <SmallFieldCard label="Tip" value={`$${tip.toFixed(2)}`} numeric />
-      )}
-      {payment && (
-        <SmallFieldCard
-          label="Payment"
-          value={payment.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
-        />
-      )}
-      {category && <CategoryFieldCard rawCategory={category} />}
-    </div>
-  );
+  if (isProcessing) return null;
+  const cells: React.ReactNode[] = [];
+  if (tax != null && tax > 0) {
+    cells.push(<SmallFieldCard key="tax" label="Tax" value={`$${tax.toFixed(2)}`} numeric />);
+  }
+  if (tip != null && tip > 0) {
+    cells.push(<SmallFieldCard key="tip" label="Tip" value={`$${tip.toFixed(2)}`} numeric />);
+  }
+  if (payment) {
+    cells.push(
+      <SmallFieldCard
+        key="payment"
+        label="Payment"
+        value={payment.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
+      />,
+    );
+  }
+  if (category) {
+    cells.push(<CategoryFieldCard key="category" rawCategory={category} />);
+  }
+  if (cells.length === 0) return null;
+  return <div className="grid grid-cols-2 gap-3">{cells}</div>;
 }
 
 function CategoryFieldCard({ rawCategory }: { rawCategory: string }) {
@@ -522,106 +690,47 @@ function LineItemsCard({
   );
 }
 
-function LocationCard({
-  lat,
-  lng,
-  address,
-  apiKey,
+function ExtractionDetailsCollapsible({
+  rawText,
+  confidence,
+  warnings,
+  defaultOpen,
 }: {
-  lat: number;
-  lng: number;
-  address: string | undefined;
-  apiKey: string;
+  rawText: string | undefined;
+  confidence: number | undefined;
+  warnings: string[] | undefined;
+  defaultOpen: boolean;
 }) {
-  return (
-    <div className="rounded-[18px] border border-[var(--color-rule)] bg-[var(--color-surface)] overflow-hidden">
-      <div className="px-5 py-4 border-b border-[var(--color-rule)]">
-        <h3 className="font-display italic font-medium text-lg leading-none">Where</h3>
-        {address && (
-          <p className="mt-1 text-sm text-[var(--color-ink-muted)]">{address}</p>
-        )}
-      </div>
-      <div className="h-[280px]">
-        <APIProvider apiKey={apiKey}>
-          <Map
-            defaultCenter={{ lat, lng }}
-            defaultZoom={15}
-            gestureHandling="cooperative"
-            disableDefaultUI={false}
-          >
-            <Marker position={{ lat, lng }} />
-          </Map>
-        </APIProvider>
-      </div>
-    </div>
-  );
-}
-
-function RawTextCard({
-  text,
-  open,
-  onToggle,
-}: {
-  text: string;
-  open: boolean;
-  onToggle: () => void;
-}) {
+  const [open, setOpen] = useState(defaultOpen);
+  const isLow = confidence != null && confidence < 0.6;
   return (
     <div className="rounded-[18px] border border-[var(--color-rule)] bg-[var(--color-surface)] overflow-hidden">
       <button
         type="button"
-        onClick={onToggle}
+        onClick={() => setOpen((s) => !s)}
         className="w-full px-5 py-4 flex items-center justify-between text-left hover:bg-[var(--color-paper-deep)]/30 transition-colors"
       >
         <span className="font-display italic font-medium text-lg leading-none">
-          Raw OCR text
+          Extraction details
         </span>
-        <span className="font-hand text-base text-[var(--color-terracotta)]">
-          {open ? 'hide' : 'show ↓'}
+        <span className="flex items-center gap-2">
+          {confidence != null && (
+            <span
+              className={cn(
+                'text-[11px] tracking-[0.12em] uppercase',
+                isLow ? 'text-[var(--color-stamp)]' : 'text-[var(--color-ink-muted)]',
+              )}
+            >
+              {(confidence * 100).toFixed(0)}% confidence
+            </span>
+          )}
+          {open ? <ChevronDown size={18} className="text-[var(--color-ink-muted)]" /> : <ChevronRight size={18} className="text-[var(--color-ink-muted)]" />}
         </span>
       </button>
       {open && (
-        <pre className="px-5 pb-5 text-xs text-[var(--color-ink-muted)] whitespace-pre-wrap font-mono">
-          {text}
-        </pre>
-      )}
-    </div>
-  );
-}
-
-function ExtractionQualityCard({
-  confidence,
-  warnings,
-}: {
-  confidence: number;
-  warnings: string[] | undefined;
-}) {
-  const isHigh = confidence >= 0.7;
-  return (
-    <div className="rounded-[18px] border border-[var(--color-rule)] bg-[var(--color-surface)] px-5 py-4">
-      <h3 className="font-display italic font-medium text-lg leading-none mb-3">
-        Extraction
-      </h3>
-      <div className="flex flex-wrap gap-6">
-        <div>
-          <p className="text-[11px] font-medium tracking-[0.14em] uppercase text-[var(--color-ink-muted)]">
-            Confidence
-          </p>
-          <p
-            className={cn(
-              'mt-1 font-display italic font-medium text-xl tnum',
-              isHigh ? 'text-[var(--color-sage)]' : 'text-[var(--color-stamp)]',
-            )}
-          >
-            {(confidence * 100).toFixed(0)}%
-          </p>
-        </div>
-        {warnings && warnings.length > 0 && (
-          <div>
-            <p className="text-[11px] font-medium tracking-[0.14em] uppercase text-[var(--color-ink-muted)]">
-              Warnings
-            </p>
-            <div className="mt-1 flex flex-wrap gap-1">
+        <div className="px-5 pb-5 space-y-4">
+          {warnings && warnings.length > 0 && (
+            <div className="flex flex-wrap gap-1">
               {warnings.map((w, i) => (
                 <span
                   key={i}
@@ -631,9 +740,14 @@ function ExtractionQualityCard({
                 </span>
               ))}
             </div>
-          </div>
-        )}
-      </div>
+          )}
+          {rawText && (
+            <pre className="text-xs text-[var(--color-ink-muted)] whitespace-pre-wrap font-mono">
+              {rawText}
+            </pre>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -681,110 +795,11 @@ function Banner({
   );
 }
 
-function Actions({
-  isProcessing,
-  isTombstoned,
-  canEdit,
-  canVoid,
-  canDelete,
-  restoring,
-  onEdit,
-  onVoid,
-  onDelete,
-  onRestore,
-}: {
-  isProcessing: boolean;
-  isTombstoned: boolean;
-  canEdit: boolean;
-  canVoid: boolean;
-  canDelete: boolean;
-  restoring: boolean;
-  onEdit: () => void;
-  onVoid: () => void;
-  onDelete: () => void;
-  onRestore: () => void;
-}) {
-  if (isProcessing) return null;
-  if (isTombstoned) {
-    return (
-      <div className="pt-2">
-        <button
-          type="button"
-          onClick={onRestore}
-          disabled={restoring}
-          className={cn(
-            'w-full rounded-[14px] py-3 text-sm font-medium tracking-[0.14em] uppercase',
-            'bg-[var(--color-terracotta)] text-white hover:bg-[var(--color-terracotta-deep)]',
-            'transition-colors disabled:opacity-50 disabled:cursor-not-allowed',
-          )}
-        >
-          {restoring ? 'Restoring…' : 'Restore receipt'}
-        </button>
-      </div>
-    );
-  }
-  return (
-    <div className="grid grid-cols-2 gap-3 pt-2">
-      <button
-        type="button"
-        onClick={onDelete}
-        disabled={!canDelete}
-        className={cn(
-          'rounded-[14px] py-3 text-sm font-medium tracking-[0.14em] uppercase',
-          'border border-[var(--color-rule)] bg-[var(--color-surface)] text-[var(--color-ink)]',
-          'hover:border-[var(--color-stamp)]/40 hover:text-[var(--color-stamp)]',
-          'transition-colors disabled:opacity-40 disabled:cursor-not-allowed',
-        )}
-      >
-        Delete…
-      </button>
-      <button
-        type="button"
-        onClick={onEdit}
-        disabled={!canEdit}
-        className={cn(
-          'rounded-[14px] py-3 text-sm font-medium tracking-[0.14em] uppercase',
-          'bg-[var(--color-ink)] text-[var(--color-paper)] hover:bg-[#3a322c]',
-          'transition-colors disabled:opacity-40 disabled:cursor-not-allowed',
-        )}
-      >
-        Edit fields
-      </button>
-      {canVoid && (
-        <button
-          type="button"
-          onClick={onVoid}
-          className={cn(
-            'col-span-2 rounded-[14px] py-2 text-xs font-medium tracking-[0.14em] uppercase',
-            'text-[var(--color-ink-muted)] hover:text-[var(--color-stamp)] transition-colors',
-          )}
-        >
-          Void (post a reversing entry) →
-        </button>
-      )}
-    </div>
-  );
-}
-
 /* ── Helpers ──────────────────────────────────────────────────── */
 
-function timeOfDayPhrase(isoDate: string): string {
+function formatDateLong(isoDate: string): string {
   const [y, m, d] = isoDate.split('-').map(Number);
   if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return isoDate;
   const dt = new Date(y, m - 1, d);
-  const dow = dt.toLocaleString('en-US', { weekday: 'long' }).toLowerCase();
-  return `${dow}, ${dt.toLocaleString('en-US', { month: 'long' }).toLowerCase()} ${d}`;
-}
-
-function receiptSubLine(receipt: ReceiptView, address: string | undefined): string | null {
-  const bits: string[] = [];
-  if (address) {
-    // Keep just the first comma-separated chunk for the title — full address
-    // shows up in the LocationCard.
-    bits.push(address.split(',')[0].trim());
-  }
-  if (receipt.category) {
-    bits.push(receipt.category);
-  }
-  return bits.length > 0 ? bits.join(' · ') : null;
+  return dt.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
