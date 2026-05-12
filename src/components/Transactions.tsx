@@ -13,6 +13,7 @@ import { listTombstones, removeTombstone } from '../lib/tombstones';
 import { useDebouncedValue } from '../lib/useDebouncedValue';
 import { cn } from '../lib/utils';
 import type { Transaction } from '../types';
+import { isProcessing as txIsProcessing, statusBadge } from '../lib/transactionStatus';
 import { CategoryIcon } from './CategoryIcon';
 import TransactionRowMenu from './TransactionRowMenu';
 import ConfirmActionDialog from './ConfirmActionDialog';
@@ -457,7 +458,8 @@ function LedgerRow({
   onHardDelete: (id: string) => void;
   onUnreconcile: (id: string) => void;
 }) {
-  const isProcessing = tx.status === 'Processing';
+  const isProcessing = txIsProcessing(tx.rawStatus);
+  const badge = statusBadge(tx.rawStatus);
   const hasDoc = Boolean(tx.documentId);
   return (
     <div
@@ -502,12 +504,27 @@ function LedgerRow({
         </p>
         <p className="mt-0.5 text-[11px] tracking-[0.04em] uppercase text-[var(--color-ink-muted)] truncate">
           {tx.category ?? tx.transactionType} · {formatDay(tx.date)}
-          {tx.status !== 'New Charge' && ` · ${tx.status}`}
+          {badge && (
+            <span
+              className={cn(
+                'ml-1',
+                badge.tone === 'red' && 'text-[var(--color-stamp)]',
+                badge.tone === 'green' && 'text-[color:rgb(52,168,83)]',
+              )}
+            >
+              · {badge.label}
+            </span>
+          )}
         </p>
       </button>
 
       {/* Amount */}
-      <span className="font-display italic font-medium text-[18px] tnum px-1">
+      <span
+        className={cn(
+          'font-display italic font-medium text-[18px] tnum px-1',
+          badge?.strikethrough && 'line-through opacity-60',
+        )}
+      >
         ${Math.abs(tx.amount).toFixed(2)}
       </span>
 

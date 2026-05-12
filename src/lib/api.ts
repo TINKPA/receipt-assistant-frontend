@@ -213,11 +213,6 @@ export function mapTransaction(t: BackendTransaction): Transaction {
   const rawCat = normalizeCategoryKey(rv.category);
   const classification: CategoryClassification =
     (rawCat ? CATEGORY_MAP[rawCat] : undefined) ?? { category: null, transactionType: 'spending' };
-  const status: Transaction['status'] =
-    t.status === 'draft' || t.status === 'error' ? 'Pending'
-    : t.status === 'voided' ? 'Pending'
-    : t.status === 'reconciled' ? 'Verified'
-    : 'New Charge';
   return {
     id: t.id,
     description: rv.payee ?? rv.narration ?? 'Unknown',
@@ -227,9 +222,6 @@ export function mapTransaction(t: BackendTransaction): Transaction {
     paymentMethod: rv.paymentMethod ?? 'Unknown',
     // UI convention: expenses render as negative; income stays positive.
     amount: classification.transactionType === 'income' ? rv.total : -rv.total,
-    status,
-    icon: '',
-    color: '',
     rawStatus: t.status,
     documentId: rv.documentId,
   };

@@ -35,14 +35,9 @@ export interface Transaction {
   date: string;
   paymentMethod: string;
   amount: number;
-  status: 'Verified' | 'Pending' | 'New Charge' | 'Surplus' | 'Peak' | 'Processing';
-  /** @deprecated icon/color now derived from category via CATEGORY_META. Retained for unmigrated callers. */
-  icon: string;
-  /** @deprecated see icon. */
-  color: string;
-  /** The raw backend status (before UI normalization). Needed for delete /
-   *  unreconcile menus that branch on `posted` vs `reconciled` etc. */
-  rawStatus?: RawTransactionStatus;
+  /** Single source of truth for state. UI-visible status labels are derived
+   *  via `statusBadge(rawStatus)` from `src/lib/transactionStatus.ts`. */
+  rawStatus: RawTransactionStatus;
   /** Primary linked document id, if any — needed for tombstone toggle and
    *  delete-receipt cascade flows from the list. */
   documentId?: string | null;
