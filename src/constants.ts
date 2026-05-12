@@ -9,9 +9,7 @@ export const TRANSACTIONS: Transaction[] = [
     date: 'Oct 24, 2023',
     paymentMethod: 'Amex Platinum',
     amount: -1240.00,
-    status: 'Verified',
-    icon: 'restaurant',
-    color: 'primary'
+    rawStatus: 'posted',
   },
   {
     id: '2',
@@ -21,9 +19,7 @@ export const TRANSACTIONS: Transaction[] = [
     date: 'Oct 22, 2023',
     paymentMethod: 'Bank Transfer',
     amount: -4850.30,
-    status: 'Pending',
-    icon: 'flight',
-    color: 'tertiary'
+    rawStatus: 'draft',
   },
   {
     id: '3',
@@ -33,9 +29,7 @@ export const TRANSACTIONS: Transaction[] = [
     date: 'Oct 20, 2023',
     paymentMethod: 'Visa Signature',
     amount: -315.45,
-    status: 'Verified',
-    icon: 'bolt',
-    color: 'secondary'
+    rawStatus: 'reconciled',
   },
   {
     id: '4',
@@ -45,9 +39,7 @@ export const TRANSACTIONS: Transaction[] = [
     date: 'Oct 18, 2023',
     paymentMethod: 'Amex Platinum',
     amount: -85.00,
-    status: 'Verified',
-    icon: 'theaters',
-    color: 'error'
+    rawStatus: 'posted',
   },
   {
     id: '5',
@@ -57,9 +49,7 @@ export const TRANSACTIONS: Transaction[] = [
     date: 'Oct 15, 2023',
     paymentMethod: 'Investment Portfolio',
     amount: 12400.00,
-    status: 'Verified',
-    icon: 'account_balance',
-    color: 'primary'
+    rawStatus: 'posted',
   }
 ];
 
