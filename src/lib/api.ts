@@ -100,6 +100,9 @@ export interface ReceiptView {
   postings: BackendPosting[];
   /** Google Places entry for the merchant location, if geocoded. */
   place: BackendPlace | null;
+  /** Canonical merchant brand id (from metadata.merchant.brand_id),
+   *  used to link to the merchant aggregation page. */
+  merchantBrandId: string | null;
   etag: string | null;
 }
 
@@ -155,6 +158,19 @@ function categoryFromTxn(t: BackendTransaction): string | null {
   return typeof raw === 'string' ? raw : null;
 }
 
+/** Pull the merchant block written by the extractor (Phase 2.5) from
+ *  transaction metadata. Returns null if absent (legacy rows pre-#64). */
+function merchantFromTxn(t: BackendTransaction): { brand_id: string; canonical_name: string } | null {
+  const md = t.metadata ?? {};
+  const m = (md as Record<string, unknown>).merchant;
+  if (!m || typeof m !== 'object') return null;
+  const rec = m as Record<string, unknown>;
+  const brandId = typeof rec.brand_id === 'string' ? rec.brand_id : null;
+  const canonical = typeof rec.canonical_name === 'string' ? rec.canonical_name : null;
+  if (!brandId) return null;
+  return { brand_id: brandId, canonical_name: canonical ?? brandId };
+}
+
 function primaryDocument(t: BackendTransaction): BackendTransaction['documents'][number] | null {
   if (!t.documents || t.documents.length === 0) return null;
   const img = t.documents.find((d) => d.kind === 'receipt_image');
@@ -203,6 +219,7 @@ export function toReceiptView(t: BackendTransaction, etag: string | null = null)
     documents: t.documents,
     postings: t.postings,
     place: t.place ?? null,
+    merchantBrandId: merchantFromTxn(t)?.brand_id ?? null,
     etag,
   };
 }
@@ -213,6 +230,7 @@ export function mapTransaction(t: BackendTransaction): Transaction {
   const rawCat = normalizeCategoryKey(rv.category);
   const classification: CategoryClassification =
     (rawCat ? CATEGORY_MAP[rawCat] : undefined) ?? { category: null, transactionType: 'spending' };
+  const m = merchantFromTxn(t);
   return {
     id: t.id,
     description: rv.payee ?? rv.narration ?? 'Unknown',
@@ -224,6 +242,7 @@ export function mapTransaction(t: BackendTransaction): Transaction {
     amount: classification.transactionType === 'income' ? rv.total : -rv.total,
     rawStatus: t.status,
     documentId: rv.documentId,
+    merchantBrandId: m?.brand_id ?? null,
   };
 }
 
@@ -946,3 +965,38 @@ export async function fetchSummary(opts: {
   }));
 }
 export type SpendingSummary = LegacySummaryItem;
+
+// ── Merchant aggregation (#33) ─────────────────────────────────
+
+export type MerchantDetailResponse =
+  components['schemas']['MerchantDetail'];
+export type MerchantTransactionsResponse =
+  components['schemas']['MerchantTransactionsResponse'];
+export type MerchantTransactionRow =
+  components['schemas']['MerchantTransactionRow'];
+
+export async function fetchMerchant(id: string): Promise<MerchantDetailResponse> {
+  const { data, error, response } = await client.GET('/v1/merchants/{id}', {
+    params: { path: { id } },
+  });
+  return unwrap('fetchMerchant', data, error, response.status);
+}
+
+export async function fetchMerchantTransactions(
+  id: string,
+  opts: { limit?: number; cursor?: string } = {},
+): Promise<MerchantTransactionsResponse> {
+  const { data, error, response } = await client.GET(
+    '/v1/merchants/{id}/transactions',
+    {
+      params: {
+        path: { id },
+        query: {
+          limit: opts.limit,
+          cursor: opts.cursor,
+        },
+      },
+    },
+  );
+  return unwrap('fetchMerchantTransactions', data, error, response.status);
+}

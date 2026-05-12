@@ -24,6 +24,9 @@ import { removeTombstone } from '../lib/tombstones';
 interface ReceiptDetailProps {
   receiptId: string;
   onBack: () => void;
+  /** Navigate to the merchant aggregation page (#33). Optional so existing
+   *  callers don't break; the link affordance hides when absent. */
+  onSelectMerchant?: (brandId: string) => void;
   /** Bumped when a delete completes so the parent's transaction list
    *  refetches. */
   onAfterMutation?: () => void;
@@ -51,7 +54,7 @@ function md<T = unknown>(meta: Metadata | undefined, key: string): T | undefined
  *
  * Data source: fetchReceiptDetail → real backend. No mocks, no fixtures.
  */
-export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: ReceiptDetailProps) {
+export default function ReceiptDetail({ receiptId, onBack, onSelectMerchant, onAfterMutation }: ReceiptDetailProps) {
   const [receipt, setReceipt] = useState<ReceiptView | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -197,6 +200,11 @@ export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: Re
         occurredOn={receipt.occurred_on}
         isProcessing={isProcessing}
         voided={receipt.status === 'voided'}
+        onMerchantClick={
+          receipt.merchantBrandId && onSelectMerchant
+            ? () => onSelectMerchant(receipt.merchantBrandId!)
+            : undefined
+        }
       />
 
       <StatusRow badge={badge} paymentMethod={receipt.paymentMethod ?? null} />
@@ -459,6 +467,7 @@ function AmountHero({
   occurredOn,
   isProcessing,
   voided,
+  onMerchantClick,
 }: {
   amount: number;
   currency: string;
@@ -466,7 +475,9 @@ function AmountHero({
   occurredOn: string;
   isProcessing: boolean;
   voided: boolean;
+  onMerchantClick?: () => void;
 }) {
+  const merchantClass = 'font-display italic font-medium text-2xl sm:text-3xl leading-tight';
   return (
     <div className="text-center pt-2">
       <p
@@ -481,9 +492,21 @@ function AmountHero({
       <p className="mt-1 text-[11px] tracking-[0.14em] uppercase text-[var(--color-ink-muted)]">
         {currency}
       </p>
-      <h1 className="mt-4 font-display italic font-medium text-2xl sm:text-3xl leading-tight">
-        {merchant}
-      </h1>
+      {onMerchantClick ? (
+        <button
+          type="button"
+          onClick={onMerchantClick}
+          className={cn(
+            'mt-4 inline-flex items-baseline gap-1 transition-colors hover:text-[var(--color-terracotta)]',
+            merchantClass,
+          )}
+        >
+          {merchant}
+          <span className="font-display italic text-base leading-none text-[var(--color-terracotta)]">→</span>
+        </button>
+      ) : (
+        <h1 className={cn('mt-4', merchantClass)}>{merchant}</h1>
+      )}
       <p className="mt-1 text-[13px] text-[var(--color-ink-muted)]">
         {formatDateLong(occurredOn)}
       </p>
