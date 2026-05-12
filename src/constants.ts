@@ -4,7 +4,8 @@ export const TRANSACTIONS: Transaction[] = [
   {
     id: '1',
     description: 'The Gilded Fork',
-    category: 'Dining',
+    category: 'Food & Drinks',
+    transactionType: 'spending',
     date: 'Oct 24, 2023',
     paymentMethod: 'Amex Platinum',
     amount: -1240.00,
@@ -15,7 +16,8 @@ export const TRANSACTIONS: Transaction[] = [
   {
     id: '2',
     description: 'Delta Airlines',
-    category: 'Transport',
+    category: 'Travel',
+    transactionType: 'spending',
     date: 'Oct 22, 2023',
     paymentMethod: 'Bank Transfer',
     amount: -4850.30,
@@ -26,7 +28,8 @@ export const TRANSACTIONS: Transaction[] = [
   {
     id: '3',
     description: 'Grid Solutions LLC',
-    category: 'Utilities',
+    category: 'Services',
+    transactionType: 'spending',
     date: 'Oct 20, 2023',
     paymentMethod: 'Visa Signature',
     amount: -315.45,
@@ -37,7 +40,8 @@ export const TRANSACTIONS: Transaction[] = [
   {
     id: '4',
     description: 'Grand Cinema Premiere',
-    category: 'Fun',
+    category: 'Entertainment',
+    transactionType: 'spending',
     date: 'Oct 18, 2023',
     paymentMethod: 'Amex Platinum',
     amount: -85.00,
@@ -48,7 +52,8 @@ export const TRANSACTIONS: Transaction[] = [
   {
     id: '5',
     description: 'Dividends Payout',
-    category: 'Income',
+    category: null,
+    transactionType: 'income',
     date: 'Oct 15, 2023',
     paymentMethod: 'Investment Portfolio',
     amount: 12400.00,

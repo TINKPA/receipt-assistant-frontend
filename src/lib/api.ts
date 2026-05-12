@@ -105,33 +105,28 @@ export interface ReceiptView {
 
 // ── Frontend display mapping ────────────────────────────────────
 
-const CATEGORY_MAP: Record<string, Transaction['category']> = {
-  food: 'Dining',
-  dining: 'Dining',
-  restaurants: 'Dining',
-  groceries: 'Shopping',
-  transport: 'Transport',
-  shopping: 'Shopping',
-  utilities: 'Utilities',
-  entertainment: 'Entertainment',
-  health: 'Shopping',
-  education: 'Shopping',
-  travel: 'Travel',
-  other: 'Fun',
-};
+interface CategoryClassification {
+  category: Transaction['category'];
+  transactionType: Transaction['transactionType'];
+}
 
-const ICON_MAP: Record<string, string> = {
-  Dining: 'restaurant',
-  Transport: 'directions_car',
-  Shopping: 'shopping_bag',
-  Utilities: 'bolt',
-  Entertainment: 'theaters',
-  Travel: 'flight',
-  Fun: 'celebration',
-  Income: 'account_balance',
-  Housing: 'home',
-  Investments: 'trending_up',
-  'Real Estate': 'real_estate_agent',
+const CATEGORY_MAP: Record<string, CategoryClassification> = {
+  food: { category: 'Food & Drinks', transactionType: 'spending' },
+  dining: { category: 'Food & Drinks', transactionType: 'spending' },
+  restaurants: { category: 'Food & Drinks', transactionType: 'spending' },
+  groceries: { category: 'Food & Drinks', transactionType: 'spending' },
+  transport: { category: 'Transportation', transactionType: 'spending' },
+  shopping: { category: 'Shopping', transactionType: 'spending' },
+  utilities: { category: 'Services', transactionType: 'spending' },
+  entertainment: { category: 'Entertainment', transactionType: 'spending' },
+  fun: { category: 'Entertainment', transactionType: 'spending' },
+  health: { category: 'Health', transactionType: 'spending' },
+  education: { category: 'Services', transactionType: 'spending' },
+  travel: { category: 'Travel', transactionType: 'spending' },
+  housing: { category: 'Services', transactionType: 'spending' },
+  income: { category: null, transactionType: 'income' },
+  investments: { category: null, transactionType: 'investment' },
+  real_estate: { category: null, transactionType: 'investment' },
 };
 
 function normalizeCategoryKey(raw: string | null | undefined): string | null {
@@ -208,8 +203,8 @@ export function toReceiptView(t: BackendTransaction, etag: string | null = null)
 export function mapTransaction(t: BackendTransaction): Transaction {
   const rv = toReceiptView(t);
   const rawCat = normalizeCategoryKey(rv.category);
-  const category: Transaction['category'] =
-    (rawCat ? CATEGORY_MAP[rawCat] : undefined) ?? 'Fun';
+  const classification: CategoryClassification =
+    (rawCat ? CATEGORY_MAP[rawCat] : undefined) ?? { category: null, transactionType: 'spending' };
   const status: Transaction['status'] =
     t.status === 'draft' || t.status === 'error' ? 'Pending'
     : t.status === 'voided' ? 'Pending'
@@ -218,14 +213,15 @@ export function mapTransaction(t: BackendTransaction): Transaction {
   return {
     id: t.id,
     description: rv.payee ?? rv.narration ?? 'Unknown',
-    category,
+    category: classification.category,
+    transactionType: classification.transactionType,
     date: rv.occurred_on,
     paymentMethod: rv.paymentMethod ?? 'Unknown',
-    // UI convention: expenses render as negative.
-    amount: -rv.total,
+    // UI convention: expenses render as negative; income stays positive.
+    amount: classification.transactionType === 'income' ? rv.total : -rv.total,
     status,
-    icon: ICON_MAP[category] ?? 'receipt',
-    color: 'primary',
+    icon: '',
+    color: '',
     rawStatus: t.status,
     documentId: rv.documentId,
   };

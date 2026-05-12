@@ -1,18 +1,23 @@
 export const CATEGORIES = [
-  'Dining',
-  'Transport',
-  'Utilities',
-  'Fun',
-  'Income',
+  'Food & Drinks',
+  'Transportation',
   'Shopping',
-  'Housing',
-  'Investments',
   'Travel',
   'Entertainment',
-  'Real Estate',
+  'Health',
+  'Services',
 ] as const;
 
 export type Category = typeof CATEGORIES[number];
+
+export const TRANSACTION_TYPES = [
+  'spending',
+  'income',
+  'transfer',
+  'investment',
+] as const;
+
+export type TransactionType = typeof TRANSACTION_TYPES[number];
 
 export type RawTransactionStatus =
   | 'draft'
@@ -24,12 +29,16 @@ export type RawTransactionStatus =
 export interface Transaction {
   id: string;
   description: string;
-  category: Category;
+  /** Null when transactionType !== 'spending'. */
+  category: Category | null;
+  transactionType: TransactionType;
   date: string;
   paymentMethod: string;
   amount: number;
   status: 'Verified' | 'Pending' | 'New Charge' | 'Surplus' | 'Peak' | 'Processing';
+  /** @deprecated icon/color now derived from category via CATEGORY_META. Retained for unmigrated callers. */
   icon: string;
+  /** @deprecated see icon. */
   color: string;
   /** The raw backend status (before UI normalization). Needed for delete /
    *  unreconcile menus that branch on `posted` vs `reconciled` etc. */
