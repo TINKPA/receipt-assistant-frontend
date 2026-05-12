@@ -1,4 +1,4 @@
-import type { Category, RawTransactionStatus } from '../types';
+import type { Category, RawTransactionStatus, TransactionType } from '../types';
 
 export type DatePreset = 'all' | 'last_30d' | 'last_90d' | 'this_year' | 'custom';
 
@@ -9,6 +9,9 @@ export interface FilterState {
   customTo: string;
   // Empty array = all categories.
   categories: Category[];
+  // Empty array = all transaction types. When set without 'spending',
+  // category filter has no effect and the category chip is hidden in UI.
+  transactionTypes: TransactionType[];
   status?: RawTransactionStatus;
   payeeContains: string;
   // Dollars as user-entered strings; converted to minor units when querying.
@@ -21,6 +24,7 @@ export const DEFAULT_FILTERS: FilterState = {
   customFrom: '',
   customTo: '',
   categories: [],
+  transactionTypes: [],
   status: undefined,
   payeeContains: '',
   amountMinDollars: '',
@@ -78,6 +82,7 @@ export function isFilterActive(filters: FilterState, q: string): boolean {
   return (
     filters.datePreset !== 'all' ||
     filters.categories.length > 0 ||
+    filters.transactionTypes.length > 0 ||
     filters.status !== undefined ||
     filters.payeeContains.trim() !== '' ||
     filters.amountMinDollars.trim() !== '' ||

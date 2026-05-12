@@ -6,7 +6,14 @@ import {
   type DatePreset,
   type FilterState,
 } from '../lib/transactionsFilterState';
-import { CATEGORIES, type Category, type RawTransactionStatus } from '../types';
+import {
+  CATEGORIES,
+  TRANSACTION_TYPES,
+  type Category,
+  type RawTransactionStatus,
+  type TransactionType,
+} from '../types';
+import { CategoryIcon } from './CategoryIcon';
 
 /** Closes the popover when a click lands outside the wrapped element. */
 function useClickAway(onAway: () => void) {
@@ -47,10 +54,11 @@ export default function TransactionsFilters({
   showDeleted,
   onToggleShowDeleted,
 }: TransactionsFiltersProps) {
-  const [openPopover, setOpenPopover] = useState<'date' | 'category' | null>(null);
+  const [openPopover, setOpenPopover] = useState<'date' | 'type' | 'category' | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
 
   const dateRef = useClickAway(() => setOpenPopover((p) => (p === 'date' ? null : p)));
+  const typeRef = useClickAway(() => setOpenPopover((p) => (p === 'type' ? null : p)));
   const categoryRef = useClickAway(() => setOpenPopover((p) => (p === 'category' ? null : p)));
 
   const dateLabel =
@@ -67,6 +75,13 @@ export default function TransactionsFilters({
         ? filters.categories[0]
         : `${filters.categories.length} selected`;
 
+  const typeLabel =
+    filters.transactionTypes.length === 0
+      ? 'All'
+      : filters.transactionTypes.length === 1
+        ? filters.transactionTypes[0]
+        : `${filters.transactionTypes.length} selected`;
+
   const toggleCategory = (c: Category) => {
     onChange({
       ...filters,
@@ -75,6 +90,20 @@ export default function TransactionsFilters({
         : [...filters.categories, c],
     });
   };
+
+  const toggleTransactionType = (t: TransactionType) => {
+    onChange({
+      ...filters,
+      transactionTypes: filters.transactionTypes.includes(t)
+        ? filters.transactionTypes.filter((x) => x !== t)
+        : [...filters.transactionTypes, t],
+    });
+  };
+
+  // Hide the category chip when transactionTypes filter is set but excludes
+  // 'spending' — categories only apply to spending rows.
+  const showCategoryChip =
+    filters.transactionTypes.length === 0 || filters.transactionTypes.includes('spending');
 
   return (
     <>
@@ -138,60 +167,116 @@ export default function TransactionsFilters({
           )}
         </div>
 
-        {/* Category chip */}
-        <div ref={categoryRef} className="relative">
+        {/* Transaction type chip */}
+        <div ref={typeRef} className="relative">
           <Chip
-            data-testid="filter-category"
-            active={filters.categories.length > 0}
-            onClick={() => setOpenPopover((p) => (p === 'category' ? null : 'category'))}
+            data-testid="filter-type"
+            active={filters.transactionTypes.length > 0}
+            onClick={() => setOpenPopover((p) => (p === 'type' ? null : 'type'))}
           >
-            <span className="text-[var(--color-ink-muted)] mr-1">Category:</span>
-            {categoryLabel}
+            <span className="text-[var(--color-ink-muted)] mr-1">Type:</span>
+            {typeLabel}
           </Chip>
-          {openPopover === 'category' && (
-            <Popover testid="filter-category-popover">
-              <div className="max-h-72 overflow-y-auto">
-                {CATEGORIES.map((c) => {
-                  const checked = filters.categories.includes(c);
-                  return (
-                    <label
-                      key={c}
-                      data-testid={`filter-category-${c}`}
-                      className={cn(
-                        'flex items-center gap-2 px-3 py-2 rounded-[10px] text-sm cursor-pointer transition-colors',
-                        checked
-                          ? 'bg-[var(--color-terracotta-soft)] text-[var(--color-terracotta-deep)]'
-                          : 'text-[var(--color-ink)] hover:bg-[var(--color-paper-deep)]',
-                      )}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() => toggleCategory(c)}
-                        className="accent-[var(--color-terracotta)]"
-                      />
-                      {c}
-                    </label>
-                  );
-                })}
-              </div>
-              {filters.categories.length > 0 && (
+          {openPopover === 'type' && (
+            <Popover testid="filter-type-popover">
+              {TRANSACTION_TYPES.map((t) => {
+                const checked = filters.transactionTypes.includes(t);
+                return (
+                  <label
+                    key={t}
+                    data-testid={`filter-type-${t}`}
+                    className={cn(
+                      'flex items-center gap-2 px-3 py-2 rounded-[10px] text-sm cursor-pointer transition-colors capitalize',
+                      checked
+                        ? 'bg-[var(--color-terracotta-soft)] text-[var(--color-terracotta-deep)]'
+                        : 'text-[var(--color-ink)] hover:bg-[var(--color-paper-deep)]',
+                    )}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleTransactionType(t)}
+                      className="accent-[var(--color-terracotta)]"
+                    />
+                    {t}
+                  </label>
+                );
+              })}
+              {filters.transactionTypes.length > 0 && (
                 <button
                   type="button"
-                  data-testid="filter-category-clear"
-                  onClick={() => onChange({ ...filters, categories: [] })}
+                  data-testid="filter-type-clear"
+                  onClick={() => onChange({ ...filters, transactionTypes: [] })}
                   className={cn(
                     'w-full mt-1 px-3 py-2 rounded-[10px] text-xs',
                     'text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] hover:bg-[var(--color-paper-deep)]',
                     'transition-colors',
                   )}
                 >
-                  Clear category selection
+                  Clear type selection
                 </button>
               )}
             </Popover>
           )}
         </div>
+
+        {/* Category chip — hidden when transactionTypes excludes 'spending' */}
+        {showCategoryChip && (
+          <div ref={categoryRef} className="relative">
+            <Chip
+              data-testid="filter-category"
+              active={filters.categories.length > 0}
+              onClick={() => setOpenPopover((p) => (p === 'category' ? null : 'category'))}
+            >
+              <span className="text-[var(--color-ink-muted)] mr-1">Category:</span>
+              {categoryLabel}
+            </Chip>
+            {openPopover === 'category' && (
+              <Popover testid="filter-category-popover">
+                <div className="max-h-72 overflow-y-auto">
+                  {CATEGORIES.map((c) => {
+                    const checked = filters.categories.includes(c);
+                    return (
+                      <label
+                        key={c}
+                        data-testid={`filter-category-${c}`}
+                        className={cn(
+                          'flex items-center gap-2 px-3 py-2 rounded-[10px] text-sm cursor-pointer transition-colors',
+                          checked
+                            ? 'bg-[var(--color-terracotta-soft)] text-[var(--color-terracotta-deep)]'
+                            : 'text-[var(--color-ink)] hover:bg-[var(--color-paper-deep)]',
+                        )}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleCategory(c)}
+                          className="accent-[var(--color-terracotta)]"
+                        />
+                        <CategoryIcon category={c} size={20} />
+                        {c}
+                      </label>
+                    );
+                  })}
+                </div>
+                {filters.categories.length > 0 && (
+                  <button
+                    type="button"
+                    data-testid="filter-category-clear"
+                    onClick={() => onChange({ ...filters, categories: [] })}
+                    className={cn(
+                      'w-full mt-1 px-3 py-2 rounded-[10px] text-xs',
+                      'text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] hover:bg-[var(--color-paper-deep)]',
+                      'transition-colors',
+                    )}
+                  >
+                    Clear category selection
+                  </button>
+                )}
+              </Popover>
+            )}
+          </div>
+        )}
 
         <Chip
           data-testid="toggle-show-deleted"

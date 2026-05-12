@@ -10,6 +10,7 @@ import {
   YAxis,
 } from 'recharts';
 import {
+  classifyBackendCategory,
   extractProblemMessage,
   getCashflowReport,
   getNetWorthReport,
@@ -20,7 +21,9 @@ import {
   type BackendSummaryReport,
   type BackendTrendsReport,
 } from '../lib/api';
+import type { Category } from '../types';
 import { cn } from '../lib/utils';
+import { CategoryIcon } from './CategoryIcon';
 
 function formatMoney(minor: number, currency = 'USD'): string {
   return (minor / 100).toLocaleString(undefined, {
@@ -118,7 +121,20 @@ export default function YearlyReview() {
     spendMinor: Math.abs(b.total_minor),
   }));
 
-  const maxCategoryMinor = summary?.items.reduce((m, it) => Math.max(m, it.total_minor), 0) ?? 1;
+  // Aggregate the year's category summary into the new 7-category model,
+  // dropping non-spending buckets (income/investment) so the "Category
+  // Breakdown" panel only shows actual outflows.
+  const spendingCategoryRows = (() => {
+    const buckets = new Map<Category, number>();
+    for (const it of summary?.items ?? []) {
+      const { category, transactionType } = classifyBackendCategory(it.key);
+      if (transactionType !== 'spending' || !category) continue;
+      buckets.set(category, (buckets.get(category) ?? 0) + it.total_minor);
+    }
+    return Array.from(buckets, ([category, total_minor]) => ({ category, total_minor }))
+      .sort((a, b) => b.total_minor - a.total_minor);
+  })();
+  const maxCategoryMinor = spendingCategoryRows.reduce((m, it) => Math.max(m, it.total_minor), 0) || 1;
 
   // Aggregate monthly cashflow into quarters.
   const quarterAgg = (cashflow?.buckets ?? []).reduce<Record<string, { inflow: number; outflow: number; net: number }>>(
@@ -240,15 +256,16 @@ export default function YearlyReview() {
           <p className="text-on-surface-variant text-xs mb-8">
             Top spending categories YTD
           </p>
-          {summary?.items.length === 0 ? (
+          {spendingCategoryRows.length === 0 ? (
             <p className="text-sm text-on-surface-variant">No spending data for this year yet.</p>
           ) : (
             <div className="space-y-5 flex-1">
-              {summary?.items.slice(0, 6).map((it) => (
-                <div key={it.key || 'other'} className="space-y-2">
+              {spendingCategoryRows.slice(0, 7).map((it) => (
+                <div key={it.category} className="space-y-2">
                   <div className="flex justify-between text-sm">
-                    <span className="text-on-surface font-medium capitalize">
-                      {it.key || 'Uncategorized'}
+                    <span className="text-on-surface font-medium flex items-center gap-2">
+                      <CategoryIcon category={it.category} size={20} />
+                      {it.category}
                     </span>
                     <span className="text-white font-bold">{formatMoney(it.total_minor, currency)}</span>
                   </div>
