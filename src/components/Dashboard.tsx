@@ -1,11 +1,23 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { fetchTransactions, fetchSummary, type SpendingSummary } from '../lib/api';
-import type { Transaction } from '../types';
+import {
+  fetchTransactions,
+  fetchSummary,
+  classifyBackendCategory,
+  type SpendingSummary,
+} from '../lib/api';
+import type { Transaction, Category } from '../types';
 import { cn } from '../lib/utils';
+import { CategoryIcon } from './CategoryIcon';
 
 interface DashboardProps {
   onSelectReceipt?: (receiptId: string) => void;
   onViewAllTransactions?: () => void;
+}
+
+interface SpendingCategorySlice {
+  category: Category;
+  total: number;
+  count: number;
 }
 
 /**
@@ -39,21 +51,31 @@ export default function Dashboard({ onSelectReceipt, onViewAllTransactions }: Da
       .finally(() => setLoading(false));
   }, [monthRange.from, monthRange.to]);
 
+  const spendingByCategory = useMemo<SpendingCategorySlice[]>(() => {
+    const buckets = new Map<Category, { total: number; count: number }>();
+    for (const item of summary) {
+      const { category, transactionType } = classifyBackendCategory(item.category);
+      if (transactionType !== 'spending' || !category) continue;
+      const amount = Math.abs(Number(item.total_spent));
+      const existing = buckets.get(category);
+      if (existing) {
+        existing.total += amount;
+        existing.count += item.count;
+      } else {
+        buckets.set(category, { total: amount, count: item.count });
+      }
+    }
+    return Array.from(buckets, ([category, v]) => ({ category, total: v.total, count: v.count }))
+      .sort((a, b) => b.total - a.total);
+  }, [summary]);
+
   const totalSpent = useMemo(
-    () => summary.reduce((s, c) => s + Math.abs(Number(c.total_spent)), 0),
-    [summary],
+    () => spendingByCategory.reduce((s, c) => s + c.total, 0),
+    [spendingByCategory],
   );
   const totalCount = useMemo(
-    () => summary.reduce((s, c) => s + c.count, 0),
-    [summary],
-  );
-
-  const topCats = useMemo(
-    () =>
-      [...summary]
-        .sort((a, b) => Math.abs(Number(b.total_spent)) - Math.abs(Number(a.total_spent)))
-        .slice(0, 4),
-    [summary],
+    () => spendingByCategory.reduce((s, c) => s + c.count, 0),
+    [spendingByCategory],
   );
 
   return (
@@ -63,8 +85,8 @@ export default function Dashboard({ onSelectReceipt, onViewAllTransactions }: Da
 
       <SpentCard amount={totalSpent} count={totalCount} loading={loading} />
 
-      <SectionTitle title="where it went" more={topCats.length > 4 ? 'see all →' : undefined} />
-      <CategoryGrid items={topCats} loading={loading} />
+      <SectionTitle title="where it went" />
+      <CategoryGrid items={spendingByCategory} loading={loading} />
 
       <SectionTitle
         title="recent"
@@ -205,16 +227,9 @@ function SectionTitle({
   );
 }
 
-/* ── Category grid (2×2) ─────────────────────────────────────── */
+/* ── Category grid (up to 7 spending categories) ─────────────── */
 
-const BLOB_COLORS = [
-  'var(--color-terracotta)',
-  'var(--color-sage)',
-  '#d4a574', /* sand */
-  '#b89d8a', /* earth */
-];
-
-function CategoryGrid({ items, loading }: { items: SpendingSummary[]; loading: boolean }) {
+function CategoryGrid({ items, loading }: { items: SpendingCategorySlice[]; loading: boolean }) {
   if (loading) {
     return (
       <div className="grid grid-cols-2 gap-3">
@@ -237,26 +252,22 @@ function CategoryGrid({ items, loading }: { items: SpendingSummary[]; loading: b
   }
   return (
     <div className="grid grid-cols-2 gap-3">
-      {items.map((c, i) => (
+      {items.map((c) => (
         <div
-          key={c.category + i}
+          key={c.category}
           className={cn(
             'rounded-[18px] p-4 min-h-[100px]',
             'border border-[var(--color-rule)] bg-[var(--color-surface)]',
             'flex flex-col justify-between',
           )}
         >
-          <span
-            aria-hidden="true"
-            className="block h-6 w-6 rounded-lg"
-            style={{ backgroundColor: BLOB_COLORS[i % BLOB_COLORS.length] }}
-          />
+          <CategoryIcon category={c.category} size={28} />
           <div>
             <p className="text-[13px] font-medium text-[var(--color-ink-muted)] mb-0.5">
-              {prettyCategory(c.category)}
+              {c.category}
             </p>
             <p className="font-display italic font-medium text-[1.375rem] leading-none tracking-tight tnum">
-              ${Math.round(Math.abs(Number(c.total_spent))).toLocaleString()}
+              ${Math.round(c.total).toLocaleString()}
             </p>
           </div>
         </div>
@@ -329,7 +340,7 @@ function RecentList({
             >
               <p className="text-[15px] font-medium truncate">{tx.description}</p>
               <p className="mt-0.5 text-xs text-[var(--color-ink-muted)] truncate">
-                {prettyCategory(tx.category)}
+                {prettyCategory(tx.category ?? tx.transactionType)}
               </p>
             </button>
             <span className="font-display italic font-medium text-[17px] tnum">

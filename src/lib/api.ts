@@ -105,9 +105,17 @@ export interface ReceiptView {
 
 // ── Frontend display mapping ────────────────────────────────────
 
-interface CategoryClassification {
+export interface CategoryClassification {
   category: Transaction['category'];
   transactionType: Transaction['transactionType'];
+}
+
+/** Classify a raw backend category string into our 7-category + transactionType
+ *  model. Used by mapTransaction (per-row) and by aggregate consumers
+ *  (e.g. Dashboard summary) that get raw category strings from the backend. */
+export function classifyBackendCategory(raw: string | null | undefined): CategoryClassification {
+  const key = normalizeCategoryKey(raw);
+  return (key ? CATEGORY_MAP[key] : undefined) ?? { category: null, transactionType: 'spending' };
 }
 
 const CATEGORY_MAP: Record<string, CategoryClassification> = {
