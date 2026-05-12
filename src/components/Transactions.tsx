@@ -13,6 +13,7 @@ import { listTombstones, removeTombstone } from '../lib/tombstones';
 import { useDebouncedValue } from '../lib/useDebouncedValue';
 import { cn } from '../lib/utils';
 import type { Transaction } from '../types';
+import { CategoryIcon } from './CategoryIcon';
 import TransactionRowMenu from './TransactionRowMenu';
 import ConfirmActionDialog from './ConfirmActionDialog';
 import UnreconcileDialog from './UnreconcileDialog';
@@ -151,10 +152,17 @@ export default function Transactions({
   }, [showDeleted, refreshKey]);
 
   const filteredTransactions = useMemo(() => {
-    if (filters.categories.length === 0) return transactions;
-    const set = new Set<string>(filters.categories);
-    return transactions.filter((tx) => set.has(tx.category));
-  }, [transactions, filters.categories]);
+    let out = transactions;
+    if (filters.transactionTypes.length > 0) {
+      const typeSet = new Set(filters.transactionTypes);
+      out = out.filter((tx) => typeSet.has(tx.transactionType));
+    }
+    if (filters.categories.length > 0) {
+      const catSet = new Set<string>(filters.categories);
+      out = out.filter((tx) => tx.category !== null && catSet.has(tx.category));
+    }
+    return out;
+  }, [transactions, filters.categories, filters.transactionTypes]);
 
   const totalExpenses = filteredTransactions
     .filter((tx) => tx.amount < 0)
@@ -459,16 +467,13 @@ function LedgerRow({
         'rounded-[16px] border border-[var(--color-rule)] bg-[var(--color-surface)] p-3 pr-2',
       )}
     >
-      {/* Thumb */}
-      <div
-        className="relative h-12 w-12 rounded-[14px] flex-shrink-0"
-        style={{
-          background: hasDoc
-            ? 'linear-gradient(135deg, var(--color-butter), var(--color-paper-deep))'
-            : 'var(--color-paper-deep)',
-        }}
-        aria-hidden="true"
-      >
+      {/* Category icon (with optional has-receipt ✦ badge) */}
+      <div className="relative h-12 w-12 flex-shrink-0">
+        <CategoryIcon
+          category={tx.category}
+          transactionType={tx.transactionType}
+          size={48}
+        />
         {hasDoc && (
           <span
             className={cn(
@@ -496,7 +501,7 @@ function LedgerRow({
           {tx.description}
         </p>
         <p className="mt-0.5 text-[11px] tracking-[0.04em] uppercase text-[var(--color-ink-muted)] truncate">
-          {tx.category} · {formatDay(tx.date)}
+          {tx.category ?? tx.transactionType} · {formatDay(tx.date)}
           {tx.status !== 'New Charge' && ` · ${tx.status}`}
         </p>
       </button>
