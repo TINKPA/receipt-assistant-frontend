@@ -511,7 +511,7 @@ function LedgerRow({
           {tx.description}
         </p>
         <p className="mt-0.5 text-[11px] tracking-[0.04em] uppercase text-[var(--color-ink-muted)] truncate">
-          {tx.category ?? tx.transactionType} · {formatDay(tx.date)}
+          {rowLabelPrefix(tx)}{formatDay(tx.date)}
           {badge && (
             <span
               className={cn(
@@ -706,4 +706,17 @@ function formatDay(isoDate: string): string {
   const dow = dt.toLocaleString('en-US', { weekday: 'short' });
   const mo = dt.toLocaleString('en-US', { month: 'short' });
   return `${dow.toUpperCase()} · ${mo} ${d}`;
+}
+
+/** Build the leading "<Category> · " (or "<Type> · ") label on a row.
+ *  Spending rows with a known category render the category; spending
+ *  rows with no category drop the label entirely rather than fall back
+ *  to "spending". Non-spending rows show the transactionType (Income /
+ *  Transfer / Investment), which IS meaningful for those flows. */
+function rowLabelPrefix(tx: Transaction): string {
+  if (tx.category) return `${tx.category} · `;
+  if (tx.transactionType !== 'spending') {
+    return `${tx.transactionType.charAt(0).toUpperCase()}${tx.transactionType.slice(1)} · `;
+  }
+  return '';
 }
