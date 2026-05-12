@@ -22,7 +22,8 @@
 import imageCompression from 'browser-image-compression';
 import createClient from 'openapi-fetch';
 import type { components, paths } from '@/lib/api-types';
-import type { Transaction } from '@/types';
+import type { Category, Transaction } from '@/types';
+import { CATEGORIES } from '@/types';
 
 const client = createClient<paths>({ baseUrl: '/api' });
 
@@ -115,26 +116,55 @@ export interface CategoryClassification {
 
 /** Classify a raw backend category string into our 7-category + transactionType
  *  model. Used by mapTransaction (per-row) and by aggregate consumers
- *  (e.g. Dashboard summary) that get raw category strings from the backend. */
+ *  (e.g. Dashboard summary) that get raw category strings from the backend.
+ *
+ *  Three paths:
+ *    1. Input is already one of the 7 canonical names ("Food & Drinks",
+ *       "Transportation", …) — returned verbatim. This is the common
+ *       case post-#64 because the Phase 2.5 merchant block emits 7-class
+ *       names directly.
+ *    2. Input is a legacy hint (groceries/dining/retail/cafe/…) — looked
+ *       up in CATEGORY_MAP after normalization.
+ *    3. Unknown — returns {category:null, transactionType:'spending'}.
+ *       Callers MUST NOT render `transactionType` as a category label;
+ *       the UI shows "no category" or the type-pill instead. */
 export function classifyBackendCategory(raw: string | null | undefined): CategoryClassification {
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    if ((CATEGORIES as readonly string[]).includes(trimmed)) {
+      return { category: trimmed as Category, transactionType: 'spending' };
+    }
+  }
   const key = normalizeCategoryKey(raw);
   return (key ? CATEGORY_MAP[key] : undefined) ?? { category: null, transactionType: 'spending' };
 }
 
 const CATEGORY_MAP: Record<string, CategoryClassification> = {
+  // Backend extractor's category_hint enum (src/ingest/prompt.ts Phase 2):
+  //   groceries | dining | retail | cafe | transport | other
+  // ALL six MUST map here, otherwise classifyBackendCategory returns
+  // {category:null, transactionType:'spending'} and the Ledger row body
+  // falls back to rendering "spending" — that was the post-deploy bug
+  // where every retail/cafe/other receipt showed e.g. "Uniqlo · spending".
   food: { category: 'Food & Drinks', transactionType: 'spending' },
   dining: { category: 'Food & Drinks', transactionType: 'spending' },
+  cafe: { category: 'Food & Drinks', transactionType: 'spending' },
   restaurants: { category: 'Food & Drinks', transactionType: 'spending' },
   groceries: { category: 'Food & Drinks', transactionType: 'spending' },
-  transport: { category: 'Transportation', transactionType: 'spending' },
+  retail: { category: 'Shopping', transactionType: 'spending' },
   shopping: { category: 'Shopping', transactionType: 'spending' },
+  transport: { category: 'Transportation', transactionType: 'spending' },
+  travel: { category: 'Travel', transactionType: 'spending' },
   utilities: { category: 'Services', transactionType: 'spending' },
+  housing: { category: 'Services', transactionType: 'spending' },
+  education: { category: 'Services', transactionType: 'spending' },
+  // Backend hint "other" doesn't map cleanly — leave category null so
+  // the UI falls back to the neutral "Uncategorized" CategoryIcon
+  // rather than silently mis-bucketing into Shopping.
+  other: { category: null, transactionType: 'spending' },
   entertainment: { category: 'Entertainment', transactionType: 'spending' },
   fun: { category: 'Entertainment', transactionType: 'spending' },
   health: { category: 'Health', transactionType: 'spending' },
-  education: { category: 'Services', transactionType: 'spending' },
-  travel: { category: 'Travel', transactionType: 'spending' },
-  housing: { category: 'Services', transactionType: 'spending' },
   income: { category: null, transactionType: 'income' },
   investments: { category: null, transactionType: 'investment' },
   real_estate: { category: null, transactionType: 'investment' },
@@ -146,10 +176,18 @@ function normalizeCategoryKey(raw: string | null | undefined): string | null {
 }
 
 function categoryFromTxn(t: BackendTransaction): string | null {
-  // The backend doesn't attach a direct "category" field — infer from
-  // metadata first (extractor often stashes one under `category_hint`
-  // or `category`), fall back to null.
+  // Prefer the Phase 2.5 merchant block — it's already one of the new
+  // 7-class categories, no translation needed. Backfill (#64) populates
+  // this on every existing row, so this branch is the common case.
   const md = t.metadata ?? {};
+  const m = (md as Record<string, unknown>).merchant;
+  if (m && typeof m === 'object') {
+    const cat = (m as Record<string, unknown>).category;
+    if (typeof cat === 'string') return cat;
+  }
+  // Legacy fallback for any row that escaped the backfill or predates
+  // the merchant block. classifyBackendCategory will map the raw hint
+  // (groceries/dining/retail/cafe/transport/other) onto one of the 7.
   const raw =
     (md as Record<string, unknown>).category ??
     (md as Record<string, unknown>).category_hint ??

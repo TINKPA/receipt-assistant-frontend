@@ -348,7 +348,11 @@ function RecentList({
             >
               <p className="text-[15px] font-medium truncate">{tx.description}</p>
               <p className="mt-0.5 text-xs text-[var(--color-ink-muted)] truncate">
-                {prettyCategory(tx.category ?? tx.transactionType)}
+                {tx.category
+                  ? prettyCategory(tx.category)
+                  : tx.transactionType !== 'spending'
+                    ? prettyCategory(tx.transactionType)
+                    : ''}
               </p>
             </button>
             <span className="font-display italic font-medium text-[17px] tnum">
