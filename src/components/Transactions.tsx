@@ -29,6 +29,7 @@ import {
 
 interface TransactionsProps {
   onSelectReceipt?: (receiptId: string) => void;
+  onSelectMerchant?: (brandId: string) => void;
   searchQuery?: string;
   onSearchChange?: (q: string) => void;
   /** Reset the top-bar search input. The search lives in App.tsx so
@@ -53,6 +54,7 @@ interface TombstoneRow {
  */
 export default function Transactions({
   onSelectReceipt,
+  onSelectMerchant,
   searchQuery = '',
   onSearchChange,
   onClearSearch,
@@ -268,7 +270,13 @@ export default function Transactions({
             <WeekGroup
               key={wk.startIso}
               week={wk}
-              onSelect={(id) => onSelectReceipt?.(id)}
+              onSelect={(tx) => {
+                if (tx.merchantBrandId && onSelectMerchant) {
+                  onSelectMerchant(tx.merchantBrandId);
+                } else {
+                  onSelectReceipt?.(tx.id);
+                }
+              }}
               onHardDelete={handleHardDeleteRequest}
               onUnreconcile={(id) => setUnreconcileTarget(id)}
             />
@@ -414,7 +422,7 @@ function WeekGroup({
   onUnreconcile,
 }: {
   week: WeekBucket;
-  onSelect: (id: string) => void;
+  onSelect: (tx: Transaction) => void;
   onHardDelete: (id: string) => void;
   onUnreconcile: (id: string) => void;
 }) {
@@ -454,7 +462,7 @@ function LedgerRow({
   onUnreconcile,
 }: {
   tx: Transaction;
-  onSelect: (id: string) => void;
+  onSelect: (tx: Transaction) => void;
   onHardDelete: (id: string) => void;
   onUnreconcile: (id: string) => void;
 }) {
@@ -492,7 +500,7 @@ function LedgerRow({
       {/* Body */}
       <button
         type="button"
-        onClick={() => !isProcessing && onSelect(tx.id)}
+        onClick={() => !isProcessing && onSelect(tx)}
         disabled={isProcessing}
         className={cn(
           'text-left min-w-0',

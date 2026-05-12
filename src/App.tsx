@@ -11,6 +11,7 @@ import Capture from './components/Capture';
 import ProcessingToast from './components/ProcessingToast';
 import { useProcessingJobs } from './components/useProcessingJobs';
 import ReceiptDetail from './components/ReceiptDetail';
+import MerchantDetail from './components/MerchantDetail';
 import BuildInfoPanel from './components/BuildInfoPanel';
 import { fetchBackendBuildInfo, type BuildInfo } from './lib/api';
 
@@ -36,6 +37,7 @@ export default function App() {
   const [refreshKey, setRefreshKey] = React.useState(0);
   const [selectedReceiptId, setSelectedReceiptId] = React.useState<string | null>(null);
   const [selectedBatchId, setSelectedBatchId] = React.useState<string | null>(null);
+  const [selectedMerchantBrandId, setSelectedMerchantBrandId] = React.useState<string | null>(null);
   const [backendBuildInfo, setBackendBuildInfo] = React.useState<BuildInfo | null>(null);
   const [transactionsSearch, setTransactionsSearch] = React.useState('');
   const { jobs, addJob, removeJob } = useProcessingJobs();
@@ -54,6 +56,7 @@ export default function App() {
   const goToTab = (tab: ActiveTab) => {
     setSelectedReceiptId(null);
     setSelectedBatchId(null);
+    setSelectedMerchantBrandId(null);
     setTransactionsSearch('');
     setActiveTab(tab);
   };
@@ -70,6 +73,11 @@ export default function App() {
   const handleBackFromDetail = () => setSelectedReceiptId(null);
   const handleSelectBatch = (batchId: string) => setSelectedBatchId(batchId);
   const handleBackFromBatch = () => setSelectedBatchId(null);
+  const handleSelectMerchant = (brandId: string) => {
+    setSelectedReceiptId(null);
+    setSelectedMerchantBrandId(brandId);
+  };
+  const handleBackFromMerchant = () => setSelectedMerchantBrandId(null);
 
   const renderContent = () => {
     if (activeTab === 'add') {
@@ -86,7 +94,19 @@ export default function App() {
         <ReceiptDetail
           receiptId={selectedReceiptId}
           onBack={handleBackFromDetail}
+          onSelectMerchant={handleSelectMerchant}
           onAfterMutation={() => setRefreshKey((k) => k + 1)}
+        />
+      );
+    }
+
+    if (selectedMerchantBrandId) {
+      return (
+        <MerchantDetail
+          key={selectedMerchantBrandId}
+          brandId={selectedMerchantBrandId}
+          onBack={handleBackFromMerchant}
+          onSelectReceipt={handleSelectReceipt}
         />
       );
     }
@@ -107,6 +127,7 @@ export default function App() {
           <Dashboard
             key={refreshKey}
             onSelectReceipt={handleSelectReceipt}
+            onSelectMerchant={handleSelectMerchant}
             onViewAllTransactions={() => setActiveTab('transactions')}
           />
         );
@@ -115,6 +136,7 @@ export default function App() {
           <Transactions
             key={refreshKey}
             onSelectReceipt={handleSelectReceipt}
+            onSelectMerchant={handleSelectMerchant}
             searchQuery={transactionsSearch}
             onSearchChange={setTransactionsSearch}
             onClearSearch={() => setTransactionsSearch('')}

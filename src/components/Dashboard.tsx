@@ -12,6 +12,7 @@ import { CategoryIcon } from './CategoryIcon';
 
 interface DashboardProps {
   onSelectReceipt?: (receiptId: string) => void;
+  onSelectMerchant?: (brandId: string) => void;
   onViewAllTransactions?: () => void;
 }
 
@@ -32,7 +33,7 @@ interface SpendingCategorySlice {
  * there is no /budget endpoint on the backend yet. The big spend card stands
  * on its own without an invented number.
  */
-export default function Dashboard({ onSelectReceipt, onViewAllTransactions }: DashboardProps) {
+export default function Dashboard({ onSelectReceipt, onSelectMerchant, onViewAllTransactions }: DashboardProps) {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [summary, setSummary] = useState<SpendingSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -97,7 +98,13 @@ export default function Dashboard({ onSelectReceipt, onViewAllTransactions }: Da
       <RecentList
         items={transactions}
         loading={loading}
-        onSelect={onSelectReceipt}
+        onSelect={(tx) => {
+          if (tx.merchantBrandId && onSelectMerchant) {
+            onSelectMerchant(tx.merchantBrandId);
+          } else {
+            onSelectReceipt?.(tx.id);
+          }
+        }}
       />
     </div>
   );
@@ -286,7 +293,7 @@ function RecentList({
 }: {
   items: Transaction[];
   loading: boolean;
-  onSelect?: (id: string) => void;
+  onSelect?: (tx: Transaction) => void;
 }) {
   if (loading) {
     return (
@@ -332,7 +339,7 @@ function RecentList({
             </span>
             <button
               type="button"
-              onClick={() => !isProcessing && onSelect?.(tx.id)}
+              onClick={() => !isProcessing && onSelect?.(tx)}
               disabled={isProcessing}
               className={cn(
                 'text-left min-w-0',
