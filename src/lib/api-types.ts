@@ -2158,6 +2158,106 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/merchants/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Merchant detail + KPIs
+         * @description `id` accepts either the merchant row's UUID or its kebab-case `brand_id`.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Merchant with aggregated stats */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MerchantDetail"];
+                    };
+                };
+                /** @description Merchant not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/merchants/{id}/transactions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Transactions for a merchant, newest first, keyset-paginated */
+        get: {
+            parameters: {
+                query?: {
+                    limit?: number;
+                    cursor?: string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Paginated transactions */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MerchantTransactionsResponse"];
+                    };
+                };
+                /** @description Merchant not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2939,6 +3039,68 @@ export interface components {
              */
             net_minor: number;
             buckets: components["schemas"]["CashflowBucket"][];
+        };
+        Merchant: {
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            id: string;
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            workspace_id: string;
+            brand_id: string;
+            canonical_name: string;
+            category: string | null;
+            place_id: string | null;
+            photo_url: string | null;
+            photo_attribution: string | null;
+            address: string | null;
+            lat: number | null;
+            lng: number | null;
+            /** @enum {string} */
+            enrichment_status: "pending" | "success" | "not_found" | "failed";
+            /** Format: date-time */
+            enrichment_attempted_at: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        MerchantStats: {
+            transaction_count: number;
+            lifetime_spend_minor: number;
+            current_month_spend_minor: number;
+            last_transaction_date: string | null;
+            currency: string;
+        };
+        MerchantDetail: {
+            merchant: components["schemas"]["Merchant"];
+            stats: components["schemas"]["MerchantStats"];
+        };
+        MerchantTransactionRow: {
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            id: string;
+            occurred_on: string;
+            payee: string | null;
+            /** @enum {string} */
+            status: "draft" | "posted" | "voided" | "reconciled" | "error";
+            total_minor: number;
+            currency: string;
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            document_id: string | null;
+        };
+        MerchantTransactionsResponse: {
+            items: components["schemas"]["MerchantTransactionRow"][];
+            next_cursor: string | null;
         };
         NewPosting: {
             /**
