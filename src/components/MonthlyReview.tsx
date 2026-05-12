@@ -9,6 +9,7 @@ import {
   YAxis,
 } from 'recharts';
 import {
+  classifyBackendCategory,
   extractProblemMessage,
   getCashflowReport,
   getSummaryReport,
@@ -17,7 +18,9 @@ import {
   type BackendSummaryReport,
   type BackendTrendsReport,
 } from '../lib/api';
+import type { Category } from '../types';
 import { cn } from '../lib/utils';
+import { CategoryIcon } from './CategoryIcon';
 
 function formatMoney(minor: number, currency = 'USD'): string {
   return (minor / 100).toLocaleString(undefined, {
@@ -54,7 +57,7 @@ function parseYearMonth(ym: string): Date {
 }
 
 interface CategoryRow {
-  name: string;
+  category: Category;
   currentMinor: number;
   previousMinor: number;
 }
@@ -118,22 +121,20 @@ export default function MonthlyReview() {
     lastExpenseMinor > 0 ? Math.round((delta / lastExpenseMinor) * 100) : null;
   const spendingDown = delta < 0;
 
-  // Merge this-month + last-month category summaries into rows.
+  // Merge this-month + last-month category summaries into rows, aggregated
+  // by the new 7-category model. Non-spending buckets (income/investment)
+  // are dropped — they belong on a separate flow view, not this one.
   const categoryRows: CategoryRow[] = (() => {
-    const map = new Map<string, CategoryRow>();
-    for (const it of thisMonth?.items ?? []) {
-      map.set(it.key || 'other', {
-        name: it.key || 'other',
-        currentMinor: it.total_minor,
-        previousMinor: 0,
-      });
-    }
-    for (const it of lastMonth?.items ?? []) {
-      const key = it.key || 'other';
-      const row = map.get(key) ?? { name: key, currentMinor: 0, previousMinor: 0 };
-      row.previousMinor = it.total_minor;
-      map.set(key, row);
-    }
+    const map = new Map<Category, CategoryRow>();
+    const addBucket = (key: string | undefined, minor: number, field: 'currentMinor' | 'previousMinor') => {
+      const { category, transactionType } = classifyBackendCategory(key);
+      if (transactionType !== 'spending' || !category) return;
+      const row = map.get(category) ?? { category, currentMinor: 0, previousMinor: 0 };
+      row[field] += minor;
+      map.set(category, row);
+    };
+    for (const it of thisMonth?.items ?? []) addBucket(it.key, it.total_minor, 'currentMinor');
+    for (const it of lastMonth?.items ?? []) addBucket(it.key, it.total_minor, 'previousMinor');
     return [...map.values()].sort((a, b) => b.currentMinor - a.currentMinor);
   })();
 
@@ -273,9 +274,12 @@ export default function MonthlyReview() {
                     : null;
                 const isOver = deltaPct != null && deltaPct > 0;
                 return (
-                  <div key={cat.name} className="space-y-3">
+                  <div key={cat.category} className="space-y-3">
                     <div className="flex justify-between items-center mb-1">
-                      <span className="text-sm font-bold text-white capitalize">{cat.name}</span>
+                      <span className="text-sm font-bold text-white flex items-center gap-2">
+                        <CategoryIcon category={cat.category} size={20} />
+                        {cat.category}
+                      </span>
                       <div className="text-right">
                         <span className="text-sm font-bold text-white">
                           {formatMoney(cat.currentMinor, currency)}

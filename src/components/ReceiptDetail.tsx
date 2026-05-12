@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { APIProvider, Map, Marker } from '@vis.gl/react-google-maps';
 import {
+  classifyBackendCategory,
   fetchReceiptDetail,
   documentContentUrl,
   extractProblemMessage,
@@ -12,6 +13,7 @@ import {
   type BackendTransaction,
 } from '../lib/api';
 import { cn } from '../lib/utils';
+import { CategoryIcon } from './CategoryIcon';
 import EditReceiptModal from './EditReceiptModal';
 import ConfirmActionDialog from './ConfirmActionDialog';
 import DeleteReceiptDialog from './DeleteReceiptDialog';
@@ -441,9 +443,23 @@ function FieldsGrid({
           value={payment.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
         />
       )}
-      {category && (
-        <SmallFieldCard label="Category" value={category} />
-      )}
+      {category && <CategoryFieldCard rawCategory={category} />}
+    </div>
+  );
+}
+
+function CategoryFieldCard({ rawCategory }: { rawCategory: string }) {
+  const { category, transactionType } = classifyBackendCategory(rawCategory);
+  const label = category ?? (transactionType === 'spending' ? 'Uncategorized' : transactionType);
+  return (
+    <div className="rounded-[14px] border border-[var(--color-rule)] bg-[var(--color-surface)] px-4 py-3">
+      <p className="text-[11px] font-medium tracking-[0.14em] uppercase text-[var(--color-ink-muted)]">
+        Category
+      </p>
+      <div className="mt-1 flex items-center gap-2">
+        <CategoryIcon category={category} transactionType={transactionType} size={22} />
+        <span className="text-[15px] font-medium capitalize">{label}</span>
+      </div>
     </div>
   );
 }
