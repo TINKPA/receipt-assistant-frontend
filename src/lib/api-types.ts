@@ -1215,8 +1215,8 @@ export interface paths {
         put?: never;
         post?: never;
         /**
-         * Delete a document. Soft-deletes by default; ?hard=true removes the row + file; ?cascade=true also handles linked transactions.
-         * @description Default: soft delete (sets deleted_at). ?hard=true: hard delete (row + file); requires no remaining links unless ?cascade=true is also set. ?cascade=true: linked posted transactions are voided, draft/error transactions are hard-deleted, voided transactions are left intact, reconciled transactions abort the operation with 409. ?cascade=true&hard=true: every linked transaction is hard-deleted (postings cascade), the document is hard-deleted, and the image file is removed. Reconciled transactions always block hard cascades — unreconcile first.
+         * Delete a document. Soft-deletes by default; ?hard=true removes the row and quarantines the file under .trash/; ?cascade=true also handles linked transactions.
+         * @description Default: soft delete (sets deleted_at). ?hard=true: hard delete (row removed; file moved to <uploads_dir>/.trash/<timestamp>__<basename>, NOT unlinked); requires no remaining links unless ?cascade=true is also set. ?cascade=true: linked posted transactions are voided, draft/error transactions are hard-deleted, voided transactions are left intact, reconciled transactions abort the operation with 409. ?cascade=true&hard=true: every linked transaction is hard-deleted (postings cascade), the document row is removed, and the image file is moved to .trash/ (never unlinked). Reconciled transactions always block hard cascades — unreconcile first.
          */
         delete: {
             parameters: {
@@ -2258,6 +2258,145 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/places/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a place by id (full multilingual record).
+         * @description Returns the place row with all multilingual columns plus refs to any cached photos. Photo bytes are streamed separately via /v1/places/{id}/photos/{rank}/content.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Place */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Place"] & Record<string, never>;
+                    };
+                };
+                /** @description Not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update user-overridable place fields.
+         * @description Currently exposes only `custom_name_zh` — the user override that wins over `display_name_zh` in the UI fallback chain. Pass null to clear.
+         */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["UpdatePlaceRequest"];
+                };
+            };
+            responses: {
+                /** @description Updated */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Place"] & Record<string, never>;
+                    };
+                };
+                /** @description Not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/v1/places/{id}/photos/{rank}/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream the binary of a cached Google Places photo.
+         * @description 0-based rank within the place's photos[] (as returned by the v1 Places API at first fetch). 404 if the rank is out of range or the local file copy is missing.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    rank: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Image bytes */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "image/jpeg": string;
+                    };
+                };
+                /** @description Not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2547,8 +2686,36 @@ export interface components {
             formatted_address: string;
             lat: number;
             lng: number;
-            /** @enum {string} */
-            source: "google_geocode" | "google_places";
+            source: string;
+            display_name_en: string | null;
+            display_name_zh: string | null;
+            display_name_zh_locale: string | null;
+            /** @enum {string|null} */
+            display_name_zh_source: "google_text" | "photo_ocr" | "user_override" | null;
+            custom_name_zh: string | null;
+            primary_type: string | null;
+            primary_type_display_zh: string | null;
+            maps_type_label_zh: string | null;
+            types: string[] | null;
+            formatted_address_en: string | null;
+            formatted_address_zh: string | null;
+            postal_code: string | null;
+            country_code: string | null;
+            business_status: string | null;
+            business_hours?: unknown;
+            time_zone: string | null;
+            rating: number | null;
+            user_rating_count: number | null;
+            national_phone_number: string | null;
+            website_uri: string | null;
+            google_maps_uri: string | null;
+            photos: {
+                rank: number;
+                width_px: number | null;
+                height_px: number | null;
+                has_local_copy: boolean;
+                ocr_extracted?: unknown;
+            }[] | null;
         } | null;
         Transaction: {
             /**
@@ -3231,6 +3398,9 @@ export interface components {
              */
             amount_base_minor?: number;
             memo?: string | null;
+        };
+        UpdatePlaceRequest: {
+            custom_name_zh?: string | null;
         };
     };
     responses: never;

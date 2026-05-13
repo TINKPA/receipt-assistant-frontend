@@ -989,3 +989,50 @@ export async function fetchMerchantTransactions(
   );
   return unwrap('fetchMerchantTransactions', data, error, response.status);
 }
+
+// ── Multilingual place cache (#74) ─────────────────────────────
+
+export type PlaceFull = components['schemas']['Place'];
+
+/** Single-place fetch including the photo refs. */
+export async function fetchPlace(id: string): Promise<PlaceFull> {
+  const { data, error, response } = await client.GET('/v1/places/{id}', {
+    params: { path: { id } },
+  });
+  return unwrap('fetchPlace', data, error, response.status);
+}
+
+/** Update the user-overridable `custom_name_zh`. Pass `null` to clear. */
+export async function patchPlace(
+  id: string,
+  patch: { custom_name_zh?: string | null },
+): Promise<PlaceFull> {
+  const { data, error, response } = await client.PATCH('/v1/places/{id}', {
+    params: { path: { id } },
+    body: patch,
+  });
+  return unwrap('patchPlace', data, error, response.status);
+}
+
+/**
+ * Fallback chain for rendering a place's name in the UI:
+ *   custom_name_zh  → user override (always wins)
+ *   display_name_zh → Google v1 zh-CN call or photo-OCR fallback
+ *   display_name_en → English fallback (never disappears)
+ *
+ * Receipts arrive in English transliteration (`Wing On Market`), but
+ * the user may know the merchant as the Chinese name (`永安`). The
+ * cascade keeps both visible: render the primary in the user's
+ * preferred language and the alternate as a subtitle if it differs.
+ */
+export function placeName(p: PlaceFull | null | undefined): {
+  primary: string;
+  alternate: string | null;
+} | null {
+  if (!p) return null;
+  const zh = p.custom_name_zh ?? p.display_name_zh ?? null;
+  const en = p.display_name_en ?? p.formatted_address ?? null;
+  if (!zh && !en) return null;
+  if (zh && en && zh !== en) return { primary: zh, alternate: en };
+  return { primary: zh ?? en ?? '', alternate: null };
+}

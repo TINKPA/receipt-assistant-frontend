@@ -3,8 +3,12 @@ import {
   extractProblemMessage,
   fetchMerchant,
   fetchMerchantTransactions,
+  fetchPlace,
+  patchPlace,
+  placeName,
   type MerchantDetailResponse,
   type MerchantTransactionRow,
+  type PlaceFull,
 } from '../lib/api';
 import { CATEGORY_META } from '../categoryMeta';
 import type { Category } from '../types';
@@ -21,6 +25,7 @@ interface MerchantDetailProps {
 export default function MerchantDetail({ brandId, onBack, onSelectReceipt }: MerchantDetailProps) {
   const [detail, setDetail] = useState<MerchantDetailResponse | null>(null);
   const [txns, setTxns] = useState<MerchantTransactionRow[] | null>(null);
+  const [place, setPlace] = useState<PlaceFull | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -35,6 +40,19 @@ export default function MerchantDetail({ brandId, onBack, onSelectReceipt }: Mer
         setDetail(d);
         setTxns(t.items);
         setLoading(false);
+        // Pull the linked place separately so its multilingual fields
+        // are available for the name fallback chain (#74). Best-effort —
+        // a missing place_id or 404 just leaves Chinese rendering off.
+        const pid = d.merchant.place_id;
+        if (pid) {
+          fetchPlace(pid)
+            .then((p) => {
+              if (!cancelled) setPlace(p);
+            })
+            .catch(() => {
+              /* ignore — Chinese subtitle just won't render */
+            });
+        }
       })
       .catch((e: unknown) => {
         if (cancelled) return;
@@ -45,6 +63,24 @@ export default function MerchantDetail({ brandId, onBack, onSelectReceipt }: Mer
       cancelled = true;
     };
   }, [brandId]);
+
+  const onEditChineseName = async () => {
+    if (!place) return;
+    const current = place.custom_name_zh ?? place.display_name_zh ?? '';
+    const next = window.prompt(
+      'Chinese name for this merchant (clear to remove override):',
+      current,
+    );
+    if (next === null) return; // user cancelled
+    try {
+      const updated = await patchPlace(place.id, {
+        custom_name_zh: next.trim() === '' ? null : next.trim(),
+      });
+      setPlace(updated);
+    } catch (e) {
+      window.alert(`Could not save: ${extractProblemMessage(e)}`);
+    }
+  };
 
   if (loading) {
     return (
@@ -105,6 +141,46 @@ export default function MerchantDetail({ brandId, onBack, onSelectReceipt }: Mer
           )}>
             {m.canonical_name}
           </h1>
+          {(() => {
+            // Chinese-name subtitle. Renders when the linked place has
+            // any source of a non-English display name (Google zh-CN,
+            // photo-OCR fallback, or user override). When the place has
+            // no Chinese yet, offer an "+ add" affordance so the user
+            // can supply one. Either path opens an inline prompt.
+            if (!place) return null;
+            const zh = place.custom_name_zh ?? place.display_name_zh ?? null;
+            if (zh && zh === m.canonical_name) return null;
+            const source = zh
+              ? place.custom_name_zh
+                ? 'you'
+                : place.display_name_zh_source === 'photo_ocr'
+                  ? 'storefront'
+                  : 'Google'
+              : null;
+            return (
+              <button
+                type="button"
+                onClick={onEditChineseName}
+                className="mt-1 inline-flex items-center gap-2 group"
+                title={zh ? `Source: ${source}. Click to edit.` : 'Add Chinese name'}
+              >
+                {zh ? (
+                  <>
+                    <span className="font-display text-lg sm:text-xl text-white/90 group-hover:text-white">
+                      {zh}
+                    </span>
+                    <span className="text-[10px] uppercase tracking-[0.15em] text-white/60 group-hover:text-white/80">
+                      ✎ {source}
+                    </span>
+                  </>
+                ) : (
+                  <span className="text-[11px] uppercase tracking-[0.15em] text-white/55 group-hover:text-white/85">
+                    + add Chinese name
+                  </span>
+                )}
+              </button>
+            );
+          })()}
         </div>
         {m.photo_url && m.photo_attribution && (
           <p className="absolute right-3 bottom-2 z-10 text-[10px] text-white/70">
