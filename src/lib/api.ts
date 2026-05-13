@@ -266,9 +266,13 @@ export function toReceiptView(t: BackendTransaction, etag: string | null = null)
 /** Map a backend Transaction to the compact UI Transaction row. */
 export function mapTransaction(t: BackendTransaction): Transaction {
   const rv = toReceiptView(t);
-  const rawCat = normalizeCategoryKey(rv.category);
-  const classification: CategoryClassification =
-    (rawCat ? CATEGORY_MAP[rawCat] : undefined) ?? { category: null, transactionType: 'spending' };
+  // Single source of truth: classifyBackendCategory handles both the
+  // canonical 7-class strings ("Food & Drinks") written by Phase 2.5
+  // merchant blocks AND the legacy hint keys ("dining", "cafe") from
+  // older rows. Doing this inline with CATEGORY_MAP alone misses the
+  // canonical names because normalizeCategoryKey turns "Food & Drinks"
+  // into "food_&_drinks", which isn't a CATEGORY_MAP key.
+  const classification = classifyBackendCategory(rv.category);
   const m = merchantFromTxn(t);
   return {
     id: t.id,
