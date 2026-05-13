@@ -220,6 +220,11 @@ export function mapTransaction(t: BackendTransaction): Transaction {
   const rv = toReceiptView(t);
   const classification = classifyBackendCategory(rv.category);
   const m = merchantFromTxn(t);
+  // Place's Chinese name follows the same fallback chain as the
+  // MerchantDetail hero: user override wins over Google/photo-OCR.
+  const p = t.place;
+  const placeChineseName =
+    (p?.custom_name_zh ?? p?.display_name_zh) ?? null;
   return {
     id: t.id,
     description: rv.payee ?? rv.narration ?? 'Unknown',
@@ -232,6 +237,7 @@ export function mapTransaction(t: BackendTransaction): Transaction {
     rawStatus: t.status,
     documentId: rv.documentId,
     merchantBrandId: m?.brand_id ?? null,
+    placeChineseName,
   };
 }
 
