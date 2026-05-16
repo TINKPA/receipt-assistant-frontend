@@ -9,6 +9,7 @@ import type { Transaction, Category } from '../types';
 import { isProcessing as txIsProcessing } from '../lib/transactionStatus';
 import { cn } from '../lib/utils';
 import { CategoryIcon } from './CategoryIcon';
+import { MerchantIcon } from './MerchantIcon';
 import { PlaceThumbnail } from './PlaceThumbnail';
 
 interface DashboardProps {
@@ -342,7 +343,8 @@ function RecentList({
                 alt={tx.description}
                 size={44}
                 fallback={
-                  <CategoryIcon
+                  <MerchantIcon
+                    brandId={tx.merchantBrandId}
                     category={tx.category}
                     transactionType={tx.transactionType}
                     size={44}
@@ -350,7 +352,8 @@ function RecentList({
                 }
               />
             ) : (
-              <CategoryIcon
+              <MerchantIcon
+                brandId={tx.merchantBrandId}
                 category={tx.category}
                 transactionType={tx.transactionType}
                 size={44}
