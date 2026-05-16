@@ -1684,6 +1684,55 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/brands/{brandId}/assets/{assetId}/icon": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream an individual candidate asset's bytes
+         * @description Streams any candidate (not just preferred) so the UI picker can render thumbnails. Scoped by brand_id to prevent cross-brand asset_id enumeration. 404 if missing, retired, or the file is gone from disk.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    brandId: string;
+                    assetId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Asset bytes */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/brands/{brandId}/icon": {
         parameters: {
             query?: never;

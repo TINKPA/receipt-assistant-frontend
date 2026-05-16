@@ -12,18 +12,17 @@ import {
 import { cn } from '../lib/utils';
 
 /**
- * Brands page (#101 Phase 1). Brand layer + multi-candidate icon assets.
+ * Brands page (#101). Brand layer + multi-candidate icon assets.
  *
- * Phase 1 surfaces only:
  *  - Browse all brands (global, workspace-agnostic).
  *  - View each brand's candidate icon assets (`brand_assets`).
  *  - Pick a `preferred_asset_id` → stamps `user_chose_at`, which Layer-3
  *    locks against re-extract overrides.
  *
- * Phase 2 (deferred) will plug in agent acquisition (iTunes / svgl /
- * logo.dev / simple_icons sources) and `GET /v1/brands/:id/icon`
- * streaming — right now that endpoint returns 501 so we display the
- * asset's `source_url` / `local_path` instead of an `<img>` for now.
+ * Candidate thumbnails render directly from `source_url` (public CDN
+ * URLs from iTunes / SVGL / logo.dev / Simple Icons). The preferred
+ * pick is also reachable through the backend stream at
+ * `GET /v1/brands/:id/icon` (resolved + cached locally).
  */
 
 interface BrandsProps {
@@ -103,6 +102,7 @@ export default function Brands({ onBack }: BrandsProps) {
                 onClick={() => setSelected(b.brand_id)}
                 className="w-full px-5 py-4 flex items-center gap-4 text-left hover:bg-[var(--color-paper-deep)]/30 transition-colors"
               >
+                <BrandRowIcon brand={b} />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-medium truncate">{b.name}</span>
@@ -120,11 +120,7 @@ export default function Brands({ onBack }: BrandsProps) {
                     )}
                   </div>
                 </div>
-                {b.preferred_asset_id ? (
-                  <span className="text-[10px] uppercase tracking-wider text-[var(--color-ink-muted)]">
-                    asset set
-                  </span>
-                ) : (
+                {!b.preferred_asset_id && (
                   <span className="text-[10px] uppercase tracking-wider text-stone-400">
                     no asset
                   </span>
@@ -278,8 +274,6 @@ function BrandDetail({
       <Section title={`Candidate assets (${assets?.length ?? 0})`}>
         <p className="text-[12px] text-[var(--color-ink-muted)] mb-3">
           Pick one to set <code className="tnum">preferred_asset_id</code> — re-extract will respect your choice.
-          Icon streaming (<code className="tnum">GET /v1/brands/:id/icon</code>) is a 501 stub in Phase 1; we
-          display the raw asset metadata until Phase 2 lands.
         </p>
 
         {assets === null && (
@@ -306,6 +300,7 @@ function BrandDetail({
                       : 'border-[var(--color-rule)] bg-[var(--color-surface)]',
                   )}
                 >
+                  <AssetThumb asset={a} />
                   <div className="min-w-0 flex-1 space-y-1.5">
                     <div className="flex items-center gap-2">
                       <span className={cn('inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium leading-none', TIER_BADGE[a.tier])}>
@@ -353,6 +348,58 @@ function BrandDetail({
           </ul>
         )}
       </Section>
+    </div>
+  );
+}
+
+function BrandRowIcon({ brand }: { brand: BackendBrand }) {
+  const [failed, setFailed] = useState(false);
+  const hasIcon = !!brand.preferred_asset_id && !failed;
+  if (!hasIcon) {
+    const initial = brand.name.trim().charAt(0).toUpperCase() || '?';
+    return (
+      <div className="shrink-0 w-9 h-9 rounded-[10px] border border-[var(--color-rule)] bg-[var(--color-paper-deep)]/40 grid place-items-center text-[12px] font-medium text-[var(--color-ink-muted)]">
+        {initial}
+      </div>
+    );
+  }
+  return (
+    <div className="shrink-0 w-9 h-9 rounded-[10px] border border-[var(--color-rule)] bg-white overflow-hidden grid place-items-center">
+      <img
+        src={`/api/v1/brands/${brand.brand_id}/icon`}
+        alt=""
+        loading="lazy"
+        decoding="async"
+        onError={() => setFailed(true)}
+        className="max-w-full max-h-full object-contain"
+      />
+    </div>
+  );
+}
+
+function AssetThumb({ asset }: { asset: BackendBrandAsset }) {
+  const [failed, setFailed] = useState(false);
+  // Always go through the backend proxy at /v1/brands/:bid/assets/:aid/icon.
+  // Embedding `source_url` directly fails for iTunes lookup URLs, logo.dev
+  // URLs without the token, and any CDN that blocks hotlinking. The proxy
+  // also covers user-uploaded assets that have no public source_url.
+  const src = `/api/v1/brands/${asset.brand_id}/assets/${asset.id}/icon`;
+  if (failed) {
+    return (
+      <div className="shrink-0 w-12 h-12 rounded-[10px] border border-[var(--color-rule)] bg-[var(--color-paper-deep)]/40 grid place-items-center text-[10px] text-[var(--color-ink-muted)]">
+        n/a
+      </div>
+    );
+  }
+  return (
+    <div className="shrink-0 w-12 h-12 rounded-[10px] border border-[var(--color-rule)] bg-white overflow-hidden grid place-items-center">
+      <img
+        src={src}
+        alt=""
+        loading="lazy"
+        onError={() => setFailed(true)}
+        className="max-w-full max-h-full object-contain"
+      />
     </div>
   );
 }
