@@ -16,7 +16,6 @@ import type { Transaction } from '../types';
 import { isProcessing as txIsProcessing, statusBadge } from '../lib/transactionStatus';
 import { CategoryIcon } from './CategoryIcon';
 import { MerchantIcon } from './MerchantIcon';
-import { PlaceThumbnail } from './PlaceThumbnail';
 import TransactionRowMenu from './TransactionRowMenu';
 import ConfirmActionDialog from './ConfirmActionDialog';
 import UnreconcileDialog from './UnreconcileDialog';
@@ -484,35 +483,18 @@ function LedgerRow({
         'rounded-[16px] border border-[var(--color-rule)] bg-[var(--color-surface)] p-3 pr-2',
       )}
     >
-      {/* Row icon cascade (FE#48): place map (geo-specific, #96) →
-          MerchantIcon (brand-recognition via #101 Phase 2) →
-          CategoryIcon (color tile + glyph fallback). PlaceThumbnail
-          stays the primary because it answers "where did this
-          happen?" instantly; MerchantIcon takes over when the place
-          isn't geocoded so the row still reads as a known brand. */}
+      {/* Row icon cascade (FE#48): MerchantIcon (brand-recognition via
+          #101 Phase 2) → CategoryIcon (color tile + glyph fallback).
+          The place-map first layer (#96) was retired — the static map
+          competed with the brand mark and made rows harder to scan;
+          brand identity reads faster than location. */}
       <div className="relative h-12 w-12 flex-shrink-0">
-        {tx.placeMapUrl ? (
-          <PlaceThumbnail
-            src={tx.placeMapUrl}
-            alt={tx.description}
-            size={48}
-            fallback={
-              <MerchantIcon
-                brandId={tx.merchantBrandId}
-                category={tx.category}
-                transactionType={tx.transactionType}
-                size={48}
-              />
-            }
-          />
-        ) : (
-          <MerchantIcon
-            brandId={tx.merchantBrandId}
-            category={tx.category}
-            transactionType={tx.transactionType}
-            size={48}
-          />
-        )}
+        <MerchantIcon
+          brandId={tx.merchantBrandId}
+          category={tx.category}
+          transactionType={tx.transactionType}
+          size={48}
+        />
         {hasDoc && (
           <span
             className={cn(
