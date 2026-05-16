@@ -21,12 +21,19 @@ import { CategoryIcon } from './CategoryIcon';
 import { statusBadge } from '../lib/transactionStatus';
 
 interface MerchantDetailProps {
-  brandId: string;
+  /** Either a merchant row UUID (preferred) or a kebab-case brand_id
+   *  slug (legacy — backend resolves to the first matching row).
+   *  Renamed from `brandId` once the API contract clarified that a
+   *  merchant detail page is per-location, not per-brand. */
+  merchantId: string;
   onBack: () => void;
   onSelectReceipt?: (receiptId: string) => void;
+  /** Navigate up to the BrandPage (one brand, all stores). Optional
+   *  so legacy callers without brand routing keep working. */
+  onSelectBrand?: (brandId: string) => void;
 }
 
-export default function MerchantDetail({ brandId, onBack, onSelectReceipt }: MerchantDetailProps) {
+export default function MerchantDetail({ merchantId, onBack, onSelectReceipt, onSelectBrand }: MerchantDetailProps) {
   const [detail, setDetail] = useState<MerchantDetailResponse | null>(null);
   const [txns, setTxns] = useState<MerchantTransactionRow[] | null>(null);
   const [place, setPlace] = useState<PlaceFull | null>(null);
@@ -46,8 +53,8 @@ export default function MerchantDetail({ brandId, onBack, onSelectReceipt }: Mer
   useEffect(() => {
     let cancelled = false;
     Promise.all([
-      fetchMerchant(brandId),
-      fetchMerchantTransactions(brandId, { limit: 100 }),
+      fetchMerchant(merchantId),
+      fetchMerchantTransactions(merchantId, { limit: 100 }),
     ])
       .then(([d, t]) => {
         if (cancelled) return;
@@ -76,7 +83,7 @@ export default function MerchantDetail({ brandId, onBack, onSelectReceipt }: Mer
     return () => {
       cancelled = true;
     };
-  }, [brandId]);
+  }, [merchantId]);
 
   const onRefreshFromSource = async () => {
     if (!place) return;
@@ -349,6 +356,33 @@ export default function MerchantDetail({ brandId, onBack, onSelectReceipt }: Mer
             </RefreshBanner>
           )}
         </div>
+      )}
+
+      {/* Back-to-Brand callout. Surfaces the upward path to the brand
+          rollup (the page where the user can see "all Starbucks
+          locations together"). Only renders when the caller provides
+          a brand navigation handler — and we always have brand_id from
+          the merchant row, so the callout shows whenever the prop is
+          wired up. */}
+      {onSelectBrand && (
+        <button
+          type="button"
+          onClick={() => onSelectBrand(m.brand_id)}
+          data-testid="merchant-back-to-brand"
+          className={cn(
+            'group w-full flex items-center justify-between gap-3',
+            'rounded-[16px] border border-dashed border-[var(--color-terracotta)]/40',
+            'bg-[var(--color-terracotta)]/5 px-4 py-3',
+            'text-left transition-colors hover:bg-[var(--color-terracotta)]/10',
+          )}
+        >
+          <span className="text-[13px] text-[var(--color-ink-soft)]">
+            See <strong className="text-[var(--color-ink)]">{m.custom_name ?? m.canonical_name}</strong> across all locations
+          </span>
+          <span className="font-hand text-lg text-[var(--color-terracotta)] group-hover:translate-x-px transition-transform">
+            Brand page →
+          </span>
+        </button>
       )}
 
       {/* Transaction history */}

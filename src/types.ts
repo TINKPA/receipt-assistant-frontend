@@ -50,9 +50,14 @@ export interface Transaction {
    *  delete-receipt cascade flows from the list. */
   documentId?: string | null;
   /** Canonical merchant brand id (kebab-case, e.g. "costco"). Populated
-   *  from `metadata.merchant.brand_id` on rows ingested after #64. Drives
-   *  navigation from list rows → merchant aggregation page. */
+   *  from the joined `merchant.brand_id`. Drives navigation from a
+   *  receipt → BrandPage (one brand across all its physical stores). */
   merchantBrandId?: string | null;
+  /** Specific merchant (one physical store) UUID, joined from
+   *  `transactions.merchant_id`. Drives navigation Receipt →
+   *  MerchantDetail (one location, all visits there). Null when the
+   *  row predates merchant emission or has no FK populated. */
+  merchantId?: string | null;
 }
 
 export interface Metric {

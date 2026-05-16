@@ -32,7 +32,6 @@ import {
 
 interface TransactionsProps {
   onSelectReceipt?: (receiptId: string) => void;
-  onSelectMerchant?: (brandId: string) => void;
   searchQuery?: string;
   onSearchChange?: (q: string) => void;
   /** Reset the top-bar search input. The search lives in App.tsx so
@@ -57,7 +56,6 @@ interface TombstoneRow {
  */
 export default function Transactions({
   onSelectReceipt,
-  onSelectMerchant,
   searchQuery = '',
   onSearchChange,
   onClearSearch,
@@ -285,13 +283,7 @@ export default function Transactions({
             <WeekGroup
               key={wk.startIso}
               week={wk}
-              onSelect={(tx) => {
-                if (tx.merchantBrandId && onSelectMerchant) {
-                  onSelectMerchant(tx.merchantBrandId);
-                } else {
-                  onSelectReceipt?.(tx.id);
-                }
-              }}
+              onSelect={(tx) => onSelectReceipt?.(tx.id)}
               onHardDelete={handleHardDeleteRequest}
               onUnreconcile={(id) => setUnreconcileTarget(id)}
             />
@@ -303,13 +295,7 @@ export default function Transactions({
             <li key={tx.id}>
               <LedgerRow
                 tx={tx}
-                onSelect={(t) => {
-                  if (t.merchantBrandId && onSelectMerchant) {
-                    onSelectMerchant(t.merchantBrandId);
-                  } else {
-                    onSelectReceipt?.(t.id);
-                  }
-                }}
+                onSelect={(t) => onSelectReceipt?.(t.id)}
                 onHardDelete={handleHardDeleteRequest}
                 onUnreconcile={(id) => setUnreconcileTarget(id)}
               />

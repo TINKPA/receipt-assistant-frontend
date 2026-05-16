@@ -29,9 +29,12 @@ import { removeTombstone } from '../lib/tombstones';
 interface ReceiptDetailProps {
   receiptId: string;
   onBack: () => void;
-  /** Navigate to the merchant aggregation page (#33). Optional so existing
-   *  callers don't break; the link affordance hides when absent. */
-  onSelectMerchant?: (brandId: string) => void;
+  /** Navigate to MerchantDetail — one physical store, all visits.
+   *  Takes a merchant UUID; link wired from the LocationCard. */
+  onSelectMerchant?: (merchantId: string) => void;
+  /** Navigate to BrandPage — one brand across all its physical stores.
+   *  Takes a kebab brand_id; link wired from the AmountHero merchant name. */
+  onSelectBrand?: (brandId: string) => void;
   /** Bumped when a delete completes so the parent's transaction list
    *  refetches. */
   onAfterMutation?: () => void;
@@ -59,7 +62,7 @@ function md<T = unknown>(meta: Metadata | undefined, key: string): T | undefined
  *
  * Data source: fetchReceiptDetail → real backend. No mocks, no fixtures.
  */
-export default function ReceiptDetail({ receiptId, onBack, onSelectMerchant, onAfterMutation }: ReceiptDetailProps) {
+export default function ReceiptDetail({ receiptId, onBack, onSelectMerchant, onSelectBrand, onAfterMutation }: ReceiptDetailProps) {
   const [receipt, setReceipt] = useState<ReceiptView | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -271,8 +274,11 @@ export default function ReceiptDetail({ receiptId, onBack, onSelectMerchant, onA
         isProcessing={isProcessing}
         voided={receipt.status === 'voided'}
         onMerchantClick={
-          receipt.merchantBrandId && onSelectMerchant
-            ? () => onSelectMerchant(receipt.merchantBrandId!)
+          // Merchant name in the hero → BrandPage (brand-level rollup
+          // across all locations). The per-location detail is reachable
+          // from the LocationCard below.
+          receipt.merchantBrandId && onSelectBrand
+            ? () => onSelectBrand(receipt.merchantBrandId!)
             : undefined
         }
       />
@@ -294,7 +300,12 @@ export default function ReceiptDetail({ receiptId, onBack, onSelectMerchant, onA
       />
 
       {!isProcessing && (
-        <LocationCard place={receipt.place} placeId={receipt.place?.id ?? null} />
+        <LocationCard
+          place={receipt.place}
+          placeId={receipt.place?.id ?? null}
+          merchantId={receipt.merchantId}
+          onSelectMerchant={onSelectMerchant}
+        />
       )}
 
       {!isProcessing && items.length > 0 && (
@@ -750,9 +761,13 @@ function NoteCard({ text }: { text: string }) {
 function LocationCard({
   place,
   placeId,
+  merchantId,
+  onSelectMerchant,
 }: {
   place: ReceiptView['place'];
   placeId: string | null;
+  merchantId: string | null;
+  onSelectMerchant?: (merchantId: string) => void;
 }) {
   // Compose what we have. `formatted_address` from Google is the
   // typical human-friendly line ("1635 S San Gabriel Blvd, …").
@@ -819,6 +834,21 @@ function LocationCard({
           Location unavailable —{' '}
           <span className="italic">geocoding may be disabled or failed.</span>
         </p>
+      )}
+      {merchantId && onSelectMerchant && (
+        <button
+          type="button"
+          onClick={() => onSelectMerchant(merchantId)}
+          data-testid="receipt-view-all-at-location"
+          className={cn(
+            'mt-3 inline-flex items-center gap-1 text-[12px] font-medium',
+            'text-[var(--color-terracotta)] hover:text-[var(--color-terracotta-deep)]',
+            'transition-colors',
+          )}
+        >
+          View all visits to this location
+          <span className="font-display italic text-base leading-none">→</span>
+        </button>
       )}
     </div>
   );

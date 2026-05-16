@@ -13,6 +13,7 @@ import ProcessingToast from './components/ProcessingToast';
 import { useProcessingJobs } from './components/useProcessingJobs';
 import ReceiptDetail from './components/ReceiptDetail';
 import MerchantDetail from './components/MerchantDetail';
+import BrandPage from './components/BrandPage';
 import Products from './components/Products';
 import Brands from './components/Brands';
 import BuildInfoPanel from './components/BuildInfoPanel';
@@ -43,7 +44,10 @@ export default function App() {
   const [refreshKey, setRefreshKey] = React.useState(0);
   const [selectedReceiptId, setSelectedReceiptId] = React.useState<string | null>(null);
   const [selectedBatchId, setSelectedBatchId] = React.useState<string | null>(null);
-  const [selectedMerchantBrandId, setSelectedMerchantBrandId] = React.useState<string | null>(null);
+  /** UUID of one merchant row (= one physical store). Drives MerchantDetail. */
+  const [selectedMerchantId, setSelectedMerchantId] = React.useState<string | null>(null);
+  /** Kebab-case brand_id. Drives BrandPage (rollup across all stores). */
+  const [selectedBrandId, setSelectedBrandId] = React.useState<string | null>(null);
   const [backendBuildInfo, setBackendBuildInfo] = React.useState<BuildInfo | null>(null);
   const [transactionsSearch, setTransactionsSearch] = React.useState('');
   const { jobs, addJob, removeJob } = useProcessingJobs();
@@ -62,7 +66,8 @@ export default function App() {
   const goToTab = (tab: ActiveTab) => {
     setSelectedReceiptId(null);
     setSelectedBatchId(null);
-    setSelectedMerchantBrandId(null);
+    setSelectedMerchantId(null);
+    setSelectedBrandId(null);
     setTransactionsSearch('');
     setActiveTab(tab);
   };
@@ -75,15 +80,28 @@ export default function App() {
     }
   };
 
-  const handleSelectReceipt = (receiptId: string) => setSelectedReceiptId(receiptId);
-  const handleBackFromDetail = () => setSelectedReceiptId(null);
+  const handleSelectReceipt = (receiptId: string) => {
+    // Receipt is the "deepest" view in this column — keep merchant/brand
+    // selection so the back-stack reads Ledger ← Receipt ← Merchant
+    // ← Brand cleanly. We DO clear receipt selection on later moves
+    // (selecting a merchant or brand below).
+    setSelectedReceiptId(receiptId);
+  };
+  const handleBackFromReceipt = () => setSelectedReceiptId(null);
   const handleSelectBatch = (batchId: string) => setSelectedBatchId(batchId);
   const handleBackFromBatch = () => setSelectedBatchId(null);
-  const handleSelectMerchant = (brandId: string) => {
+  const handleSelectMerchant = (merchantId: string) => {
     setSelectedReceiptId(null);
-    setSelectedMerchantBrandId(brandId);
+    setSelectedBrandId(null);
+    setSelectedMerchantId(merchantId);
   };
-  const handleBackFromMerchant = () => setSelectedMerchantBrandId(null);
+  const handleBackFromMerchant = () => setSelectedMerchantId(null);
+  const handleSelectBrand = (brandId: string) => {
+    setSelectedReceiptId(null);
+    setSelectedMerchantId(null);
+    setSelectedBrandId(brandId);
+  };
+  const handleBackFromBrand = () => setSelectedBrandId(null);
 
   const renderContent = () => {
     if (activeTab === 'add') {
@@ -99,19 +117,34 @@ export default function App() {
       return (
         <ReceiptDetail
           receiptId={selectedReceiptId}
-          onBack={handleBackFromDetail}
+          onBack={handleBackFromReceipt}
           onSelectMerchant={handleSelectMerchant}
+          onSelectBrand={handleSelectBrand}
           onAfterMutation={() => setRefreshKey((k) => k + 1)}
         />
       );
     }
 
-    if (selectedMerchantBrandId) {
+    if (selectedMerchantId) {
       return (
         <MerchantDetail
-          key={selectedMerchantBrandId}
-          brandId={selectedMerchantBrandId}
+          key={selectedMerchantId}
+          merchantId={selectedMerchantId}
           onBack={handleBackFromMerchant}
+          onSelectReceipt={handleSelectReceipt}
+          onSelectBrand={handleSelectBrand}
+        />
+      );
+    }
+
+    if (selectedBrandId) {
+      return (
+        <BrandPage
+          key={selectedBrandId}
+          brandId={selectedBrandId}
+          onBack={handleBackFromBrand}
+          onSelectMerchant={handleSelectMerchant}
+          onSelectBrand={handleSelectBrand}
           onSelectReceipt={handleSelectReceipt}
         />
       );
@@ -133,7 +166,6 @@ export default function App() {
           <Dashboard
             key={refreshKey}
             onSelectReceipt={handleSelectReceipt}
-            onSelectMerchant={handleSelectMerchant}
             onViewAllTransactions={() => setActiveTab('transactions')}
           />
         );
@@ -142,7 +174,6 @@ export default function App() {
           <Transactions
             key={refreshKey}
             onSelectReceipt={handleSelectReceipt}
-            onSelectMerchant={handleSelectMerchant}
             searchQuery={transactionsSearch}
             onSearchChange={setTransactionsSearch}
             onClearSearch={() => setTransactionsSearch('')}

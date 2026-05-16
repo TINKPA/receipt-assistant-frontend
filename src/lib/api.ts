@@ -106,9 +106,13 @@ export interface ReceiptView {
   postings: BackendPosting[];
   /** Google Places entry for the merchant location, if geocoded. */
   place: BackendPlace | null;
-  /** Canonical merchant brand id (from metadata.merchant.brand_id),
-   *  used to link to the merchant aggregation page. */
+  /** Canonical merchant brand id (kebab-case). Drives ReceiptDetail's
+   *  merchant-name link → BrandPage (one brand across all stores). */
   merchantBrandId: string | null;
+  /** Specific merchant UUID. Drives ReceiptDetail's location card
+   *  link → MerchantDetail (one physical store, all visits there).
+   *  Null when the row's `merchant_id` FK isn't populated. */
+  merchantId: string | null;
   /** Line items lifted from transaction_items (#81). Empty array
    *  for transactions without extracted lines. */
   items: BackendTransactionItem[];
@@ -165,7 +169,7 @@ function categoryFromTxn(t: BackendTransaction): string | null {
  *  neither source exposes a brand_id. */
 function merchantFromTxn(
   t: BackendTransaction,
-): { brand_id: string; canonical_name: string; custom_name: string | null } | null {
+): { id: string | null; brand_id: string; canonical_name: string; custom_name: string | null } | null {
   const joined = (t as Record<string, unknown>).merchant;
   if (joined && typeof joined === 'object') {
     const rec = joined as Record<string, unknown>;
@@ -173,13 +177,18 @@ function merchantFromTxn(
     if (brandId) {
       const canonical = typeof rec.canonical_name === 'string' ? rec.canonical_name : null;
       const custom = typeof rec.custom_name === 'string' ? rec.custom_name : null;
+      const id = typeof rec.id === 'string' ? rec.id : null;
       return {
+        id,
         brand_id: brandId,
         canonical_name: canonical ?? brandId,
         custom_name: custom,
       };
     }
   }
+  // Legacy fallback: extractor's metadata.merchant block (Phase 2.5).
+  // Lacks the `id` (UUID) since that's only known after the FK is
+  // populated; consumers must handle `merchantId === null`.
   const md = t.metadata ?? {};
   const m = (md as Record<string, unknown>).merchant;
   if (!m || typeof m !== 'object') return null;
@@ -188,6 +197,7 @@ function merchantFromTxn(
   const canonical = typeof rec.canonical_name === 'string' ? rec.canonical_name : null;
   if (!brandId) return null;
   return {
+    id: null,
     brand_id: brandId,
     canonical_name: canonical ?? brandId,
     custom_name: null,
@@ -412,6 +422,7 @@ export function toReceiptView(t: BackendTransaction, etag: string | null = null)
     postings: t.postings,
     place: t.place ?? null,
     merchantBrandId: merchantFromTxn(t)?.brand_id ?? null,
+    merchantId: merchantFromTxn(t)?.id ?? null,
     items: t.items ?? [],
     etag,
   };
@@ -440,6 +451,7 @@ export function mapTransaction(t: BackendTransaction): Transaction {
     rawStatus: t.status,
     documentId: rv.documentId,
     merchantBrandId: m?.brand_id ?? null,
+    merchantId: m?.id ?? null,
   };
 }
 
@@ -1421,6 +1433,78 @@ export async function getBrand(brandId: string): Promise<BackendBrand> {
     params: { path: { brandId } },
   });
   return unwrap('getBrand', data, error, response.status);
+}
+
+/**
+ * Brand rollup response. Hand-authored mirror of `BrandRollup` in
+ * `backend src/schemas/v1/brand.ts`; will switch to the
+ * openapi-typescript generated form once the openapi.json on `main`
+ * picks up the new path (codegen pulls from GitHub, see
+ * `npm run api:types`).
+ */
+export interface BrandRollupStats {
+  location_count: number;
+  transaction_count: number;
+  lifetime_spend_minor: number;
+  current_month_spend_minor: number;
+  last_transaction_date: string | null;
+  currency: string;
+}
+
+export interface BrandRollupLocation {
+  merchant: MerchantDetailResponse['merchant'];
+  stats: MerchantDetailResponse['stats'];
+}
+
+export interface BrandRollupRecentRow {
+  id: string;
+  occurred_on: string;
+  payee: string | null;
+  status: 'draft' | 'posted' | 'voided' | 'reconciled' | 'error';
+  total_minor: number;
+  currency: string;
+  document_id: string | null;
+  merchant_id: string;
+  merchant_canonical_name: string;
+  merchant_custom_name: string | null;
+}
+
+export interface BrandRollupSibling {
+  brand_id: string;
+  name: string;
+  domain: string | null;
+  icon_url: string | null;
+  location_count: number;
+}
+
+export interface BrandRollup {
+  brand: BackendBrand;
+  stats: BrandRollupStats;
+  locations: BrandRollupLocation[];
+  recent_transactions: BrandRollupRecentRow[];
+  sibling_brands: BrandRollupSibling[];
+}
+
+export async function fetchBrandRollup(brandId: string): Promise<BrandRollup> {
+  // openapi-fetch can't see the new path until the GitHub `main` is
+  // refreshed and `api:types` re-run. Use raw fetch for now; the call
+  // shape is trivial and there's no body to validate.
+  const res = await fetch(`/api/v1/brands/${encodeURIComponent(brandId)}/rollup`, {
+    headers: { Accept: 'application/json' },
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    let problem: unknown = body;
+    try {
+      problem = JSON.parse(body);
+    } catch {
+      /* not JSON */
+    }
+    throw new Error(
+      `fetchBrandRollup failed (${res.status}): ${extractProblemMessage(problem)}`,
+    );
+  }
+  return (await res.json()) as BrandRollup;
 }
 
 export async function listBrandAssets(brandId: string): Promise<BackendBrandAsset[]> {

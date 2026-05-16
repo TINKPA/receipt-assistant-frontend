@@ -13,7 +13,6 @@ import { MerchantIcon } from './MerchantIcon';
 
 interface DashboardProps {
   onSelectReceipt?: (receiptId: string) => void;
-  onSelectMerchant?: (brandId: string) => void;
   onViewAllTransactions?: () => void;
 }
 
@@ -34,7 +33,7 @@ interface SpendingCategorySlice {
  * there is no /budget endpoint on the backend yet. The big spend card stands
  * on its own without an invented number.
  */
-export default function Dashboard({ onSelectReceipt, onSelectMerchant, onViewAllTransactions }: DashboardProps) {
+export default function Dashboard({ onSelectReceipt, onViewAllTransactions }: DashboardProps) {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [summary, setSummary] = useState<SpendingSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -103,13 +102,7 @@ export default function Dashboard({ onSelectReceipt, onSelectMerchant, onViewAll
       <RecentList
         items={transactions}
         loading={loading}
-        onSelect={(tx) => {
-          if (tx.merchantBrandId && onSelectMerchant) {
-            onSelectMerchant(tx.merchantBrandId);
-          } else {
-            onSelectReceipt?.(tx.id);
-          }
-        }}
+        onSelect={(tx) => onSelectReceipt?.(tx.id)}
       />
     </div>
   );
