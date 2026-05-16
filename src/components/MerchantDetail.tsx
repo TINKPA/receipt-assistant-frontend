@@ -157,12 +157,18 @@ export default function MerchantDetail({ brandId, onBack, onSelectReceipt }: Mer
       <BackBar onBack={onBack} />
 
       {/* Hero */}
+      {/* `photo_url` post-#67 is a relative server path
+          (`/v1/merchants/:id/photo`); prefix `/api` so the Vite proxy
+          forwards it to the backend. Absolute URLs (legacy Google
+          attribution paths) pass through unchanged. */}
       <div
         className="relative rounded-[20px] overflow-hidden h-[180px] sm:h-[220px] flex items-end p-5"
         style={
           m.photo_url
             ? {
-                backgroundImage: `linear-gradient(180deg, transparent 0%, rgba(0,0,0,0.55) 100%), url(${m.photo_url})`,
+                backgroundImage: `linear-gradient(180deg, transparent 0%, rgba(0,0,0,0.55) 100%), url(${
+                  m.photo_url.startsWith('http') ? m.photo_url : `/api${m.photo_url}`
+                })`,
                 backgroundSize: 'cover',
                 backgroundPosition: 'center',
               }
