@@ -10,7 +10,6 @@ import { isProcessing as txIsProcessing } from '../lib/transactionStatus';
 import { cn } from '../lib/utils';
 import { CategoryIcon } from './CategoryIcon';
 import { MerchantIcon } from './MerchantIcon';
-import { PlaceThumbnail } from './PlaceThumbnail';
 
 interface DashboardProps {
   onSelectReceipt?: (receiptId: string) => void;
@@ -337,28 +336,12 @@ function RecentList({
               idx > 0 && 'border-t border-[var(--color-rule-soft)]',
             )}
           >
-            {tx.placeMapUrl ? (
-              <PlaceThumbnail
-                src={tx.placeMapUrl}
-                alt={tx.description}
-                size={44}
-                fallback={
-                  <MerchantIcon
-                    brandId={tx.merchantBrandId}
-                    category={tx.category}
-                    transactionType={tx.transactionType}
-                    size={44}
-                  />
-                }
-              />
-            ) : (
-              <MerchantIcon
-                brandId={tx.merchantBrandId}
-                category={tx.category}
-                transactionType={tx.transactionType}
-                size={44}
-              />
-            )}
+            <MerchantIcon
+              brandId={tx.merchantBrandId}
+              category={tx.category}
+              transactionType={tx.transactionType}
+              size={44}
+            />
             <button
               type="button"
               onClick={() => !isProcessing && onSelect?.(tx)}
