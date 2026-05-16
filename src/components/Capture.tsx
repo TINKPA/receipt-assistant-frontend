@@ -183,7 +183,7 @@ export default function Capture({ onCancel, onComplete }: CaptureProps) {
       <input
         ref={galleryInputRef}
         type="file"
-        accept="image/jpeg,.jpg,.jpeg"
+        accept="image/*,application/pdf"
         className="hidden"
         onChange={handlePicked}
       />
