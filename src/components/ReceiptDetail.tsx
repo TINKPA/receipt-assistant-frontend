@@ -18,6 +18,8 @@ import {
 import { statusBadge } from '../lib/transactionStatus';
 import { cn } from '../lib/utils';
 import { CategoryIcon } from './CategoryIcon';
+import { MerchantIcon } from './MerchantIcon';
+import type { Category } from '../types';
 import EditReceiptModal from './EditReceiptModal';
 import ConfirmActionDialog from './ConfirmActionDialog';
 import DeleteReceiptDialog from './DeleteReceiptDialog';
@@ -263,6 +265,8 @@ export default function ReceiptDetail({ receiptId, onBack, onSelectMerchant, onA
         amount={receipt.total}
         currency={receipt.currency}
         merchant={isProcessing ? 'Processing…' : merchantLabel}
+        merchantBrandId={receipt.merchantBrandId}
+        category={receipt.category as Category | null}
         occurredOn={receipt.occurred_on}
         isProcessing={isProcessing}
         voided={receipt.status === 'voided'}
@@ -583,6 +587,8 @@ function AmountHero({
   amount,
   currency,
   merchant,
+  merchantBrandId,
+  category,
   occurredOn,
   isProcessing,
   voided,
@@ -591,12 +597,17 @@ function AmountHero({
   amount: number;
   currency: string;
   merchant: string;
+  merchantBrandId: string | null;
+  category: Category | null;
   occurredOn: string;
   isProcessing: boolean;
   voided: boolean;
   onMerchantClick?: () => void;
 }) {
   const merchantClass = 'font-display italic font-medium text-2xl sm:text-3xl leading-tight';
+  // FE#48: small square icon next to the merchant name. Skipped while
+  // processing (the row says "Processing…", not a real merchant yet).
+  const showIcon = !isProcessing;
   return (
     <div className="text-center pt-2">
       <p
@@ -616,15 +627,25 @@ function AmountHero({
           type="button"
           onClick={onMerchantClick}
           className={cn(
-            'mt-4 inline-flex items-baseline gap-1 transition-colors hover:text-[var(--color-terracotta)]',
+            'mt-4 inline-flex items-center gap-2 transition-colors hover:text-[var(--color-terracotta)]',
             merchantClass,
           )}
         >
-          {merchant}
-          <span className="font-display italic text-base leading-none text-[var(--color-terracotta)]">→</span>
+          {showIcon && (
+            <MerchantIcon brandId={merchantBrandId} category={category} size={28} />
+          )}
+          <span className="inline-flex items-baseline gap-1">
+            {merchant}
+            <span className="font-display italic text-base leading-none text-[var(--color-terracotta)]">→</span>
+          </span>
         </button>
       ) : (
-        <h1 className={cn('mt-4', merchantClass)}>{merchant}</h1>
+        <h1 className={cn('mt-4 inline-flex items-center gap-2', merchantClass)}>
+          {showIcon && (
+            <MerchantIcon brandId={merchantBrandId} category={category} size={28} />
+          )}
+          <span>{merchant}</span>
+        </h1>
       )}
       <p className="mt-1 text-[13px] text-[var(--color-ink-muted)]">
         {formatDateLong(occurredOn)}
