@@ -157,9 +157,29 @@ function categoryFromTxn(t: BackendTransaction): string | null {
   return null;
 }
 
-/** Pull the merchant block written by the extractor (Phase 2.5) from
- *  transaction metadata. Returns null if absent (legacy rows pre-#64). */
-function merchantFromTxn(t: BackendTransaction): { brand_id: string; canonical_name: string } | null {
+/** Pull the merchant block for a transaction. Prefers the top-level
+ *  `merchant` field (#79 Phase C — joined from `merchants` so the row
+ *  carries `custom_name`, the brand-level Layer-3 override). Falls back
+ *  to the extractor's `metadata.merchant` block (Phase 2.5) for legacy
+ *  rows whose `merchant_id` FK isn't populated yet. Returns null when
+ *  neither source exposes a brand_id. */
+function merchantFromTxn(
+  t: BackendTransaction,
+): { brand_id: string; canonical_name: string; custom_name: string | null } | null {
+  const joined = (t as Record<string, unknown>).merchant;
+  if (joined && typeof joined === 'object') {
+    const rec = joined as Record<string, unknown>;
+    const brandId = typeof rec.brand_id === 'string' ? rec.brand_id : null;
+    if (brandId) {
+      const canonical = typeof rec.canonical_name === 'string' ? rec.canonical_name : null;
+      const custom = typeof rec.custom_name === 'string' ? rec.custom_name : null;
+      return {
+        brand_id: brandId,
+        canonical_name: canonical ?? brandId,
+        custom_name: custom,
+      };
+    }
+  }
   const md = t.metadata ?? {};
   const m = (md as Record<string, unknown>).merchant;
   if (!m || typeof m !== 'object') return null;
@@ -167,7 +187,11 @@ function merchantFromTxn(t: BackendTransaction): { brand_id: string; canonical_n
   const brandId = typeof rec.brand_id === 'string' ? rec.brand_id : null;
   const canonical = typeof rec.canonical_name === 'string' ? rec.canonical_name : null;
   if (!brandId) return null;
-  return { brand_id: brandId, canonical_name: canonical ?? brandId };
+  return {
+    brand_id: brandId,
+    canonical_name: canonical ?? brandId,
+    custom_name: null,
+  };
 }
 
 // Match any CJK Unified Ideograph block, including extensions and
