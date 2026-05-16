@@ -3863,6 +3863,16 @@ export interface components {
                 ocr_extracted?: unknown;
             }[] | null;
         } | null;
+        TransactionMerchantRef: {
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            id: string;
+            brand_id: string;
+            canonical_name: string;
+            custom_name: string | null;
+        } | null;
         TransactionItem: {
             line_no: number;
             raw_name: string;
@@ -3949,6 +3959,7 @@ export interface components {
             postings: components["schemas"]["Posting"][];
             documents: components["schemas"]["TransactionDocumentRef"][];
             place: components["schemas"]["Place"];
+            merchant: components["schemas"]["TransactionMerchantRef"];
             items: components["schemas"]["TransactionItem"][];
         };
         BulkResultItem: {
