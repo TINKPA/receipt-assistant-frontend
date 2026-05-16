@@ -101,6 +101,11 @@ export default function Transactions({
       amount_max_minor: dollarsToMinor(debouncedAmountMax),
       from: dateRange.occurred_from,
       to: dateRange.occurred_to,
+      // Ledger groups rows by ISO-week of `occurred_on`, so the fetch
+      // axis must match — otherwise a freshly re-ingested old receipt
+      // crowds out recently-occurred ones on page 1.
+      sort: 'occurred_on',
+      order: 'desc',
     })
       .then((rows) => {
         setTransactions(rows);
