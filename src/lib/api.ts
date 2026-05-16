@@ -1440,3 +1440,24 @@ export async function patchBrand(
   });
   return unwrap('patchBrand', data, error, response.status);
 }
+
+/**
+ * Upload a user-provided icon for a brand. The backend stamps
+ * `user_chose_at` and points `preferred_asset_id` at the new asset —
+ * the upload IS the user's choice, so re-extract (`Phase 4c`) will
+ * never overwrite it. Same-bytes re-upload returns the existing row
+ * 200 OK (UNIQUE on `(brand_id, content_hash)`); new bytes return 201.
+ */
+export async function uploadBrandAsset(
+  brandId: string,
+  file: File,
+): Promise<BackendBrandAsset> {
+  const form = new FormData();
+  form.append('file', file);
+  const { data, error, response } = await client.POST('/v1/brands/{brandId}/assets', {
+    params: { path: { brandId } },
+    body: form as unknown as Record<string, never>,
+    bodySerializer: (b) => b as unknown as FormData,
+  });
+  return unwrap('uploadBrandAsset', data, error, response.status);
+}
