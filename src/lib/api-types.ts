@@ -2267,6 +2267,56 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/merchants/{id}/photo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream the cached hero photo for a merchant (#67).
+         * @description Resolves to the merchant's linked `places.id` and serves the first `place_photos` row with cached bytes. Returns 404 when the merchant has no linked place or no cached photos for that place. Reuses the `place_photos` cache from #74 — no separate merchant_photos table.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Image bytes */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "image/jpeg": string;
+                    };
+                };
+                /** @description Merchant or photo not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/merchants/{id}/transactions": {
         parameters: {
             query?: never;
