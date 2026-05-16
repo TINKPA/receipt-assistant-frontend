@@ -1,10 +1,11 @@
-import React, { useEffect, useState } from 'react';
-import { ChevronRight, ArrowLeft, Lock, Globe } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { ChevronRight, ArrowLeft, Lock, Globe, Upload } from 'lucide-react';
 import {
   listBrands,
   getBrand,
   patchBrand,
   listBrandAssets,
+  uploadBrandAsset,
   extractProblemMessage,
   type BackendBrand,
   type BackendBrandAsset,
@@ -171,6 +172,8 @@ function BrandDetail({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [banner, setBanner] = useState<{ tone: 'ok' | 'err'; text: string } | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const loadAll = () => {
     Promise.all([getBrand(brandId), listBrandAssets(brandId)])
@@ -182,6 +185,29 @@ function BrandDetail({
   };
 
   useEffect(loadAll, [brandId]);
+
+  const handleUpload = async (file: File) => {
+    if (!brand) return;
+    setUploading(true);
+    setBanner(null);
+    try {
+      await uploadBrandAsset(brand.brand_id, file);
+      // Re-fetch both brand (preferred_asset_id + user_chose_at) and assets.
+      const [b, a] = await Promise.all([getBrand(brand.brand_id), listBrandAssets(brand.brand_id)]);
+      setBrand(b);
+      setAssets(a);
+      onPatched(b);
+      setBanner({
+        tone: 'ok',
+        text: `Uploaded "${file.name}" — set as preferred and locked from re-extract overrides.`,
+      });
+    } catch (e: unknown) {
+      setBanner({ tone: 'err', text: extractProblemMessage(e) });
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
 
   const setPreferred = async (assetId: string | null) => {
     if (!brand) return;
@@ -274,9 +300,34 @@ function BrandDetail({
       )}
 
       <Section title={`Candidate assets (${assets?.length ?? 0})`}>
-        <p className="text-[12px] text-[var(--color-ink-muted)] mb-3">
-          Pick one to set <code className="tnum">preferred_asset_id</code> — re-extract will respect your choice.
-        </p>
+        <div className="flex items-start justify-between gap-3 mb-3">
+          <p className="text-[12px] text-[var(--color-ink-muted)]">
+            Pick one to set <code className="tnum">preferred_asset_id</code> — re-extract will respect your choice.
+          </p>
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+            className={cn(
+              'shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-medium transition-colors disabled:opacity-40',
+              'border border-[var(--color-rule)] text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] hover:border-[var(--color-ink)]',
+            )}
+            title="Upload your own icon for this brand — auto-sets as preferred and locks against re-extract"
+          >
+            <Upload size={12} />
+            {uploading ? 'Uploading…' : 'Upload your own'}
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/svg+xml,image/webp,image/gif"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) void handleUpload(f);
+            }}
+          />
+        </div>
 
         {assets === null && (
           <p className="text-sm text-[var(--color-ink-muted)]">Loading…</p>

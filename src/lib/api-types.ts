@@ -1677,7 +1677,63 @@ export interface paths {
             };
         };
         put?: never;
-        post?: never;
+        /**
+         * Upload a user-provided brand icon
+         * @description Multipart upload (field name `file`) — saves bytes to the brand-assets bind-mount, inserts a brand_assets row with tier=user_upload, and stamps user_chose_at + preferred_asset_id to the new asset (the upload IS the user's choice; Layer-3 lock per #101). Re-uploading identical bytes returns the existing row 200 OK (UNIQUE on (brand_id, content_hash)); new bytes return 201.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    brandId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "multipart/form-data": components["schemas"]["UploadBrandAssetForm"];
+                };
+            };
+            responses: {
+                /** @description Dedup hit — existing asset returned */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["BrandAsset"];
+                    };
+                };
+                /** @description New asset created */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["BrandAsset"];
+                    };
+                };
+                /** @description Brand not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+                /** @description Validation failed */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
         delete?: never;
         options?: never;
         head?: never;
@@ -4290,6 +4346,10 @@ export interface components {
             preferred_asset_id?: string | null;
             name?: string;
             domain?: string | null;
+        };
+        UploadBrandAssetForm: {
+            /** Format: binary */
+            file?: string;
         };
         Document: {
             /**
