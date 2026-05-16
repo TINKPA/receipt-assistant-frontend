@@ -142,6 +142,7 @@ const TIER_LABEL: Record<BackendBrandAsset['tier'], string> = {
   svgl: 'SVGL',
   logo_dev: 'logo.dev',
   simple_icons: 'Simple Icons',
+  google_play: 'Google Play',
   user_upload: 'User upload',
   manual_url: 'Manual URL',
 };
@@ -151,6 +152,7 @@ const TIER_BADGE: Record<BackendBrandAsset['tier'], string> = {
   svgl: 'bg-violet-50 text-violet-900',
   logo_dev: 'bg-emerald-50 text-emerald-900',
   simple_icons: 'bg-stone-100 text-stone-700',
+  google_play: 'bg-lime-50 text-lime-900',
   user_upload: 'bg-amber-50 text-amber-900',
   manual_url: 'bg-sky-50 text-sky-900',
 };
@@ -355,18 +357,24 @@ function BrandDetail({
 function BrandRowIcon({ brand }: { brand: BackendBrand }) {
   const [failed, setFailed] = useState(false);
   const hasIcon = !!brand.preferred_asset_id && !failed;
+  // Sized to match the Ledger row's MerchantIcon (48px) so the Brands
+  // list previews what the user will actually see on transactions.
   if (!hasIcon) {
     const initial = brand.name.trim().charAt(0).toUpperCase() || '?';
     return (
-      <div className="shrink-0 w-9 h-9 rounded-[10px] border border-[var(--color-rule)] bg-[var(--color-paper-deep)]/40 grid place-items-center text-[12px] font-medium text-[var(--color-ink-muted)]">
+      <div className="shrink-0 w-12 h-12 rounded-[15px] border border-[var(--color-rule)] bg-[var(--color-paper-deep)]/40 grid place-items-center text-[15px] font-medium text-[var(--color-ink-muted)]">
         {initial}
       </div>
     );
   }
+  // `?v=` busts both the browser's old `immutable` cache entry and any
+  // stale revalidation when the user re-picks a preferred asset — the
+  // backend now uses ETag-based revalidation, but the version param
+  // ensures fresh URLs whenever `preferred_asset_id` changes.
   return (
-    <div className="shrink-0 w-9 h-9 rounded-[10px] border border-[var(--color-rule)] bg-white overflow-hidden grid place-items-center">
+    <div className="shrink-0 w-12 h-12 rounded-[15px] border border-[var(--color-rule)] bg-white overflow-hidden grid place-items-center">
       <img
-        src={`/api/v1/brands/${brand.brand_id}/icon`}
+        src={`/api/v1/brands/${brand.brand_id}/icon?v=${brand.preferred_asset_id}`}
         alt=""
         loading="lazy"
         decoding="async"

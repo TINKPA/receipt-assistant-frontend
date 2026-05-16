@@ -4254,7 +4254,7 @@ export interface components {
             id: string;
             brand_id: string;
             /** @enum {string} */
-            tier: "itunes" | "svgl" | "logo_dev" | "simple_icons" | "user_upload" | "manual_url";
+            tier: "itunes" | "svgl" | "logo_dev" | "simple_icons" | "google_play" | "user_upload" | "manual_url";
             source_url: string | null;
             local_path: string;
             content_hash: string;
