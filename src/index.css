@@ -116,3 +116,10 @@
 
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* LocationCard pastel-pillow blob morph (design #35). Used by ReceiptDetail.tsx::LocationCard. */
+@keyframes pastel-blob {
+  0%, 100% { border-radius: 42% 58% 65% 35% / 38% 50% 50% 62%; }
+  33%      { border-radius: 60% 40% 35% 65% / 55% 35% 65% 45%; }
+  66%      { border-radius: 35% 65% 50% 50% / 45% 60% 40% 55%; }
+}
