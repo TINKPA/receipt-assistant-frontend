@@ -450,6 +450,7 @@ export function mapTransaction(t: BackendTransaction): Transaction {
     amount: classification.transactionType === 'income' ? rv.total : -rv.total,
     rawStatus: t.status,
     documentId: rv.documentId,
+    documentKind: rv.documentKind,
     merchantBrandId: m?.brand_id ?? null,
     merchantId: m?.id ?? null,
   };
@@ -880,6 +881,13 @@ export async function restoreDocument(id: string): Promise<BackendDocument> {
  *  /api and the static bundle. */
 export function documentContentUrl(docId: string): string {
   return `/api/v1/documents/${docId}/content`;
+}
+
+/** URL for the decoded + sanitized HTML body of a receipt_email
+ *  document (#122). Intended as the `src` of a sandboxed `<iframe>` in
+ *  the "Original email" fold. Served with a strict CSP by the backend. */
+export function documentRenderedUrl(docId: string): string {
+  return `/api/v1/documents/${docId}/rendered`;
 }
 
 export async function linkDocument(docId: string, transactionId: string): Promise<void> {

@@ -1837,6 +1837,56 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/brands/{brandId}/rollup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Brand-level rollup — locations, recent transactions, sibling brands
+         * @description Aggregates across every merchant row sharing this brand_id within the workspace. Powers the BrandPage UI (#XXX). Voided transactions excluded from money sums. Sibling brands (same parent_id) included for the Costco-style grouped-brand callout.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    brandId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["BrandRollup"];
+                    };
+                };
+                /** @description Brand not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/postings": {
         parameters: {
             query?: never;
@@ -2121,6 +2171,62 @@ export interface paths {
                 };
                 /** @description Not found */
                 404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/documents/{id}/rendered": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Decoded + sanitized HTML body of a receipt_email document, for the frontend 'Original email' fold. Served with a strict CSP; render inside a sandboxed iframe. */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Sanitized email HTML */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/html": string;
+                    };
+                };
+                /** @description Not found / no file */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+                /** @description Document is not an email (kind != receipt_email) */
+                422: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -3924,6 +4030,9 @@ export interface components {
              */
             id: string;
             kind: string;
+            source_meta?: {
+                [key: string]: unknown;
+            } | null;
         };
         Place: {
             /**
@@ -4338,6 +4447,94 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        BrandRollupStats: {
+            location_count: number;
+            transaction_count: number;
+            lifetime_spend_minor: number;
+            current_month_spend_minor: number;
+            last_transaction_date: string | null;
+            currency: string;
+        };
+        Merchant: {
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            id: string;
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            workspace_id: string;
+            brand_id: string;
+            canonical_name: string;
+            category: string | null;
+            place_id: string | null;
+            photo_url: string | null;
+            photo_attribution: string | null;
+            address: string | null;
+            lat: number | null;
+            lng: number | null;
+            /** @enum {string} */
+            enrichment_status: "pending" | "success" | "not_found" | "failed";
+            /** Format: date-time */
+            enrichment_attempted_at: string | null;
+            custom_name: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        MerchantStats: {
+            transaction_count: number;
+            lifetime_spend_minor: number;
+            current_month_spend_minor: number;
+            last_transaction_date: string | null;
+            currency: string;
+        };
+        BrandRollupLocation: {
+            merchant: components["schemas"]["Merchant"];
+            stats: components["schemas"]["MerchantStats"];
+        };
+        BrandRollupRecentRow: {
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            id: string;
+            occurred_on: string;
+            payee: string | null;
+            /** @enum {string} */
+            status: "draft" | "posted" | "voided" | "reconciled" | "error";
+            total_minor: number;
+            currency: string;
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            document_id: string | null;
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            merchant_id: string;
+            merchant_canonical_name: string;
+            merchant_custom_name: string | null;
+        };
+        BrandRollupSibling: {
+            brand_id: string;
+            name: string;
+            domain: string | null;
+            icon_url: string | null;
+            location_count: number;
+        };
+        BrandRollup: {
+            brand: components["schemas"]["Brand"];
+            stats: components["schemas"]["BrandRollupStats"];
+            locations: components["schemas"]["BrandRollupLocation"][];
+            recent_transactions: components["schemas"]["BrandRollupRecentRow"][];
+            sibling_brands: components["schemas"]["BrandRollupSibling"][];
+        };
         UpdateBrandRequest: {
             /**
              * Format: uuid
@@ -4371,6 +4568,12 @@ export interface components {
             /** @description Model identifier under which ocr_text was produced. NULL on legacy rows. */
             ocr_model_version: string | null;
             extraction_meta: {
+                [key: string]: unknown;
+            } | null;
+            /** @description RFC822 Message-ID for email-sourced documents (kind=receipt_email); NULL otherwise. */
+            message_id: string | null;
+            /** @description Channel provenance for non-image sources. For email: {channel,sender,subject,received_at,message_id}. */
+            source_meta: {
                 [key: string]: unknown;
             } | null;
             /**
@@ -4781,43 +4984,6 @@ export interface components {
              */
             net_minor: number;
             buckets: components["schemas"]["CashflowBucket"][];
-        };
-        Merchant: {
-            /**
-             * Format: uuid
-             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
-             */
-            id: string;
-            /**
-             * Format: uuid
-             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
-             */
-            workspace_id: string;
-            brand_id: string;
-            canonical_name: string;
-            category: string | null;
-            place_id: string | null;
-            photo_url: string | null;
-            photo_attribution: string | null;
-            address: string | null;
-            lat: number | null;
-            lng: number | null;
-            /** @enum {string} */
-            enrichment_status: "pending" | "success" | "not_found" | "failed";
-            /** Format: date-time */
-            enrichment_attempted_at: string | null;
-            custom_name: string | null;
-            /** Format: date-time */
-            created_at: string;
-            /** Format: date-time */
-            updated_at: string;
-        };
-        MerchantStats: {
-            transaction_count: number;
-            lifetime_spend_minor: number;
-            current_month_spend_minor: number;
-            last_transaction_date: string | null;
-            currency: string;
         };
         MerchantDetail: {
             merchant: components["schemas"]["Merchant"];
