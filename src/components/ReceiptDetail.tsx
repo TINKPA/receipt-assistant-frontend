@@ -4,6 +4,7 @@ import {
   classifyBackendCategory,
   fetchReceiptDetail,
   documentContentUrl,
+  documentRenderedUrl,
   extractProblemMessage,
   getTransaction,
   postReExtractDocument,
@@ -283,7 +284,11 @@ export default function ReceiptDetail({ receiptId, onBack, onSelectMerchant, onS
         }
       />
 
-      <StatusRow badge={badge} paymentMethod={receipt.paymentMethod ?? null} />
+      <StatusRow
+        badge={badge}
+        paymentMethod={receipt.paymentMethod ?? null}
+        source={primaryDoc?.kind ?? null}
+      />
 
       {isProcessing && <ProcessingNote />}
 
@@ -320,7 +325,14 @@ export default function ReceiptDetail({ receiptId, onBack, onSelectMerchant, onS
        *  Hidden when there are no matches (no skeleton, no placeholder). */}
 
       {!isProcessing && receipt.documentId && (
-        <OriginalReceiptCollapsible documentId={receipt.documentId} />
+        <OriginalReceiptCollapsible
+          documentId={receipt.documentId}
+          kind={primaryDoc?.kind ?? null}
+          sourceMeta={
+            (primaryDoc as { source_meta?: Record<string, unknown> | null } | undefined)
+              ?.source_meta ?? null
+          }
+        />
       )}
 
       {/* Re-extract affordance. Only on active (non-voided) receipts
@@ -665,16 +677,40 @@ function AmountHero({
   );
 }
 
+function sourceLabel(
+  kind: string | null | undefined,
+): { glyph: string; label: string } | null {
+  if (kind === 'receipt_email') return { glyph: '✉︎', label: 'via email' };
+  if (kind === 'receipt_pdf' || kind === 'statement_pdf')
+    return { glyph: '⌗', label: 'via pdf' };
+  return null;
+}
+
 function StatusRow({
   badge,
   paymentMethod,
+  source,
 }: {
   badge: ReturnType<typeof statusBadge>;
   paymentMethod: string | null;
+  source?: string | null;
 }) {
-  if (!badge && !paymentMethod) return null;
+  const src = sourceLabel(source);
+  if (!badge && !paymentMethod && !src) return null;
   return (
     <div className="flex items-center justify-center gap-2 text-[12px] text-[var(--color-ink-muted)]">
+      {src && (
+        <span
+          className={cn(
+            'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium',
+            'bg-[var(--color-terracotta-soft)] text-[var(--color-terracotta-deep)]',
+          )}
+        >
+          <span aria-hidden="true">{src.glyph}</span>
+          {src.label}
+        </span>
+      )}
+      {src && (badge || paymentMethod) && <span aria-hidden="true">·</span>}
       {badge && (
         <span
           className={cn(
@@ -697,8 +733,57 @@ function StatusRow({
   );
 }
 
-function OriginalReceiptCollapsible({ documentId }: { documentId: string }) {
+function formatReceived(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
+/** Email message-header strip shown above the rendered email body, so the
+ *  fold reads as "the original email" rather than a raw HTML blob (#76). */
+function EmailHeaderStrip({
+  sender,
+  subject,
+  receivedAt,
+}: {
+  sender: string | null;
+  subject: string | null;
+  receivedAt: string | null;
+}) {
+  return (
+    <div className="rounded-[10px] border border-[var(--color-rule)] bg-[var(--color-surface)] px-4 py-3">
+      {subject && (
+        <p className="font-display italic font-medium text-[15px] leading-snug text-[var(--color-ink)]">
+          {subject}
+        </p>
+      )}
+      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[12px] text-[var(--color-ink-muted)]">
+        {sender && <span className="min-w-0 truncate">{sender}</span>}
+        {sender && receivedAt && <span aria-hidden="true">·</span>}
+        {receivedAt && <span className="tnum">{formatReceived(receivedAt)}</span>}
+      </div>
+    </div>
+  );
+}
+
+function OriginalReceiptCollapsible({
+  documentId,
+  kind,
+  sourceMeta,
+}: {
+  documentId: string;
+  kind?: string | null;
+  sourceMeta?: Record<string, unknown> | null;
+}) {
   const [open, setOpen] = useState(false);
+  const isEmail = kind === 'receipt_email';
+  const sender = (sourceMeta?.sender as string | undefined) ?? null;
+  const subject = (sourceMeta?.subject as string | undefined) ?? null;
+  const receivedAt = (sourceMeta?.received_at as string | undefined) ?? null;
   return (
     <div className="rounded-[18px] border border-[var(--color-rule)] bg-[var(--color-surface)] overflow-hidden">
       <button
@@ -707,7 +792,7 @@ function OriginalReceiptCollapsible({ documentId }: { documentId: string }) {
         className="w-full px-5 py-4 flex items-center justify-between text-left hover:bg-[var(--color-paper-deep)]/30 transition-colors"
       >
         <span className="font-display italic font-medium text-lg leading-none">
-          Original receipt
+          {isEmail ? 'Original email' : 'Original receipt'}
         </span>
         {open ? <ChevronDown size={18} className="text-[var(--color-ink-muted)]" /> : <ChevronRight size={18} className="text-[var(--color-ink-muted)]" />}
       </button>
@@ -719,14 +804,39 @@ function OriginalReceiptCollapsible({ documentId }: { documentId: string }) {
               'linear-gradient(180deg, rgba(245, 230, 195, 0.4) 0%, rgba(201, 123, 92, 0.06) 100%), var(--color-surface)',
           }}
         >
-          <img
-            src={documentContentUrl(documentId)}
-            alt="Receipt"
-            className="block max-w-full max-h-[500px] object-contain mx-auto rounded-[10px]"
-            onError={(e) => {
-              (e.target as HTMLImageElement).style.display = 'none';
-            }}
-          />
+          {isEmail ? (
+            <div className="space-y-3">
+              {(sender || subject || receivedAt) && (
+                <EmailHeaderStrip
+                  sender={sender}
+                  subject={subject}
+                  receivedAt={receivedAt}
+                />
+              )}
+              {/* Faithful render of the sender's HTML, isolated in a
+                  sandboxed iframe (no scripts / no same-origin). The
+                  backend serves it with a strict CSP; this is the second
+                  containment layer. Fixed height + internal scroll since
+                  email heights vary wildly. */}
+              <iframe
+                src={documentRenderedUrl(documentId)}
+                title="Original email"
+                sandbox=""
+                referrerPolicy="no-referrer"
+                className="block w-full rounded-[10px] border border-[var(--color-rule)] bg-white"
+                style={{ height: 520 }}
+              />
+            </div>
+          ) : (
+            <img
+              src={documentContentUrl(documentId)}
+              alt="Receipt"
+              className="block max-w-full max-h-[500px] object-contain mx-auto rounded-[10px]"
+              onError={(e) => {
+                (e.target as HTMLImageElement).style.display = 'none';
+              }}
+            />
+          )}
         </div>
       )}
     </div>

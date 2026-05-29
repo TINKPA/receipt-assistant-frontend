@@ -475,6 +475,21 @@ function WeekGroup({
   );
 }
 
+/**
+ * Quiet source marker for the ledger row. Only NON-photo sources are
+ * marked (email / PDF); a camera/photo receipt is the default and stays
+ * unmarked, keeping the list calm (#76). Glyphs are forced to text
+ * rendering (no emoji color) to sit in the muted meta line.
+ */
+function sourceTag(
+  kind: string | null | undefined,
+): { glyph: string; label: string } | null {
+  if (kind === 'receipt_email') return { glyph: '✉︎', label: 'email' };
+  if (kind === 'receipt_pdf' || kind === 'statement_pdf')
+    return { glyph: '⌗', label: 'pdf' };
+  return null;
+}
+
 function LedgerRow({
   tx,
   onSelect,
@@ -548,6 +563,14 @@ function LedgerRow({
               · {badge.label}
             </span>
           )}
+          {(() => {
+            const src = sourceTag(tx.documentKind);
+            return src ? (
+              <span className="ml-1" title={`From ${src.label}`}>
+                · <span className="not-italic">{src.glyph}</span> {src.label}
+              </span>
+            ) : null;
+          })()}
         </p>
       </button>
 

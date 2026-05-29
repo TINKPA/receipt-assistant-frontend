@@ -49,6 +49,10 @@ export interface Transaction {
   /** Primary linked document id, if any — needed for tombstone toggle and
    *  delete-receipt cascade flows from the list. */
   documentId?: string | null;
+  /** Kind of the primary document (`receipt_image` | `receipt_email` |
+   *  `receipt_pdf` | …). Drives the list source glyph — only non-photo
+   *  sources are marked (#76). */
+  documentKind?: string | null;
   /** Canonical merchant brand id (kebab-case, e.g. "costco"). Populated
    *  from the joined `merchant.brand_id`. Drives navigation from a
    *  receipt → BrandPage (one brand across all its physical stores). */
