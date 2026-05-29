@@ -6,6 +6,7 @@ import {
   Clock,
   Cog,
   FileText,
+  Layers,
   Zap,
 } from 'lucide-react';
 import {
@@ -31,6 +32,7 @@ const INGEST_STATUS_META: Record<
   queued: { label: 'Queued', badge: 'bg-surface-container-highest text-on-surface-variant', icon: Clock },
   processing: { label: 'Processing', badge: 'bg-tertiary/10 text-tertiary', icon: Cog },
   done: { label: 'Done', badge: 'bg-primary/10 text-primary', icon: CheckCircle2 },
+  dedup: { label: 'Duplicate', badge: 'bg-sky-400/10 text-sky-300', icon: Layers },
   error: { label: 'Error', badge: 'bg-error/10 text-error', icon: AlertCircle },
   unsupported: { label: 'Unsupported', badge: 'bg-error/10 text-error', icon: AlertCircle },
 };
@@ -111,7 +113,9 @@ export default function BatchDetail({ batchId, onBack, onSelectTransaction }: Ba
   }
 
   const { counts } = batch;
-  const pct = counts.total > 0 ? Math.round(((counts.done + counts.error) / counts.total) * 100) : 0;
+  // dedup + unsupported are terminal too, so they count toward completion.
+  const terminalDone = counts.done + counts.dedup + counts.error + counts.unsupported;
+  const pct = counts.total > 0 ? Math.round((terminalDone / counts.total) * 100) : 0;
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700 max-w-5xl">
@@ -140,11 +144,12 @@ export default function BatchDetail({ batchId, onBack, onSelectTransaction }: Ba
           </div>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mt-6 pt-6 border-t border-outline-variant/10">
+        <div className="grid grid-cols-3 md:grid-cols-6 gap-4 mt-6 pt-6 border-t border-outline-variant/10">
           <StatCard label="Total" value={counts.total} />
           <StatCard label="Queued" value={counts.queued} tone="muted" />
           <StatCard label="Processing" value={counts.processing} tone="tertiary" />
           <StatCard label="Done" value={counts.done} tone="primary" />
+          <StatCard label="Duplicate" value={counts.dedup} tone="info" />
           <StatCard label="Error" value={counts.error + counts.unsupported} tone="error" />
         </div>
 
@@ -228,18 +233,20 @@ function StatCard({
 }: {
   label: string;
   value: number;
-  tone?: 'default' | 'muted' | 'primary' | 'tertiary' | 'error';
+  tone?: 'default' | 'muted' | 'primary' | 'tertiary' | 'info' | 'error';
 }) {
   const valueClass =
     tone === 'primary'
       ? 'text-primary'
       : tone === 'tertiary'
         ? 'text-tertiary'
-        : tone === 'error'
-          ? 'text-error'
-          : tone === 'muted'
-            ? 'text-on-surface-variant'
-            : 'text-white';
+        : tone === 'info'
+          ? 'text-sky-300'
+          : tone === 'error'
+            ? 'text-error'
+            : tone === 'muted'
+              ? 'text-on-surface-variant'
+              : 'text-white';
   return (
     <div>
       <p className="text-xs text-on-surface-variant uppercase tracking-widest">{label}</p>

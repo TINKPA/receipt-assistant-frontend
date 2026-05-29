@@ -84,8 +84,9 @@ export default function Batches({ onSelectBatch }: BatchesProps) {
               {items.map((b) => {
                 const meta = STATUS_META[b.status];
                 const Icon = meta.icon;
-                const { done, error: errored, total } = b.counts;
-                const pct = total > 0 ? Math.round(((done + errored) / total) * 100) : 0;
+                const { done, error: errored, dedup, total } = b.counts;
+                const pct =
+                  total > 0 ? Math.round(((done + dedup + errored) / total) * 100) : 0;
                 return (
                   <tr
                     key={b.id}
@@ -116,8 +117,11 @@ export default function Batches({ onSelectBatch }: BatchesProps) {
                             style={{ width: `${pct}%` }}
                           />
                         </div>
-                        <span className="text-[11px] text-on-surface-variant font-mono w-16 text-right">
+                        <span className="text-[11px] text-on-surface-variant font-mono w-28 text-right">
                           {done}/{total}
+                          {dedup > 0 && (
+                            <span className="text-sky-300"> · {dedup} deduped</span>
+                          )}
                           {errored > 0 && <span className="text-error"> · {errored} err</span>}
                         </span>
                       </div>
