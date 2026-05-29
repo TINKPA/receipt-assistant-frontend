@@ -4612,9 +4612,10 @@ export interface components {
             done: number;
             error: number;
             unsupported: number;
+            dedup: number;
         };
         /** @enum {string} */
-        IngestStatus: "queued" | "processing" | "done" | "error" | "unsupported";
+        IngestStatus: "queued" | "processing" | "done" | "error" | "unsupported" | "dedup";
         /** @enum {string|null} */
         IngestClassification: "receipt_image" | "receipt_email" | "receipt_pdf" | "statement_pdf" | "unsupported" | null;
         IngestProduced: {

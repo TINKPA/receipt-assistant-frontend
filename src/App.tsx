@@ -244,6 +244,7 @@ export default function App() {
         jobs={jobs}
         onJobDone={removeJob}
         onRefresh={() => setRefreshKey((k) => k + 1)}
+        onSelectTransaction={handleSelectReceipt}
       />
     </>
   );

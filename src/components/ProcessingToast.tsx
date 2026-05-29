@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Loader2, CheckCircle, XCircle, X } from 'lucide-react';
+import { Loader2, CheckCircle, XCircle, Layers, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { getBatch, extractProblemMessage } from '../lib/api';
 
@@ -26,7 +26,7 @@ interface ToastState {
   batchId: string;
   ingestId: string;
   filename: string;
-  status: 'processing' | 'done' | 'error';
+  status: 'processing' | 'done' | 'duplicate' | 'error';
   transactionId?: string;
   error?: string;
 }
@@ -35,6 +35,9 @@ interface ProcessingToastProps {
   jobs: ProcessingJob[];
   onJobDone: (batchId: string) => void;
   onRefresh: () => void;
+  /** Tap a terminal toast to jump to the produced transaction. For a
+   *  dedup hit this is the *pre-existing* transaction the upload matched. */
+  onSelectTransaction?: (transactionId: string) => void;
 }
 
 // `useProcessingJobs` hook lives in ./useProcessingJobs.ts (separate
@@ -48,9 +51,18 @@ const TERMINAL_ERROR = new Set(['failed', 'reconcile_error']);
  *  terminal state + error text. Toasts are then *derived* from
  *  (jobs, statusMap, dismissed), which sidesteps the
  *  react-hooks/set-state-in-effect lint. */
-type StatusOverride = { status: 'done' | 'error'; transactionId?: string; error?: string };
+type StatusOverride = {
+  status: 'done' | 'duplicate' | 'error';
+  transactionId?: string;
+  error?: string;
+};
 
-export default function ProcessingToast({ jobs, onJobDone, onRefresh }: ProcessingToastProps) {
+export default function ProcessingToast({
+  jobs,
+  onJobDone,
+  onRefresh,
+  onSelectTransaction,
+}: ProcessingToastProps) {
   const [statusMap, setStatusMap] = useState<Record<string, StatusOverride>>({});
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   // Keep the latest callbacks in a ref so the polling interval can use
@@ -90,17 +102,35 @@ export default function ProcessingToast({ jobs, onJobDone, onRefresh }: Processi
         try {
           const batch = await getBatch(job.batchId);
           if (TERMINAL_DONE.has(batch.status)) {
-            const produced = batch.items.find((i) => i.id === job.ingestId)?.produced;
-            const transactionId = produced?.transaction_ids?.[0];
-            setStatusMap((prev) => ({
-              ...prev,
-              [job.batchId]: { status: 'done', transactionId },
-            }));
-            callbacksRef.current.onRefresh();
-            setTimeout(() => {
-              setDismissed((prev) => new Set(prev).add(job.batchId));
-              callbacksRef.current.onJobDone(job.batchId);
-            }, 3000);
+            // Per-file outcome: dedup is decided by the *ingest item's*
+            // own status, not the batch's. A byte-identical re-upload is
+            // born terminal with `status='dedup'` and points at the
+            // pre-existing transaction — no new row was written, so we
+            // surface a neutral "already in your ledger" state and skip
+            // onRefresh (there's nothing new to fetch).
+            const item = batch.items.find((i) => i.id === job.ingestId);
+            const transactionId = item?.produced?.transaction_ids?.[0];
+            if (item?.status === 'dedup') {
+              setStatusMap((prev) => ({
+                ...prev,
+                [job.batchId]: { status: 'duplicate', transactionId },
+              }));
+              // Intentionally no onRefresh() — dedup adds no new data.
+              setTimeout(() => {
+                setDismissed((prev) => new Set(prev).add(job.batchId));
+                callbacksRef.current.onJobDone(job.batchId);
+              }, 5000);
+            } else {
+              setStatusMap((prev) => ({
+                ...prev,
+                [job.batchId]: { status: 'done', transactionId },
+              }));
+              callbacksRef.current.onRefresh();
+              setTimeout(() => {
+                setDismissed((prev) => new Set(prev).add(job.batchId));
+                callbacksRef.current.onJobDone(job.batchId);
+              }, 3000);
+            }
           } else if (TERMINAL_ERROR.has(batch.status)) {
             const ingestErr = batch.items.find((i) => i.id === job.ingestId)?.error ?? null;
             setStatusMap((prev) => ({
@@ -138,19 +168,53 @@ export default function ProcessingToast({ jobs, onJobDone, onRefresh }: Processi
   return (
     <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-3">
       <AnimatePresence>
-        {toasts.map((toast) => (
+        {toasts.map((toast) => {
+          // A terminal toast that produced a transaction is tappable —
+          // jump to that transaction. For dedup this is the pre-existing
+          // row the upload matched, so the user can confirm it's already
+          // tracked rather than wondering where their upload went.
+          const tappable =
+            (toast.status === 'done' || toast.status === 'duplicate') &&
+            !!toast.transactionId &&
+            !!onSelectTransaction;
+          const goToTransaction = () => {
+            if (tappable && toast.transactionId) {
+              onSelectTransaction!(toast.transactionId);
+              dismiss(toast.batchId);
+            }
+          };
+          return (
           <motion.div
             key={toast.batchId}
             initial={{ opacity: 0, y: 20, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 10, scale: 0.95 }}
-            className="glass-panel border border-outline-variant/20 rounded-xl px-5 py-4 shadow-2xl flex items-center gap-3 min-w-[280px]"
+            onClick={tappable ? goToTransaction : undefined}
+            role={tappable ? 'button' : undefined}
+            tabIndex={tappable ? 0 : undefined}
+            onKeyDown={
+              tappable
+                ? (e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      goToTransaction();
+                    }
+                  }
+                : undefined
+            }
+            className={
+              'glass-panel border border-outline-variant/20 rounded-xl px-5 py-4 shadow-2xl flex items-center gap-3 min-w-[280px]' +
+              (tappable ? ' cursor-pointer hover:border-outline-variant/40 transition-colors' : '')
+            }
           >
             {toast.status === 'processing' && (
               <Loader2 className="animate-spin text-tertiary shrink-0" size={20} />
             )}
             {toast.status === 'done' && (
               <CheckCircle className="text-primary shrink-0" size={20} />
+            )}
+            {toast.status === 'duplicate' && (
+              <Layers className="text-sky-400 shrink-0" size={20} />
             )}
             {toast.status === 'error' && (
               <XCircle className="text-error shrink-0" size={20} />
@@ -159,9 +223,15 @@ export default function ProcessingToast({ jobs, onJobDone, onRefresh }: Processi
             <div className="flex-1 min-w-0">
               <p className="text-sm font-bold text-white">
                 {toast.status === 'processing' && 'Processing receipt...'}
-                {toast.status === 'done' && 'Receipt ready'}
+                {toast.status === 'done' && 'Receipt added'}
+                {toast.status === 'duplicate' && 'Already in your ledger'}
                 {toast.status === 'error' && 'Processing failed'}
               </p>
+              {toast.status === 'duplicate' && (
+                <p className="text-xs text-sky-300/80 mt-0.5 truncate">
+                  This receipt was added before
+                </p>
+              )}
               {toast.status === 'error' && toast.error && (
                 <p className="text-xs text-error mt-0.5 truncate">{toast.error}</p>
               )}
@@ -171,13 +241,17 @@ export default function ProcessingToast({ jobs, onJobDone, onRefresh }: Processi
             </div>
 
             <button
-              onClick={() => dismiss(toast.batchId)}
+              onClick={(e) => {
+                e.stopPropagation();
+                dismiss(toast.batchId);
+              }}
               className="text-on-surface-variant hover:text-white transition-colors shrink-0"
             >
               <X size={16} />
             </button>
           </motion.div>
-        ))}
+          );
+        })}
       </AnimatePresence>
     </div>
   );
