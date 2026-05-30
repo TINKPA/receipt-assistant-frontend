@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { MoreHorizontal, ChevronDown, ChevronRight } from 'lucide-react';
 import {
-  classifyBackendCategory,
   fetchReceiptDetail,
   documentContentUrl,
   documentRenderedUrl,
@@ -18,7 +17,6 @@ import {
 } from '../lib/api';
 import { statusBadge } from '../lib/transactionStatus';
 import { cn } from '../lib/utils';
-import { CategoryIcon } from './CategoryIcon';
 import { MerchantIcon } from './MerchantIcon';
 import type { Category } from '../types';
 import EditReceiptModal from './EditReceiptModal';
@@ -297,7 +295,6 @@ export default function ReceiptDetail({ receiptId, onBack, onSelectMerchant, onS
       )}
 
       <FieldsGrid
-        category={receipt.category}
         payment={receipt.paymentMethod ?? null}
         tax={tax}
         tip={tip}
@@ -1101,13 +1098,11 @@ function LocationCard({
 }
 
 function FieldsGrid({
-  category,
   payment,
   tax,
   tip,
   isProcessing,
 }: {
-  category: string | null;
   payment: string | null;
   tax: number | undefined;
   tip: number | undefined;
@@ -1130,27 +1125,8 @@ function FieldsGrid({
       />,
     );
   }
-  if (category) {
-    cells.push(<CategoryFieldCard key="category" rawCategory={category} />);
-  }
   if (cells.length === 0) return null;
   return <div className="grid grid-cols-2 gap-3">{cells}</div>;
-}
-
-function CategoryFieldCard({ rawCategory }: { rawCategory: string }) {
-  const { category, transactionType } = classifyBackendCategory(rawCategory);
-  const label = category ?? (transactionType === 'spending' ? 'Uncategorized' : transactionType);
-  return (
-    <div className="rounded-[14px] border border-[var(--color-rule)] bg-[var(--color-surface)] px-4 py-3">
-      <p className="text-[11px] font-medium tracking-[0.14em] uppercase text-[var(--color-ink-muted)]">
-        Category
-      </p>
-      <div className="mt-1 flex items-center gap-2">
-        <CategoryIcon category={category} transactionType={transactionType} size={22} />
-        <span className="text-[15px] font-medium capitalize">{label}</span>
-      </div>
-    </div>
-  );
 }
 
 function SmallFieldCard({
