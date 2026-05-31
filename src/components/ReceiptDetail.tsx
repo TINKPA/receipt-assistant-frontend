@@ -776,6 +776,7 @@ function OriginalReceiptCollapsible({
 }) {
   const [open, setOpen] = useState(false);
   const isEmail = kind === 'receipt_email';
+  const isPdf = kind === 'receipt_pdf' || kind === 'statement_pdf';
   const sender = (sourceMeta?.sender as string | undefined) ?? null;
   const subject = (sourceMeta?.subject as string | undefined) ?? null;
   const receivedAt = (sourceMeta?.received_at as string | undefined) ?? null;
@@ -821,6 +822,30 @@ function OriginalReceiptCollapsible({
                 className="block w-full rounded-[10px] border border-[var(--color-rule)] bg-white"
                 style={{ height: 520 }}
               />
+            </div>
+          ) : isPdf ? (
+            <div className="space-y-3">
+              {/* PDFs can't render in an <img> tag — embed the browser's
+                  built-in PDF viewer via an iframe pointing at the raw
+                  /content stream (served as application/pdf). No sandbox:
+                  this is our own same-origin file, and a strict sandbox
+                  blocks the viewer. The link below is the fallback for
+                  mobile browsers (iOS Safari) that won't render PDFs
+                  inline. */}
+              <iframe
+                src={documentContentUrl(documentId)}
+                title="Original PDF"
+                className="block w-full rounded-[10px] border border-[var(--color-rule)] bg-white"
+                style={{ height: 520 }}
+              />
+              <a
+                href={documentContentUrl(documentId)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-block text-sm font-medium text-[var(--color-terracotta)] hover:underline"
+              >
+                Open PDF in new tab
+              </a>
             </div>
           ) : (
             <img
