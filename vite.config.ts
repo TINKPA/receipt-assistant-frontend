@@ -1,4 +1,5 @@
 import tailwindcss from '@tailwindcss/vite';
+import {tanstackRouter} from '@tanstack/router-plugin/vite';
 import basicSsl from '@vitejs/plugin-basic-ssl';
 import react from '@vitejs/plugin-react';
 import path from 'path';
@@ -14,7 +15,15 @@ export default defineConfig(({mode}) => {
   // nginx in front of the bundle).
   const enableHttps = env.VITE_DEV_HTTPS !== 'false';
   return {
-    plugins: [react(), tailwindcss(), ...(enableHttps ? [basicSsl()] : [])],
+    plugins: [
+      // tanstackRouter must be registered before @vitejs/plugin-react so it
+      // can transform route files before React Fast Refresh sees them. It
+      // generates src/routeTree.gen.ts from the src/routes/ directory.
+      tanstackRouter({target: 'react', autoCodeSplitting: true}),
+      react(),
+      tailwindcss(),
+      ...(enableHttps ? [basicSsl()] : []),
+    ],
     define: {
       'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
     },

@@ -1,4 +1,11 @@
-import type { Category, RawTransactionStatus, TransactionType } from '../types';
+import { z } from 'zod';
+import {
+  CATEGORIES,
+  TRANSACTION_TYPES,
+  type Category,
+  type RawTransactionStatus,
+  type TransactionType,
+} from '../types';
 
 export type DatePreset = 'all' | 'last_30d' | 'last_90d' | 'this_year' | 'custom';
 
@@ -123,4 +130,101 @@ export function isFilterActive(filters: FilterState, q: string): boolean {
     filters.amountMaxDollars.trim() !== '' ||
     q.trim() !== ''
   );
+}
+
+/* ── URL search params ────────────────────────────────────────── */
+// The Ledger's filter / sort / search / showDeleted state lives in the
+// URL (shareable, survives refresh). The schema below is the typed
+// contract TanStack Router's `validateSearch` enforces, and the two
+// helpers convert between that flat search object and the in-component
+// {filters, sortId, q, showDeleted} shape.
+//
+// Every field is optional with `.catch(default)`, so a malformed URL
+// (hand-edited, stale link) degrades to the default value instead of
+// throwing. To keep URLs clean, `filterStateToSearch` only emits keys
+// whose value differs from its default — TanStack drops `undefined`
+// keys from the querystring entirely.
+
+const datePresetSchema = z.enum(['all', 'last_30d', 'last_90d', 'this_year', 'custom']);
+const statusSchema = z.enum(['draft', 'posted', 'voided', 'reconciled', 'error']);
+const sortIdSchema = z.enum(SORT_OPTIONS.map((o) => o.id) as [string, ...string[]]);
+
+// Every field is `.optional().catch(default)`: the `.catch` wraps the
+// whole optional so ANY parse failure (wrong type, unknown enum member,
+// hand-mangled URL) resolves to the default instead of throwing. This
+// is what lets `validateSearch` never reject a URL.
+export const transactionsSearchSchema = z.object({
+  // Date preset + (custom-only) bounds.
+  datePreset: datePresetSchema.optional().catch(DEFAULT_FILTERS.datePreset),
+  from: z.string().optional().catch(''),
+  to: z.string().optional().catch(''),
+  // Multi-selects. A malformed value (or unknown member) falls to [].
+  categories: z.array(z.enum(CATEGORIES)).optional().catch([]),
+  types: z.array(z.enum(TRANSACTION_TYPES)).optional().catch([]),
+  status: statusSchema.optional().catch(undefined),
+  payee: z.string().optional().catch(''),
+  amountMin: z.string().optional().catch(''),
+  amountMax: z.string().optional().catch(''),
+  // View config (survives "clear all").
+  sort: sortIdSchema.optional().catch(DEFAULT_SORT_ID),
+  // Free-text search (previously lifted to App.tsx; now URL-owned).
+  q: z.string().optional().catch(''),
+  showDeleted: z.boolean().optional().catch(false),
+});
+
+export type TransactionsSearch = z.infer<typeof transactionsSearchSchema>;
+
+/** Decode the URL search object into the shapes the component consumes.
+ *  Missing keys fall back to DEFAULT_FILTERS / DEFAULT_SORT_ID. */
+export function searchToFilterState(search: TransactionsSearch): {
+  filters: FilterState;
+  sortId: string;
+  q: string;
+  showDeleted: boolean;
+} {
+  const filters: FilterState = {
+    datePreset: search.datePreset ?? DEFAULT_FILTERS.datePreset,
+    customFrom: search.from ?? DEFAULT_FILTERS.customFrom,
+    customTo: search.to ?? DEFAULT_FILTERS.customTo,
+    categories: search.categories ?? DEFAULT_FILTERS.categories,
+    transactionTypes: search.types ?? DEFAULT_FILTERS.transactionTypes,
+    status: search.status ?? DEFAULT_FILTERS.status,
+    payeeContains: search.payee ?? DEFAULT_FILTERS.payeeContains,
+    amountMinDollars: search.amountMin ?? DEFAULT_FILTERS.amountMinDollars,
+    amountMaxDollars: search.amountMax ?? DEFAULT_FILTERS.amountMaxDollars,
+  };
+  return {
+    filters,
+    sortId: search.sort ?? DEFAULT_SORT_ID,
+    q: search.q ?? '',
+    showDeleted: search.showDeleted ?? false,
+  };
+}
+
+/** Encode component state back into a clean URL search object —
+ *  only non-default keys are emitted, so the URL stays minimal. */
+export function filterStateToSearch(args: {
+  filters: FilterState;
+  sortId: string;
+  q: string;
+  showDeleted: boolean;
+}): TransactionsSearch {
+  const { filters, sortId, q, showDeleted } = args;
+  const out: TransactionsSearch = {};
+  if (filters.datePreset !== DEFAULT_FILTERS.datePreset) out.datePreset = filters.datePreset;
+  // Custom bounds are only meaningful for the 'custom' preset.
+  if (filters.datePreset === 'custom') {
+    if (filters.customFrom) out.from = filters.customFrom;
+    if (filters.customTo) out.to = filters.customTo;
+  }
+  if (filters.categories.length > 0) out.categories = filters.categories;
+  if (filters.transactionTypes.length > 0) out.types = filters.transactionTypes;
+  if (filters.status !== undefined) out.status = filters.status;
+  if (filters.payeeContains.trim() !== '') out.payee = filters.payeeContains;
+  if (filters.amountMinDollars.trim() !== '') out.amountMin = filters.amountMinDollars;
+  if (filters.amountMaxDollars.trim() !== '') out.amountMax = filters.amountMaxDollars;
+  if (sortId !== DEFAULT_SORT_ID) out.sort = sortId;
+  if (q.trim() !== '') out.q = q;
+  if (showDeleted) out.showDeleted = true;
+  return out;
 }

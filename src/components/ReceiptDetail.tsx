@@ -1,4 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { Link } from '@tanstack/react-router';
+import { brandLink, merchantLink } from '../lib/navLinks';
 import { MoreHorizontal, ChevronDown, ChevronRight } from 'lucide-react';
 import {
   classifyBackendCategory,
@@ -30,12 +32,6 @@ import { removeTombstone } from '../lib/tombstones';
 interface ReceiptDetailProps {
   receiptId: string;
   onBack: () => void;
-  /** Navigate to MerchantDetail — one physical store, all visits.
-   *  Takes a merchant UUID; link wired from the LocationCard. */
-  onSelectMerchant?: (merchantId: string) => void;
-  /** Navigate to BrandPage — one brand across all its physical stores.
-   *  Takes a kebab brand_id; link wired from the AmountHero merchant name. */
-  onSelectBrand?: (brandId: string) => void;
   /** Bumped when a delete completes so the parent's transaction list
    *  refetches. */
   onAfterMutation?: () => void;
@@ -63,7 +59,7 @@ function md<T = unknown>(meta: Metadata | undefined, key: string): T | undefined
  *
  * Data source: fetchReceiptDetail → real backend. No mocks, no fixtures.
  */
-export default function ReceiptDetail({ receiptId, onBack, onSelectMerchant, onSelectBrand, onAfterMutation }: ReceiptDetailProps) {
+export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: ReceiptDetailProps) {
   const [receipt, setReceipt] = useState<ReceiptView | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -274,13 +270,12 @@ export default function ReceiptDetail({ receiptId, onBack, onSelectMerchant, onS
         occurredOn={receipt.occurred_on}
         isProcessing={isProcessing}
         voided={receipt.status === 'voided'}
-        onMerchantClick={
+        brandTo={
           // Merchant name in the hero → BrandPage (brand-level rollup
           // across all locations). The per-location detail is reachable
-          // from the LocationCard below.
-          receipt.merchantBrandId && onSelectBrand
-            ? () => onSelectBrand(receipt.merchantBrandId!)
-            : undefined
+          // from the LocationCard below. Rendered as a real <a href> so
+          // it opens in a new tab / split view on right-click.
+          receipt.merchantBrandId ? brandLink(receipt.merchantBrandId) : undefined
         }
       />
 
@@ -309,7 +304,6 @@ export default function ReceiptDetail({ receiptId, onBack, onSelectMerchant, onS
           place={receipt.place}
           merchantId={receipt.merchantId}
           payee={receipt.payee ?? null}
-          onSelectMerchant={onSelectMerchant}
         />
       )}
 
@@ -615,7 +609,7 @@ function AmountHero({
   occurredOn,
   isProcessing,
   voided,
-  onMerchantClick,
+  brandTo,
 }: {
   amount: number;
   currency: string;
@@ -625,7 +619,9 @@ function AmountHero({
   occurredOn: string;
   isProcessing: boolean;
   voided: boolean;
-  onMerchantClick?: () => void;
+  /** Link target for the merchant name → BrandPage. Undefined renders a
+   *  plain <h1> (no link) — e.g. while processing or with no brand. */
+  brandTo?: ReturnType<typeof brandLink>;
 }) {
   const merchantClass = 'font-display italic font-medium text-2xl sm:text-3xl leading-tight';
   // FE#48: small square icon next to the merchant name. Skipped while
@@ -645,10 +641,9 @@ function AmountHero({
       <p className="mt-1 text-[11px] tracking-[0.14em] uppercase text-[var(--color-ink-muted)]">
         {currency}
       </p>
-      {onMerchantClick ? (
-        <button
-          type="button"
-          onClick={onMerchantClick}
+      {brandTo ? (
+        <Link
+          {...brandTo}
           className={cn(
             'mt-4 inline-flex items-center gap-2 transition-colors hover:text-[var(--color-terracotta)]',
             merchantClass,
@@ -661,7 +656,7 @@ function AmountHero({
             {merchant}
             <span className="font-display italic text-base leading-none text-[var(--color-terracotta)]">→</span>
           </span>
-        </button>
+        </Link>
       ) : (
         <h1 className={cn('mt-4 inline-flex items-center gap-2', merchantClass)}>
           {showIcon && (
@@ -1052,13 +1047,9 @@ function LocationCard({
           Open in Maps
           <span aria-hidden="true">↗</span>
         </button>
-        {merchantId && onSelectMerchant && (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onSelectMerchant(merchantId);
-            }}
+        {merchantId && (
+          <Link
+            {...merchantLink(merchantId)}
             data-testid="receipt-view-all-at-location"
             className="inline-flex items-center gap-1 text-[13px] font-semibold"
             style={{
@@ -1068,7 +1059,7 @@ function LocationCard({
           >
             View all visits
             <span aria-hidden="true">→</span>
-          </button>
+          </Link>
         )}
       </div>
     </div>

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from '@tanstack/react-router';
 import {
   extractProblemMessage,
   fetchBrandRollup,
@@ -8,6 +9,7 @@ import {
   type BrandRollupSibling,
 } from '../lib/api';
 import { cn } from '../lib/utils';
+import { brandLink, merchantLink, receiptLink } from '../lib/navLinks';
 import { MerchantIcon } from './MerchantIcon';
 import { statusBadge } from '../lib/transactionStatus';
 
@@ -304,18 +306,8 @@ function LocationRow({
     }
     return parts[parts.length - 2] ?? null;
   })();
-  return (
-    <button
-      type="button"
-      onClick={() => onSelectMerchant?.(m.id)}
-      data-testid={`brand-location-row-${m.id}`}
-      disabled={!onSelectMerchant}
-      className={cn(
-        'w-full text-left grid grid-cols-[44px_1fr_auto] items-center gap-3 px-5 py-3',
-        'transition-colors',
-        onSelectMerchant ? 'hover:bg-[var(--color-paper-deep)]/30 cursor-pointer' : 'cursor-default',
-      )}
-    >
+  const body = (
+    <>
       <div className="h-11 w-11 rounded-[12px] overflow-hidden bg-[var(--color-paper-deep)]/40 flex items-center justify-center flex-shrink-0">
         {m.photo_url ? (
           <img
@@ -353,7 +345,30 @@ function LocationRow({
           </p>
         )}
       </div>
-    </button>
+    </>
+  );
+  const baseClass = cn(
+    'w-full text-left grid grid-cols-[44px_1fr_auto] items-center gap-3 px-5 py-3',
+    'transition-colors',
+  );
+  // Real <a href> (renders via TanStack <Link>) so right-click → Open in
+  // New Tab, Cmd-click, and hover URL preview all work. Without a
+  // navigate handler the row is non-interactive — a plain <div> with no href.
+  return onSelectMerchant ? (
+    <Link
+      {...merchantLink(m.id)}
+      data-testid={`brand-location-row-${m.id}`}
+      className={cn(baseClass, 'block hover:bg-[var(--color-paper-deep)]/30 cursor-pointer')}
+    >
+      {body}
+    </Link>
+  ) : (
+    <div
+      data-testid={`brand-location-row-${m.id}`}
+      className={cn(baseClass, 'cursor-default')}
+    >
+      {body}
+    </div>
   );
 }
 
@@ -391,17 +406,8 @@ function RecentRow({
   const badge = statusBadge(row.status);
   const isVoided = row.status === 'voided';
   const merchantLabel = row.merchant_custom_name ?? row.merchant_canonical_name;
-  return (
-    <button
-      type="button"
-      onClick={() => onSelectReceipt?.(row.id)}
-      disabled={!onSelectReceipt}
-      className={cn(
-        'w-full text-left grid grid-cols-[1fr_auto] items-center gap-3 px-5 py-3',
-        'transition-colors',
-        onSelectReceipt ? 'hover:bg-[var(--color-paper-deep)]/30 cursor-pointer' : 'cursor-default',
-      )}
-    >
+  const body = (
+    <>
       <div className="min-w-0">
         <p className="font-display italic font-medium text-[15px] leading-tight truncate">
           {row.payee ?? merchantLabel}
@@ -435,7 +441,23 @@ function RecentRow({
           maximumFractionDigits: 2,
         })}
       </span>
-    </button>
+    </>
+  );
+  const baseClass = cn(
+    'w-full text-left grid grid-cols-[1fr_auto] items-center gap-3 px-5 py-3',
+    'transition-colors',
+  );
+  // Real <a href> via <Link> for native browser affordances; falls back to
+  // a non-interactive <div> when no navigate handler is provided.
+  return onSelectReceipt ? (
+    <Link
+      {...receiptLink(row.id)}
+      className={cn(baseClass, 'block hover:bg-[var(--color-paper-deep)]/30 cursor-pointer')}
+    >
+      {body}
+    </Link>
+  ) : (
+    <div className={cn(baseClass, 'cursor-default')}>{body}</div>
   );
 }
 
@@ -455,21 +477,9 @@ function SiblingsCard({
         Same parent — same group, separate brands (e.g. Costco Wholesale ↔ Costco Gas).
       </p>
       <ul className="mt-3 space-y-1.5">
-        {siblings.map((s) => (
-          <li key={s.brand_id}>
-            <button
-              type="button"
-              onClick={() => onSelectBrand?.(s.brand_id)}
-              disabled={!onSelectBrand}
-              data-testid={`brand-sibling-${s.brand_id}`}
-              className={cn(
-                'w-full flex items-center justify-between gap-3 px-3 py-2 rounded-[12px]',
-                'transition-colors',
-                onSelectBrand
-                  ? 'hover:bg-[var(--color-surface)] cursor-pointer'
-                  : 'cursor-default',
-              )}
-            >
+        {siblings.map((s) => {
+          const body = (
+            <>
               <div className="flex items-center gap-2 min-w-0">
                 {s.icon_url ? (
                   <MerchantIcon brandId={s.brand_id} category={null} size={24} />
@@ -488,9 +498,33 @@ function SiblingsCard({
               <span className="font-hand text-base text-[var(--color-terracotta)] flex-shrink-0">
                 open →
               </span>
-            </button>
-          </li>
-        ))}
+            </>
+          );
+          const baseClass = cn(
+            'w-full flex items-center justify-between gap-3 px-3 py-2 rounded-[12px]',
+            'transition-colors',
+          );
+          return (
+            <li key={s.brand_id}>
+              {onSelectBrand ? (
+                <Link
+                  {...brandLink(s.brand_id)}
+                  data-testid={`brand-sibling-${s.brand_id}`}
+                  className={cn(baseClass, 'hover:bg-[var(--color-surface)] cursor-pointer')}
+                >
+                  {body}
+                </Link>
+              ) : (
+                <div
+                  data-testid={`brand-sibling-${s.brand_id}`}
+                  className={cn(baseClass, 'cursor-default')}
+                >
+                  {body}
+                </div>
+              )}
+            </li>
+          );
+        })}
       </ul>
     </div>
   );

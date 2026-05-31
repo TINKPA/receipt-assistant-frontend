@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { TrendingUp, TrendingDown, Loader2, Landmark, PiggyBank, Wallet } from 'lucide-react';
+import { useNavigate } from '@tanstack/react-router';
+import { ChevronLeft, ChevronRight, TrendingUp, TrendingDown, Loader2, Landmark, PiggyBank, Wallet } from 'lucide-react';
 import {
   Bar,
   BarChart,
@@ -49,9 +50,37 @@ function quarterOf(monthIso: string): 'Q1' | 'Q2' | 'Q3' | 'Q4' {
   return 'Q4';
 }
 
-export default function YearlyReview() {
-  const now = useMemo(() => new Date(), []);
-  const lastYear = useMemo(() => new Date(now.getFullYear() - 1, now.getMonth(), now.getDate()), [now]);
+export default function YearlyReview({ year }: { year?: number }) {
+  // The displayed year is the source of truth in the URL search param
+  // `?y=YYYY` (validated/coerced by the route). Defaults to the current
+  // calendar year; chevrons navigate the URL rather than mutating state.
+  // Capped at the current year so we don't render a "review" of the future.
+  const navigate = useNavigate({ from: '/review/yearly' });
+  const today = useMemo(() => new Date(), []);
+  const currentYear = today.getFullYear();
+  const displayYear = year ?? currentYear;
+  const canStepForward = displayYear < currentYear;
+
+  // `now` anchors the year's date range + the net-worth `asOf` snapshot.
+  // For the current year that snapshot is "today"; for a past year it's
+  // Dec 31 of that year so the as-of net worth reflects year-end.
+  const now = useMemo(
+    () =>
+      displayYear === currentYear
+        ? today
+        : new Date(displayYear, 11, 31),
+    [displayYear, currentYear, today],
+  );
+  const lastYear = useMemo(
+    () => new Date(now.getFullYear() - 1, now.getMonth(), now.getDate()),
+    [now],
+  );
+
+  const stepBack = () => navigate({ search: { y: displayYear - 1 } });
+  const stepForward = () => {
+    if (!canStepForward) return;
+    navigate({ search: { y: displayYear + 1 } });
+  };
 
   const [netWorth, setNetWorth] = useState<BackendNetWorthReport | null>(null);
   const [netWorthPrev, setNetWorthPrev] = useState<BackendNetWorthReport | null>(null);
@@ -155,9 +184,40 @@ export default function YearlyReview() {
       <section className="flex flex-col md:flex-row justify-between items-end gap-6 pb-4">
         <div>
           <span className="text-primary font-bold tracking-widest text-xs uppercase mb-2 block">Executive Summary</span>
-          <h2 className="text-4xl font-extrabold font-headline text-white">Year in Review</h2>
+          <div className="flex items-center gap-3 flex-wrap">
+            <h2 className="text-4xl font-extrabold font-headline text-white">Year in Review</h2>
+            {/* Year picker — prev/next chevrons. Next disables when viewing
+                the current year (can't review the future). */}
+            <button
+              type="button"
+              onClick={stepBack}
+              className="p-1.5 rounded-md text-on-surface-variant hover:text-white hover:bg-surface-container-low transition-colors"
+              aria-label="Previous year"
+              title="Previous year"
+            >
+              <ChevronLeft size={18} />
+            </button>
+            <span className="text-on-surface-variant font-medium min-w-[3.5rem] text-center">
+              {displayYear}
+            </span>
+            <button
+              type="button"
+              onClick={stepForward}
+              disabled={!canStepForward}
+              className={cn(
+                'p-1.5 rounded-md transition-colors',
+                canStepForward
+                  ? 'text-on-surface-variant hover:text-white hover:bg-surface-container-low'
+                  : 'text-on-surface-variant/30 cursor-not-allowed',
+              )}
+              aria-label="Next year"
+              title={canStepForward ? 'Next year' : 'Already on the current year'}
+            >
+              <ChevronRight size={18} />
+            </button>
+          </div>
           <p className="text-on-surface-variant mt-2 text-sm">
-            Snapshot of fiscal year {now.getFullYear()} to date. Net worth measured against the same date one year ago.
+            Snapshot of fiscal year {now.getFullYear()}{displayYear === currentYear ? ' to date' : ''}. Net worth measured against the same date one year ago.
           </p>
         </div>
       </section>

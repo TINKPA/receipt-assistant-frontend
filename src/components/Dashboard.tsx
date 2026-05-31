@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { Link } from '@tanstack/react-router';
 import {
   fetchTransactions,
   fetchSummary,
@@ -8,6 +9,7 @@ import {
 import type { Transaction, Category } from '../types';
 import { isProcessing as txIsProcessing } from '../lib/transactionStatus';
 import { cn } from '../lib/utils';
+import { receiptLink } from '../lib/navLinks';
 import { CategoryIcon } from './CategoryIcon';
 import { MerchantIcon } from './MerchantIcon';
 
@@ -33,7 +35,7 @@ interface SpendingCategorySlice {
  * there is no /budget endpoint on the backend yet. The big spend card stands
  * on its own without an invented number.
  */
-export default function Dashboard({ onSelectReceipt, onViewAllTransactions }: DashboardProps) {
+export default function Dashboard({ onViewAllTransactions }: DashboardProps) {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [summary, setSummary] = useState<SpendingSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -99,11 +101,7 @@ export default function Dashboard({ onSelectReceipt, onViewAllTransactions }: Da
         more={totalCount > 0 ? `all ${totalCount} →` : undefined}
         onMore={onViewAllTransactions}
       />
-      <RecentList
-        items={transactions}
-        loading={loading}
-        onSelect={(tx) => onSelectReceipt?.(tx.id)}
-      />
+      <RecentList items={transactions} loading={loading} />
     </div>
   );
 }
@@ -287,11 +285,9 @@ function CategoryGrid({ items, loading }: { items: SpendingCategorySlice[]; load
 function RecentList({
   items,
   loading,
-  onSelect,
 }: {
   items: Transaction[];
   loading: boolean;
-  onSelect?: (tx: Transaction) => void;
 }) {
   if (loading) {
     return (
@@ -339,32 +335,39 @@ function RecentList({
               transactionType={tx.transactionType}
               size={44}
             />
-            <button
-              type="button"
-              onClick={() => !isProcessing && onSelect?.(tx)}
-              disabled={isProcessing}
-              className={cn(
-                'text-left min-w-0',
-                isProcessing ? 'cursor-default opacity-60' : 'cursor-pointer',
-              )}
-            >
-              <p className="text-[15px] font-medium leading-snug truncate">
-                {tx.description}
-              </p>
-              {subtitle && (
-                <p className="mt-0.5 text-xs text-[var(--color-ink-muted)] truncate">{subtitle}</p>
-              )}
-              <p
-                className={cn(
-                  'mt-0.5 text-xs tnum truncate',
-                  isToday
-                    ? 'text-[var(--color-terracotta)] font-medium'
-                    : 'text-[var(--color-ink-muted)]',
-                )}
-              >
-                {dateLabel}
-              </p>
-            </button>
+            {/* Body — a real <Link> (renders <a href>) so right-click → Open
+                in New Tab, Cmd-click, and hover URL preview all work. While the
+                row is still processing there's no receipt to open yet, so it
+                falls back to a non-interactive div. */}
+            {(() => {
+              const body = (
+                <>
+                  <p className="text-[15px] font-medium leading-snug truncate">
+                    {tx.description}
+                  </p>
+                  {subtitle && (
+                    <p className="mt-0.5 text-xs text-[var(--color-ink-muted)] truncate">{subtitle}</p>
+                  )}
+                  <p
+                    className={cn(
+                      'mt-0.5 text-xs tnum truncate',
+                      isToday
+                        ? 'text-[var(--color-terracotta)] font-medium'
+                        : 'text-[var(--color-ink-muted)]',
+                    )}
+                  >
+                    {dateLabel}
+                  </p>
+                </>
+              );
+              return isProcessing ? (
+                <div className="block text-left min-w-0 cursor-default opacity-60">{body}</div>
+              ) : (
+                <Link {...receiptLink(tx.id)} className="block text-left min-w-0 cursor-pointer">
+                  {body}
+                </Link>
+              );
+            })()}
             <span className="font-display italic font-medium text-[17px] tnum">
               ${Math.abs(tx.amount).toFixed(2)}
             </span>

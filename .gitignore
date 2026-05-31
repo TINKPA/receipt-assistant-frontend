@@ -7,3 +7,8 @@ coverage/
 .env*
 !.env.example
 test-reports/
+.tanstack/
+
+# Note: src/routeTree.gen.ts is intentionally COMMITTED, not ignored.
+# `npm run build` runs `tsc` before the vite plugin regenerates the tree,
+# so a fresh checkout needs the file present for the typecheck step to pass.

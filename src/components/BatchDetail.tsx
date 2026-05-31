@@ -9,6 +9,7 @@ import {
   Layers,
   Zap,
 } from 'lucide-react';
+import { Link } from '@tanstack/react-router';
 import {
   getBatch,
   subscribeToBatch,
@@ -18,6 +19,7 @@ import {
   type IngestStatus,
 } from '../lib/api';
 import { cn } from '../lib/utils';
+import { receiptLink } from '../lib/navLinks';
 
 interface BatchDetailProps {
   batchId: string;
@@ -296,13 +298,13 @@ function IngestRow({
         ) : (
           <div className="flex flex-wrap gap-2">
             {txnIds.map((id) => (
-              <button
+              <Link
                 key={id}
-                onClick={() => onSelectTransaction(id)}
+                {...receiptLink(id)}
                 className="text-primary font-mono text-[11px] hover:underline"
               >
                 {id.slice(0, 8)}…
-              </button>
+              </Link>
             ))}
           </div>
         )}

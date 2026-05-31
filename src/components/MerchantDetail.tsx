@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from '@tanstack/react-router';
 import {
   extractProblemMessage,
   fetchMerchant,
@@ -19,6 +20,7 @@ import type { Category } from '../types';
 import { cn } from '../lib/utils';
 import { CategoryIcon } from './CategoryIcon';
 import { statusBadge } from '../lib/transactionStatus';
+import { receiptLink, brandLink } from '../lib/navLinks';
 
 interface MerchantDetailProps {
   /** Either a merchant row UUID (preferred) or a kebab-case brand_id
@@ -365,9 +367,8 @@ export default function MerchantDetail({ merchantId, onBack, onSelectReceipt, on
           the merchant row, so the callout shows whenever the prop is
           wired up. */}
       {onSelectBrand && (
-        <button
-          type="button"
-          onClick={() => onSelectBrand(m.brand_id)}
+        <Link
+          {...brandLink(m.brand_id)}
           data-testid="merchant-back-to-brand"
           className={cn(
             'group w-full flex items-center justify-between gap-3',
@@ -382,7 +383,7 @@ export default function MerchantDetail({ merchantId, onBack, onSelectReceipt, on
           <span className="font-hand text-lg text-[var(--color-terracotta)] group-hover:translate-x-px transition-transform">
             Brand page →
           </span>
-        </button>
+        </Link>
       )}
 
       {/* Transaction history */}
@@ -471,12 +472,11 @@ function MerchantTxnRow({
 }) {
   const badge = statusBadge(tx.status);
   const isVoided = tx.status === 'voided';
-  return (
-    <button
-      type="button"
-      onClick={() => onSelect?.(tx.id)}
-      className="w-full text-left grid grid-cols-[1fr_auto] items-center gap-3 px-5 py-3 hover:bg-[var(--color-paper-deep)]/30 transition-colors"
-    >
+  // Body — a real <Link> (renders <a href>) so right-click → Open in
+  // New Tab, Cmd-click, and hover URL preview all work. When no
+  // navigation handler is wired up it falls back to a plain div.
+  const body = (
+    <>
       <div className="min-w-0">
         <p className="font-display italic font-medium text-[16px] leading-tight truncate">
           {tx.payee ?? '—'}
@@ -502,7 +502,16 @@ function MerchantTxnRow({
           maximumFractionDigits: 2,
         })}
       </span>
-    </button>
+    </>
+  );
+  const rowClassName =
+    'w-full text-left grid grid-cols-[1fr_auto] items-center gap-3 px-5 py-3 hover:bg-[var(--color-paper-deep)]/30 transition-colors';
+  return onSelect ? (
+    <Link {...receiptLink(tx.id)} className={cn('block', rowClassName)}>
+      {body}
+    </Link>
+  ) : (
+    <div className={rowClassName}>{body}</div>
   );
 }
 
