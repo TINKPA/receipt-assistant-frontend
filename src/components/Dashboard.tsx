@@ -10,10 +10,15 @@ import { isProcessing as txIsProcessing } from '../lib/transactionStatus';
 import { cn } from '../lib/utils';
 import { CategoryIcon } from './CategoryIcon';
 import { MerchantIcon } from './MerchantIcon';
+import ProcessingCardList from './ProcessingCard';
+import type { ProcessingItem } from './useProcessingJobs';
 
 interface DashboardProps {
   onSelectReceipt?: (receiptId: string) => void;
   onViewAllTransactions?: () => void;
+  /** In-flight uploads, rendered inline above the recent list. */
+  processingItems?: ProcessingItem[];
+  onDismissProcessing?: (batchId: string) => void;
 }
 
 interface SpendingCategorySlice {
@@ -33,7 +38,12 @@ interface SpendingCategorySlice {
  * there is no /budget endpoint on the backend yet. The big spend card stands
  * on its own without an invented number.
  */
-export default function Dashboard({ onSelectReceipt, onViewAllTransactions }: DashboardProps) {
+export default function Dashboard({
+  onSelectReceipt,
+  onViewAllTransactions,
+  processingItems = [],
+  onDismissProcessing,
+}: DashboardProps) {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [summary, setSummary] = useState<SpendingSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -98,6 +108,11 @@ export default function Dashboard({ onSelectReceipt, onViewAllTransactions }: Da
         title="recent"
         more={totalCount > 0 ? `all ${totalCount} →` : undefined}
         onMore={onViewAllTransactions}
+      />
+      <ProcessingCardList
+        items={processingItems}
+        onDismiss={(batchId) => onDismissProcessing?.(batchId)}
+        onSelectTransaction={onSelectReceipt}
       />
       <RecentList
         items={transactions}

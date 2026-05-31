@@ -9,7 +9,6 @@ import YearlyReview from './components/YearlyReview';
 import Batches from './components/Batches';
 import BatchDetail from './components/BatchDetail';
 import Capture from './components/Capture';
-import ProcessingToast from './components/ProcessingToast';
 import { useProcessingJobs } from './components/useProcessingJobs';
 import ReceiptDetail from './components/ReceiptDetail';
 import MerchantDetail from './components/MerchantDetail';
@@ -50,7 +49,9 @@ export default function App() {
   const [selectedBrandId, setSelectedBrandId] = React.useState<string | null>(null);
   const [backendBuildInfo, setBackendBuildInfo] = React.useState<BuildInfo | null>(null);
   const [transactionsSearch, setTransactionsSearch] = React.useState('');
-  const { jobs, addJob, removeJob } = useProcessingJobs();
+  const { items: processingItems, addJob, dismiss: dismissProcessing } = useProcessingJobs({
+    onRefresh: () => setRefreshKey((k) => k + 1),
+  });
 
   React.useEffect(() => {
     fetchBackendBuildInfo().then(setBackendBuildInfo).catch(() => setBackendBuildInfo(null));
@@ -167,6 +168,8 @@ export default function App() {
             key={refreshKey}
             onSelectReceipt={handleSelectReceipt}
             onViewAllTransactions={() => setActiveTab('transactions')}
+            processingItems={processingItems}
+            onDismissProcessing={dismissProcessing}
           />
         );
       case 'transactions':
@@ -177,6 +180,8 @@ export default function App() {
             searchQuery={transactionsSearch}
             onSearchChange={setTransactionsSearch}
             onClearSearch={() => setTransactionsSearch('')}
+            processingItems={processingItems}
+            onDismissProcessing={dismissProcessing}
           />
         );
       case 'batches':
@@ -239,13 +244,6 @@ export default function App() {
       >
         {renderContent()}
       </Layout>
-
-      <ProcessingToast
-        jobs={jobs}
-        onJobDone={removeJob}
-        onRefresh={() => setRefreshKey((k) => k + 1)}
-        onSelectTransaction={handleSelectReceipt}
-      />
     </>
   );
 }
