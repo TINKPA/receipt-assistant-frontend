@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from '@tanstack/react-router';
+import { Link, useNavigate } from '@tanstack/react-router';
 import { ChevronLeft, ChevronRight, TrendingDown, TrendingUp, Loader2, PieChart as PieIcon, Receipt } from 'lucide-react';
 import {
   Bar,
@@ -24,6 +24,7 @@ import type { Category, Transaction } from '../types';
 import { cn } from '../lib/utils';
 import { CategoryIcon } from './CategoryIcon';
 import { MerchantIcon } from './MerchantIcon';
+import { categoryLedgerLink, receiptLink } from '../lib/navLinks';
 
 function formatMoney(minor: number, currency = 'USD'): string {
   return (minor / 100).toLocaleString(undefined, {
@@ -366,7 +367,11 @@ export default function MonthlyReview({ month }: { month?: string }) {
                     : null;
                 const isOver = deltaPct != null && deltaPct > 0;
                 return (
-                  <div key={cat.category} className="space-y-3">
+                  <Link
+                    key={cat.category}
+                    {...categoryLedgerLink(cat.category, { from: startOfMonth(now), to: endOfMonth(now) })}
+                    className="block space-y-3 rounded-lg -m-2 p-2 transition-colors hover:bg-surface-container-high/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                  >
                     <div className="flex justify-between items-center mb-1">
                       <span className="text-sm font-bold text-white flex items-center gap-2">
                         <CategoryIcon category={cat.category} size={20} />
@@ -398,7 +403,7 @@ export default function MonthlyReview({ month }: { month?: string }) {
                         </span>
                       </div>
                     )}
-                  </div>
+                  </Link>
                 );
               })}
             </div>
@@ -477,32 +482,34 @@ function NotableTransactions({
       ) : (
         <ol className="space-y-3">
           {top.map((r, idx) => (
-            <li
-              key={r.id}
-              className="flex items-center gap-4 p-3 rounded-lg bg-surface-container-high/40 border border-outline-variant/10"
-            >
-              <span className="text-on-surface-variant font-bold w-6 text-center">
-                {idx + 1}
-              </span>
-              <MerchantIcon
-                brandId={r.merchantBrandId}
-                category={r.category}
-                transactionType={r.transactionType}
-                size={40}
-              />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-white truncate">
-                  {r.description}
-                </p>
-                {r.placeCity && (
-                  <p className="text-xs text-on-surface-variant truncate">
-                    {r.placeCity}
+            <li key={r.id}>
+              <Link
+                {...receiptLink(r.id)}
+                className="flex items-center gap-4 p-3 rounded-lg bg-surface-container-high/40 border border-outline-variant/10 transition-colors hover:bg-surface-container-high/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              >
+                <span className="text-on-surface-variant font-bold w-6 text-center">
+                  {idx + 1}
+                </span>
+                <MerchantIcon
+                  brandId={r.merchantBrandId}
+                  category={r.category}
+                  transactionType={r.transactionType}
+                  size={40}
+                />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-white truncate">
+                    {r.description}
                   </p>
-                )}
-              </div>
-              <span className="text-base font-bold font-headline text-white tnum">
-                {formatMoney(Math.round(r._abs * 100), currency)}
-              </span>
+                  {r.placeCity && (
+                    <p className="text-xs text-on-surface-variant truncate">
+                      {r.placeCity}
+                    </p>
+                  )}
+                </div>
+                <span className="text-base font-bold font-headline text-white tnum">
+                  {formatMoney(Math.round(r._abs * 100), currency)}
+                </span>
+              </Link>
             </li>
           ))}
         </ol>

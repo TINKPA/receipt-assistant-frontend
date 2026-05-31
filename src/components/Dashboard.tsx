@@ -9,7 +9,7 @@ import {
 import type { Transaction, Category } from '../types';
 import { isProcessing as txIsProcessing } from '../lib/transactionStatus';
 import { cn } from '../lib/utils';
-import { receiptLink } from '../lib/navLinks';
+import { receiptLink, categoryLedgerLink } from '../lib/navLinks';
 import { CategoryIcon } from './CategoryIcon';
 import { MerchantIcon } from './MerchantIcon';
 import ProcessingCardList from './ProcessingCard';
@@ -104,7 +104,11 @@ export default function Dashboard({
       <SpentCard amount={totalSpent} count={totalCount} loading={loading} />
 
       <SectionTitle title="where it went" />
-      <CategoryGrid items={spendingByCategory} loading={loading} />
+      <CategoryGrid
+        items={spendingByCategory}
+        loading={loading}
+        range={{ from: monthRange.from, to: monthRange.to }}
+      />
 
       <SectionTitle
         title="recent"
@@ -248,7 +252,15 @@ function SectionTitle({
 
 /* ── Category grid (up to 7 spending categories) ─────────────── */
 
-function CategoryGrid({ items, loading }: { items: SpendingCategorySlice[]; loading: boolean }) {
+function CategoryGrid({
+  items,
+  loading,
+  range,
+}: {
+  items: SpendingCategorySlice[];
+  loading: boolean;
+  range: { from: string; to: string };
+}) {
   if (loading) {
     return (
       <div className="grid grid-cols-2 gap-3">
@@ -272,12 +284,16 @@ function CategoryGrid({ items, loading }: { items: SpendingCategorySlice[]; load
   return (
     <div className="grid grid-cols-2 gap-3">
       {items.map((c) => (
-        <div
+        <Link
           key={c.category}
+          {...categoryLedgerLink(c.category, range)}
           className={cn(
             'rounded-[18px] p-4 min-h-[100px]',
             'border border-[var(--color-rule)] bg-[var(--color-surface)]',
             'flex flex-col justify-between',
+            'cursor-pointer transition-shadow',
+            'hover:shadow-[0_4px_16px_-8px_rgba(45,37,32,0.12)]',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-terracotta)]',
           )}
         >
           <CategoryIcon category={c.category} size={28} />
@@ -289,7 +305,7 @@ function CategoryGrid({ items, loading }: { items: SpendingCategorySlice[]; load
               ${Math.round(c.total).toLocaleString()}
             </p>
           </div>
-        </div>
+        </Link>
       ))}
     </div>
   );

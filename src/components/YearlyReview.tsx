@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from '@tanstack/react-router';
+import { Link, useNavigate } from '@tanstack/react-router';
 import { ChevronLeft, ChevronRight, TrendingUp, TrendingDown, Loader2, Landmark, PiggyBank, Wallet } from 'lucide-react';
 import {
   Bar,
@@ -25,6 +25,7 @@ import {
 import type { Category } from '../types';
 import { cn } from '../lib/utils';
 import { CategoryIcon } from './CategoryIcon';
+import { categoryLedgerLink, dateRangeLedgerLink } from '../lib/navLinks';
 
 function formatMoney(minor: number, currency = 'USD'): string {
   return (minor / 100).toLocaleString(undefined, {
@@ -179,6 +180,16 @@ export default function YearlyReview({ year }: { year?: number }) {
     {},
   );
 
+  // Per-quarter date ranges for the displayed year, used to drill the
+  // Quarterly Summary rows into a date-scoped Ledger.
+  const qy = now.getFullYear();
+  const quarterRange = {
+    Q1: { from: `${qy}-01-01`, to: `${qy}-03-31` },
+    Q2: { from: `${qy}-04-01`, to: `${qy}-06-30` },
+    Q3: { from: `${qy}-07-01`, to: `${qy}-09-30` },
+    Q4: { from: `${qy}-10-01`, to: `${qy}-12-31` },
+  } as const;
+
   return (
     <div className="space-y-12 animate-in fade-in duration-700">
       <section className="flex flex-col md:flex-row justify-between items-end gap-6 pb-4">
@@ -321,7 +332,11 @@ export default function YearlyReview({ year }: { year?: number }) {
           ) : (
             <div className="space-y-5 flex-1">
               {spendingCategoryRows.slice(0, 7).map((it) => (
-                <div key={it.category} className="space-y-2">
+                <Link
+                  key={it.category}
+                  {...categoryLedgerLink(it.category, { from: startOfYear(now), to: endOfYear(now) })}
+                  className="block space-y-2 rounded-lg -m-2 p-2 transition-colors hover:bg-surface-container-high/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                >
                   <div className="flex justify-between text-sm">
                     <span className="text-on-surface font-medium flex items-center gap-2">
                       <CategoryIcon category={it.category} size={20} />
@@ -335,7 +350,7 @@ export default function YearlyReview({ year }: { year?: number }) {
                       style={{ width: `${(it.total_minor / maxCategoryMinor) * 100}%` }}
                     />
                   </div>
-                </div>
+                </Link>
               ))}
             </div>
           )}
@@ -362,7 +377,11 @@ export default function YearlyReview({ year }: { year?: number }) {
                 const data = quarterAgg[q] ?? { inflow: 0, outflow: 0, net: 0 };
                 const surplus = data.net >= 0;
                 return (
-                  <tr key={q} className="hover:bg-surface-container-high/20 transition-colors">
+                  <tr
+                    key={q}
+                    onClick={() => navigate(dateRangeLedgerLink(quarterRange[q]))}
+                    className="hover:bg-surface-container-high/20 transition-colors cursor-pointer"
+                  >
                     <td className="px-8 py-5 text-sm font-bold text-white">{q} {now.getFullYear()}</td>
                     <td className="px-8 py-5 text-sm text-right text-primary font-medium">
                       {formatMoney(data.inflow, currency)}
