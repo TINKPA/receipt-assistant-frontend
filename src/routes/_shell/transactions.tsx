@@ -23,7 +23,7 @@ export const Route = createFileRoute('/_shell/transactions')({
 function TransactionsRoute() {
   const search = Route.useSearch();
   const navigate = useNavigate({ from: '/transactions' });
-  const { refreshKey } = useAppCtx();
+  const { refreshKey, items: processingItems, dismiss: dismissProcessing } = useAppCtx();
   return (
     <Transactions
       key={refreshKey}
@@ -37,6 +37,12 @@ function TransactionsRoute() {
       onSelectReceipt={(id) =>
         navigate({ to: '/receipt/$receiptId', params: { receiptId: id } })
       }
+      // Inline upload status (#85). The in-flight receipt renders as a card
+      // at the top of the ledger; on completion the hook bumps refreshKey
+      // and the real row arrives in place. Tapping a terminal card navigates
+      // via onSelectReceipt above.
+      processingItems={processingItems}
+      onDismissProcessing={dismissProcessing}
     />
   );
 }

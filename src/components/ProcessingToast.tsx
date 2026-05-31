@@ -2,9 +2,10 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, CheckCircle, XCircle, Layers, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { getBatch, extractProblemMessage } from '../lib/api';
+import type { ProcessingJob } from './useProcessingJobs';
 
 /**
- * Receipt upload UX.
+ * Receipt upload UX (floating toast variant).
  *
  * The old backend had per-image jobs queried via `GET /jobs/:id`. The
  * v1 backend uses *ingest batches* — a single upload creates a batch
@@ -15,12 +16,12 @@ import { getBatch, extractProblemMessage } from '../lib/api';
  * minimum diff we keep polling: every 5s fetch the batch and watch for
  * `status=extracted` (or `reconciled`). On completion we extract the
  * first produced `transaction_id` to give callers a stable anchor.
+ *
+ * `ProcessingJob` now lives in ./useProcessingJobs.ts (the hook owns the
+ * job shape so the inline `ProcessingCard` can share it); we re-export it
+ * here so existing importers keep working.
  */
-export interface ProcessingJob {
-  batchId: string;
-  ingestId: string;
-  filename: string;
-}
+export type { ProcessingJob };
 
 interface ToastState {
   batchId: string;

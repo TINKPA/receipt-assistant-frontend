@@ -22,6 +22,8 @@ import TransactionRowMenu from './TransactionRowMenu';
 import ConfirmActionDialog from './ConfirmActionDialog';
 import UnreconcileDialog from './UnreconcileDialog';
 import DeletedBadge from './DeletedBadge';
+import ProcessingCardList from './ProcessingCard';
+import type { ProcessingItem } from './useProcessingJobs';
 import TransactionsFilters from './TransactionsFilters';
 import {
   DEFAULT_FILTERS,
@@ -42,6 +44,9 @@ interface TransactionsProps {
   /** Write a new (already-stripped) search object back to the URL.
    *  Every mutation in this component flows through here. */
   onSearchChange: (next: TransactionsSearch) => void;
+  /** In-flight uploads, rendered inline at the top of the ledger. */
+  processingItems?: ProcessingItem[];
+  onDismissProcessing?: (batchId: string) => void;
 }
 
 interface TombstoneRow {
@@ -63,6 +68,8 @@ export default function Transactions({
   onSelectReceipt,
   search,
   onSearchChange,
+  processingItems = [],
+  onDismissProcessing,
 }: TransactionsProps) {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
@@ -308,6 +315,12 @@ export default function Transactions({
           onRestore={handleRestoreTombstone}
         />
       )}
+
+      <ProcessingCardList
+        items={processingItems}
+        onDismiss={(batchId) => onDismissProcessing?.(batchId)}
+        onSelectTransaction={onSelectReceipt}
+      />
 
       {loading ? (
         <EmptyState>
