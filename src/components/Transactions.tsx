@@ -1,4 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { Link } from '@tanstack/react-router';
+import { receiptLink } from '../lib/navLinks';
 import {
   fetchTransactions,
   extractProblemMessage,
@@ -583,42 +585,51 @@ function LedgerRow({
         )}
       </div>
 
-      {/* Body */}
-      <button
-        type="button"
-        onClick={() => !isProcessing && onSelect(tx)}
-        disabled={isProcessing}
-        className={cn(
-          'text-left min-w-0',
-          isProcessing ? 'cursor-default opacity-60' : 'cursor-pointer',
-        )}
-      >
-        <p className="font-display italic font-medium text-[17px] leading-tight tracking-tight truncate">
-          {tx.description}
-        </p>
-        <p className="mt-0.5 text-[11px] tracking-[0.04em] uppercase text-[var(--color-ink-muted)] truncate">
-          {rowLabelPrefix(tx)}{formatDay(tx.date)}
-          {badge && (
-            <span
-              className={cn(
-                'ml-1',
-                badge.tone === 'red' && 'text-[var(--color-stamp)]',
-                badge.tone === 'green' && 'text-[color:rgb(52,168,83)]',
+      {/* Body — a real <Link> (renders <a href>) so right-click → Open in
+          New Tab / Split View, Cmd-click, and hover URL preview all work.
+          While the row is still processing there's no receipt to open yet,
+          so it falls back to a non-interactive div. */}
+      {(() => {
+        const body = (
+          <>
+            <p className="font-display italic font-medium text-[17px] leading-tight tracking-tight truncate">
+              {tx.description}
+            </p>
+            <p className="mt-0.5 text-[11px] tracking-[0.04em] uppercase text-[var(--color-ink-muted)] truncate">
+              {rowLabelPrefix(tx)}{formatDay(tx.date)}
+              {badge && (
+                <span
+                  className={cn(
+                    'ml-1',
+                    badge.tone === 'red' && 'text-[var(--color-stamp)]',
+                    badge.tone === 'green' && 'text-[color:rgb(52,168,83)]',
+                  )}
+                >
+                  · {badge.label}
+                </span>
               )}
-            >
-              · {badge.label}
-            </span>
-          )}
-          {(() => {
-            const src = sourceTag(tx.documentKind);
-            return src ? (
-              <span className="ml-1" title={`From ${src.label}`}>
-                · <span className="not-italic">{src.glyph}</span> {src.label}
-              </span>
-            ) : null;
-          })()}
-        </p>
-      </button>
+              {(() => {
+                const src = sourceTag(tx.documentKind);
+                return src ? (
+                  <span className="ml-1" title={`From ${src.label}`}>
+                    · <span className="not-italic">{src.glyph}</span> {src.label}
+                  </span>
+                ) : null;
+              })()}
+            </p>
+          </>
+        );
+        return isProcessing ? (
+          <div className="text-left min-w-0 cursor-default opacity-60">{body}</div>
+        ) : (
+          <Link
+            {...receiptLink(tx.id)}
+            className="block text-left min-w-0 cursor-pointer"
+          >
+            {body}
+          </Link>
+        );
+      })()}
 
       {/* Amount */}
       <span
