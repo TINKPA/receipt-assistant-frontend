@@ -1,8 +1,8 @@
 {
   "service": "receipt-assistant-frontend",
   "version": "0.0.0",
-  "gitSha": "0e920dde00bc018c15f621dcab99e0753a34ea33",
-  "gitShortSha": "0e920dd",
+  "gitSha": "5d6f50e7690cb5465012ff19880253f9246cc483",
+  "gitShortSha": "5d6f50e",
   "gitBranch": "feat/tanstack-router",
-  "builtAt": "2026-05-31T00:39:21.140Z"
+  "builtAt": "2026-05-31T05:02:27.807Z"
 }

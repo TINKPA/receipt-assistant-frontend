@@ -12,6 +12,17 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as AddRouteImport } from './routes/add'
 import { Route as ShellRouteImport } from './routes/_shell'
 import { Route as ShellIndexRouteImport } from './routes/_shell/index'
+import { Route as ShellTransactionsRouteImport } from './routes/_shell/transactions'
+import { Route as ShellSettingsIndexRouteImport } from './routes/_shell/settings/index'
+import { Route as ShellBatchesIndexRouteImport } from './routes/_shell/batches/index'
+import { Route as ShellReviewYearlyRouteImport } from './routes/_shell/review/yearly'
+import { Route as ShellReviewMonthlyRouteImport } from './routes/_shell/review/monthly'
+import { Route as ShellReceiptReceiptIdRouteImport } from './routes/_shell/receipt/$receiptId'
+import { Route as ShellMerchantMerchantIdRouteImport } from './routes/_shell/merchant/$merchantId'
+import { Route as ShellBrandBrandIdRouteImport } from './routes/_shell/brand/$brandId'
+import { Route as ShellBatchesBatchIdRouteImport } from './routes/_shell/batches/$batchId'
+import { Route as ShellSettingsProductsIndexRouteImport } from './routes/_shell/settings/products/index'
+import { Route as ShellSettingsBrandsIndexRouteImport } from './routes/_shell/settings/brands/index'
 
 const AddRoute = AddRouteImport.update({
   id: '/add',
@@ -27,27 +38,158 @@ const ShellIndexRoute = ShellIndexRouteImport.update({
   path: '/',
   getParentRoute: () => ShellRoute,
 } as any)
+const ShellTransactionsRoute = ShellTransactionsRouteImport.update({
+  id: '/transactions',
+  path: '/transactions',
+  getParentRoute: () => ShellRoute,
+} as any)
+const ShellSettingsIndexRoute = ShellSettingsIndexRouteImport.update({
+  id: '/settings/',
+  path: '/settings/',
+  getParentRoute: () => ShellRoute,
+} as any)
+const ShellBatchesIndexRoute = ShellBatchesIndexRouteImport.update({
+  id: '/batches/',
+  path: '/batches/',
+  getParentRoute: () => ShellRoute,
+} as any)
+const ShellReviewYearlyRoute = ShellReviewYearlyRouteImport.update({
+  id: '/review/yearly',
+  path: '/review/yearly',
+  getParentRoute: () => ShellRoute,
+} as any)
+const ShellReviewMonthlyRoute = ShellReviewMonthlyRouteImport.update({
+  id: '/review/monthly',
+  path: '/review/monthly',
+  getParentRoute: () => ShellRoute,
+} as any)
+const ShellReceiptReceiptIdRoute = ShellReceiptReceiptIdRouteImport.update({
+  id: '/receipt/$receiptId',
+  path: '/receipt/$receiptId',
+  getParentRoute: () => ShellRoute,
+} as any)
+const ShellMerchantMerchantIdRoute = ShellMerchantMerchantIdRouteImport.update({
+  id: '/merchant/$merchantId',
+  path: '/merchant/$merchantId',
+  getParentRoute: () => ShellRoute,
+} as any)
+const ShellBrandBrandIdRoute = ShellBrandBrandIdRouteImport.update({
+  id: '/brand/$brandId',
+  path: '/brand/$brandId',
+  getParentRoute: () => ShellRoute,
+} as any)
+const ShellBatchesBatchIdRoute = ShellBatchesBatchIdRouteImport.update({
+  id: '/batches/$batchId',
+  path: '/batches/$batchId',
+  getParentRoute: () => ShellRoute,
+} as any)
+const ShellSettingsProductsIndexRoute =
+  ShellSettingsProductsIndexRouteImport.update({
+    id: '/settings/products/',
+    path: '/settings/products/',
+    getParentRoute: () => ShellRoute,
+  } as any)
+const ShellSettingsBrandsIndexRoute =
+  ShellSettingsBrandsIndexRouteImport.update({
+    id: '/settings/brands/',
+    path: '/settings/brands/',
+    getParentRoute: () => ShellRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof ShellIndexRoute
   '/add': typeof AddRoute
+  '/transactions': typeof ShellTransactionsRoute
+  '/batches/$batchId': typeof ShellBatchesBatchIdRoute
+  '/brand/$brandId': typeof ShellBrandBrandIdRoute
+  '/merchant/$merchantId': typeof ShellMerchantMerchantIdRoute
+  '/receipt/$receiptId': typeof ShellReceiptReceiptIdRoute
+  '/review/monthly': typeof ShellReviewMonthlyRoute
+  '/review/yearly': typeof ShellReviewYearlyRoute
+  '/batches/': typeof ShellBatchesIndexRoute
+  '/settings/': typeof ShellSettingsIndexRoute
+  '/settings/brands/': typeof ShellSettingsBrandsIndexRoute
+  '/settings/products/': typeof ShellSettingsProductsIndexRoute
 }
 export interface FileRoutesByTo {
   '/add': typeof AddRoute
+  '/transactions': typeof ShellTransactionsRoute
   '/': typeof ShellIndexRoute
+  '/batches/$batchId': typeof ShellBatchesBatchIdRoute
+  '/brand/$brandId': typeof ShellBrandBrandIdRoute
+  '/merchant/$merchantId': typeof ShellMerchantMerchantIdRoute
+  '/receipt/$receiptId': typeof ShellReceiptReceiptIdRoute
+  '/review/monthly': typeof ShellReviewMonthlyRoute
+  '/review/yearly': typeof ShellReviewYearlyRoute
+  '/batches': typeof ShellBatchesIndexRoute
+  '/settings': typeof ShellSettingsIndexRoute
+  '/settings/brands': typeof ShellSettingsBrandsIndexRoute
+  '/settings/products': typeof ShellSettingsProductsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_shell': typeof ShellRouteWithChildren
   '/add': typeof AddRoute
+  '/_shell/transactions': typeof ShellTransactionsRoute
   '/_shell/': typeof ShellIndexRoute
+  '/_shell/batches/$batchId': typeof ShellBatchesBatchIdRoute
+  '/_shell/brand/$brandId': typeof ShellBrandBrandIdRoute
+  '/_shell/merchant/$merchantId': typeof ShellMerchantMerchantIdRoute
+  '/_shell/receipt/$receiptId': typeof ShellReceiptReceiptIdRoute
+  '/_shell/review/monthly': typeof ShellReviewMonthlyRoute
+  '/_shell/review/yearly': typeof ShellReviewYearlyRoute
+  '/_shell/batches/': typeof ShellBatchesIndexRoute
+  '/_shell/settings/': typeof ShellSettingsIndexRoute
+  '/_shell/settings/brands/': typeof ShellSettingsBrandsIndexRoute
+  '/_shell/settings/products/': typeof ShellSettingsProductsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/add'
+  fullPaths:
+    | '/'
+    | '/add'
+    | '/transactions'
+    | '/batches/$batchId'
+    | '/brand/$brandId'
+    | '/merchant/$merchantId'
+    | '/receipt/$receiptId'
+    | '/review/monthly'
+    | '/review/yearly'
+    | '/batches/'
+    | '/settings/'
+    | '/settings/brands/'
+    | '/settings/products/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/add' | '/'
-  id: '__root__' | '/_shell' | '/add' | '/_shell/'
+  to:
+    | '/add'
+    | '/transactions'
+    | '/'
+    | '/batches/$batchId'
+    | '/brand/$brandId'
+    | '/merchant/$merchantId'
+    | '/receipt/$receiptId'
+    | '/review/monthly'
+    | '/review/yearly'
+    | '/batches'
+    | '/settings'
+    | '/settings/brands'
+    | '/settings/products'
+  id:
+    | '__root__'
+    | '/_shell'
+    | '/add'
+    | '/_shell/transactions'
+    | '/_shell/'
+    | '/_shell/batches/$batchId'
+    | '/_shell/brand/$brandId'
+    | '/_shell/merchant/$merchantId'
+    | '/_shell/receipt/$receiptId'
+    | '/_shell/review/monthly'
+    | '/_shell/review/yearly'
+    | '/_shell/batches/'
+    | '/_shell/settings/'
+    | '/_shell/settings/brands/'
+    | '/_shell/settings/products/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -78,15 +220,114 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShellIndexRouteImport
       parentRoute: typeof ShellRoute
     }
+    '/_shell/transactions': {
+      id: '/_shell/transactions'
+      path: '/transactions'
+      fullPath: '/transactions'
+      preLoaderRoute: typeof ShellTransactionsRouteImport
+      parentRoute: typeof ShellRoute
+    }
+    '/_shell/settings/': {
+      id: '/_shell/settings/'
+      path: '/settings'
+      fullPath: '/settings/'
+      preLoaderRoute: typeof ShellSettingsIndexRouteImport
+      parentRoute: typeof ShellRoute
+    }
+    '/_shell/batches/': {
+      id: '/_shell/batches/'
+      path: '/batches'
+      fullPath: '/batches/'
+      preLoaderRoute: typeof ShellBatchesIndexRouteImport
+      parentRoute: typeof ShellRoute
+    }
+    '/_shell/review/yearly': {
+      id: '/_shell/review/yearly'
+      path: '/review/yearly'
+      fullPath: '/review/yearly'
+      preLoaderRoute: typeof ShellReviewYearlyRouteImport
+      parentRoute: typeof ShellRoute
+    }
+    '/_shell/review/monthly': {
+      id: '/_shell/review/monthly'
+      path: '/review/monthly'
+      fullPath: '/review/monthly'
+      preLoaderRoute: typeof ShellReviewMonthlyRouteImport
+      parentRoute: typeof ShellRoute
+    }
+    '/_shell/receipt/$receiptId': {
+      id: '/_shell/receipt/$receiptId'
+      path: '/receipt/$receiptId'
+      fullPath: '/receipt/$receiptId'
+      preLoaderRoute: typeof ShellReceiptReceiptIdRouteImport
+      parentRoute: typeof ShellRoute
+    }
+    '/_shell/merchant/$merchantId': {
+      id: '/_shell/merchant/$merchantId'
+      path: '/merchant/$merchantId'
+      fullPath: '/merchant/$merchantId'
+      preLoaderRoute: typeof ShellMerchantMerchantIdRouteImport
+      parentRoute: typeof ShellRoute
+    }
+    '/_shell/brand/$brandId': {
+      id: '/_shell/brand/$brandId'
+      path: '/brand/$brandId'
+      fullPath: '/brand/$brandId'
+      preLoaderRoute: typeof ShellBrandBrandIdRouteImport
+      parentRoute: typeof ShellRoute
+    }
+    '/_shell/batches/$batchId': {
+      id: '/_shell/batches/$batchId'
+      path: '/batches/$batchId'
+      fullPath: '/batches/$batchId'
+      preLoaderRoute: typeof ShellBatchesBatchIdRouteImport
+      parentRoute: typeof ShellRoute
+    }
+    '/_shell/settings/products/': {
+      id: '/_shell/settings/products/'
+      path: '/settings/products'
+      fullPath: '/settings/products/'
+      preLoaderRoute: typeof ShellSettingsProductsIndexRouteImport
+      parentRoute: typeof ShellRoute
+    }
+    '/_shell/settings/brands/': {
+      id: '/_shell/settings/brands/'
+      path: '/settings/brands'
+      fullPath: '/settings/brands/'
+      preLoaderRoute: typeof ShellSettingsBrandsIndexRouteImport
+      parentRoute: typeof ShellRoute
+    }
   }
 }
 
 interface ShellRouteChildren {
+  ShellTransactionsRoute: typeof ShellTransactionsRoute
   ShellIndexRoute: typeof ShellIndexRoute
+  ShellBatchesBatchIdRoute: typeof ShellBatchesBatchIdRoute
+  ShellBrandBrandIdRoute: typeof ShellBrandBrandIdRoute
+  ShellMerchantMerchantIdRoute: typeof ShellMerchantMerchantIdRoute
+  ShellReceiptReceiptIdRoute: typeof ShellReceiptReceiptIdRoute
+  ShellReviewMonthlyRoute: typeof ShellReviewMonthlyRoute
+  ShellReviewYearlyRoute: typeof ShellReviewYearlyRoute
+  ShellBatchesIndexRoute: typeof ShellBatchesIndexRoute
+  ShellSettingsIndexRoute: typeof ShellSettingsIndexRoute
+  ShellSettingsBrandsIndexRoute: typeof ShellSettingsBrandsIndexRoute
+  ShellSettingsProductsIndexRoute: typeof ShellSettingsProductsIndexRoute
 }
 
 const ShellRouteChildren: ShellRouteChildren = {
+  ShellTransactionsRoute: ShellTransactionsRoute,
   ShellIndexRoute: ShellIndexRoute,
+  ShellBatchesBatchIdRoute: ShellBatchesBatchIdRoute,
+  ShellBrandBrandIdRoute: ShellBrandBrandIdRoute,
+  ShellMerchantMerchantIdRoute: ShellMerchantMerchantIdRoute,
+  ShellReceiptReceiptIdRoute: ShellReceiptReceiptIdRoute,
+  ShellReviewMonthlyRoute: ShellReviewMonthlyRoute,
+  ShellReviewYearlyRoute: ShellReviewYearlyRoute,
+  ShellBatchesIndexRoute: ShellBatchesIndexRoute,
+  ShellSettingsIndexRoute: ShellSettingsIndexRoute,
+  ShellSettingsBrandsIndexRoute: ShellSettingsBrandsIndexRoute,
+  ShellSettingsProductsIndexRoute: ShellSettingsProductsIndexRoute,
 }
 
 const ShellRouteWithChildren = ShellRoute._addFileChildren(ShellRouteChildren)

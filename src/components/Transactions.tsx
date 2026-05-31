@@ -23,20 +23,23 @@ import DeletedBadge from './DeletedBadge';
 import TransactionsFilters from './TransactionsFilters';
 import {
   DEFAULT_FILTERS,
-  DEFAULT_SORT_ID,
   effectiveDateRange,
+  filterStateToSearch,
   isFilterActive,
   resolveSort,
+  searchToFilterState,
   type FilterState,
+  type TransactionsSearch,
 } from '../lib/transactionsFilterState';
 
 interface TransactionsProps {
   onSelectReceipt?: (receiptId: string) => void;
-  searchQuery?: string;
-  onSearchChange?: (q: string) => void;
-  /** Reset the top-bar search input. The search lives in App.tsx so
-   *  the table's `Clear filters` button needs a hook to reach it. */
-  onClearSearch?: () => void;
+  /** The route's typed URL search params. Source of truth for the
+   *  ledger's filter / sort / search / showDeleted view state. */
+  search: TransactionsSearch;
+  /** Write a new (already-stripped) search object back to the URL.
+   *  Every mutation in this component flows through here. */
+  onSearchChange: (next: TransactionsSearch) => void;
 }
 
 interface TombstoneRow {
@@ -56,9 +59,8 @@ interface TombstoneRow {
  */
 export default function Transactions({
   onSelectReceipt,
-  searchQuery = '',
+  search,
   onSearchChange,
-  onClearSearch,
 }: TransactionsProps) {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
@@ -69,15 +71,56 @@ export default function Transactions({
   const [unreconcileTarget, setUnreconcileTarget] = useState<string | null>(null);
   const [rowError, setRowError] = useState<string | null>(null);
 
-  const [showDeleted, setShowDeleted] = useState(false);
   const [tombstones, setTombstones] = useState<TombstoneRow[]>([]);
   const [tombstoneLoading, setTombstoneLoading] = useState(false);
 
-  const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
-  // Sort is view config, not a filter — survives "clear all".
-  const [sortId, setSortId] = useState<string>(DEFAULT_SORT_ID);
+  // All view state is derived from the URL — single source of truth.
+  const { filters, sortId, q: searchQuery, showDeleted } = useMemo(
+    () => searchToFilterState(search),
+    [search],
+  );
+
+  // Push a partial view-state change back to the URL. We re-stringify
+  // from the *current* derived state so callers only specify what changed.
+  const pushState = (
+    patch: Partial<{ filters: FilterState; sortId: string; q: string; showDeleted: boolean }>,
+  ) => {
+    onSearchChange(
+      filterStateToSearch({
+        filters: patch.filters ?? filters,
+        sortId: patch.sortId ?? sortId,
+        q: patch.q ?? searchQuery,
+        showDeleted: patch.showDeleted ?? showDeleted,
+      }),
+    );
+  };
+
+  const setFilters = (next: FilterState) => pushState({ filters: next });
+  const setSortId = (id: string) => pushState({ sortId: id });
+  const toggleShowDeleted = () => pushState({ showDeleted: !showDeleted });
+
+  // The free-text search input is debounced locally for responsive
+  // typing, then settled into the URL — we don't want a history entry
+  // per keystroke. `searchInput` tracks the live field; on debounce
+  // settle we push it up only if it actually differs from the URL.
+  const [searchInput, setSearchInput] = useState(searchQuery);
+  // Keep the local input in sync when the URL changes from elsewhere
+  // (back/forward, "clear all", a shared link).
+  useEffect(() => {
+    setSearchInput(searchQuery);
+  }, [searchQuery]);
+  const settledSearch = useDebouncedValue(searchInput, 300);
+  useEffect(() => {
+    if (settledSearch !== searchQuery) pushState({ q: settledSearch });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settledSearch]);
+
   const activeSort = useMemo(() => resolveSort(sortId), [sortId]);
-  const debouncedSearch = useDebouncedValue(searchQuery, 300);
+  // `searchQuery` is already debounced at the input boundary (it only
+  // changes once typing settles into the URL), so no extra debounce
+  // here. Payee / amount inputs still write to the URL per-keystroke,
+  // so those keep their in-fetch debounce.
+  const debouncedSearch = searchQuery;
   const debouncedPayee = useDebouncedValue(filters.payeeContains, 300);
   const debouncedAmountMin = useDebouncedValue(filters.amountMinDollars, 300);
   const debouncedAmountMax = useDebouncedValue(filters.amountMaxDollars, 300);
@@ -223,8 +266,8 @@ export default function Transactions({
       <Header total={Math.abs(totalExpenses)} count={filteredTransactions.length} />
 
       <SearchSoft
-        value={searchQuery}
-        onChange={(v) => onSearchChange?.(v)}
+        value={searchInput}
+        onChange={setSearchInput}
       />
 
       <TransactionsFilters
@@ -232,11 +275,14 @@ export default function Transactions({
         onChange={setFilters}
         hasActiveFilter={hasActiveFilter}
         onClear={() => {
-          setFilters(DEFAULT_FILTERS);
-          onClearSearch?.();
+          // "Clear all" resets filters AND the free-text search, but
+          // leaves sort (view config) untouched — same semantics as
+          // before, now expressed as one URL write.
+          setSearchInput('');
+          pushState({ filters: DEFAULT_FILTERS, q: '' });
         }}
         showDeleted={showDeleted}
-        onToggleShowDeleted={() => setShowDeleted((s) => !s)}
+        onToggleShowDeleted={toggleShowDeleted}
         sortId={sortId}
         onSortChange={setSortId}
       />

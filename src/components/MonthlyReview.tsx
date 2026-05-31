@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 import { ChevronLeft, ChevronRight, TrendingDown, TrendingUp, Loader2, PieChart as PieIcon, Receipt } from 'lucide-react';
 import {
   Bar,
@@ -64,24 +65,38 @@ interface CategoryRow {
   previousMinor: number;
 }
 
-export default function MonthlyReview() {
+export default function MonthlyReview({ month }: { month?: string }) {
   // FE#23: month picker — `now` is the FIRST of the selected month so
   // arithmetic against it is timezone-safe. Defaults to the current
   // calendar month; user navigates via chevrons. Capped at the current
   // month so we don't render "review" for the future.
+  //
+  // The selected month is the source of truth in the URL search param
+  // `?m=YYYY-MM` (validated/parsed by the route). When absent or invalid
+  // we fall back to the current calendar month; chevrons navigate the URL
+  // rather than mutating local state.
+  const navigate = useNavigate({ from: '/review/monthly' });
   const today = useMemo(() => new Date(), []);
   const currentMonth = useMemo(
     () => new Date(today.getFullYear(), today.getMonth(), 1),
     [today],
   );
-  const [now, setNow] = useState<Date>(currentMonth);
+  const now = useMemo(
+    () => (month ? parseYearMonth(month) : currentMonth),
+    [month, currentMonth],
+  );
   const prevMonth = useMemo(() => new Date(now.getFullYear(), now.getMonth() - 1, 1), [now]);
   const canStepForward = now < currentMonth;
 
-  const stepBack = () => setNow(new Date(now.getFullYear(), now.getMonth() - 1, 1));
+  const stepBack = () =>
+    navigate({
+      search: { m: yearMonthKey(new Date(now.getFullYear(), now.getMonth() - 1, 1)) },
+    });
   const stepForward = () => {
     if (!canStepForward) return;
-    setNow(new Date(now.getFullYear(), now.getMonth() + 1, 1));
+    navigate({
+      search: { m: yearMonthKey(new Date(now.getFullYear(), now.getMonth() + 1, 1)) },
+    });
   };
 
   const [cashflow, setCashflow] = useState<BackendCashflowReport | null>(null);
