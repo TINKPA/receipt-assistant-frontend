@@ -1,8 +1,8 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { receiptLink } from '../lib/navLinks';
 import {
-  fetchTransactions,
+  fetchTransactionsPage,
   extractProblemMessage,
   getDocument,
   getTransaction,
@@ -76,8 +76,15 @@ export default function Transactions({
 }: TransactionsProps) {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  // Guards loadMore against double-firing while a page request is in flight
+  // (the IntersectionObserver can fire repeatedly as the sentinel stays in
+  // view). A ref, not state, so it's synchronous.
+  const loadingMoreRef = useRef(false);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
 
   const [hardDeleteTarget, setHardDeleteTarget] = useState<{ id: string; etag: string } | null>(null);
   const [unreconcileTarget, setUnreconcileTarget] = useState<string | null>(null);
@@ -140,8 +147,12 @@ export default function Transactions({
   const dateRange = useMemo(() => effectiveDateRange(filters), [filters]);
   const hasActiveFilter = isFilterActive(filters, searchQuery);
 
-  useEffect(() => {
-    setLoading(true);
+  // The base query (everything except the cursor), shared by the first-page
+  // fetch and loadMore so both page the same result set. Week-grouped
+  // rendering only applies to the occurred_on sort; other sorts fall back to
+  // a flat list (handled in the render path).
+  const PAGE_SIZE = 50;
+  const queryArgs = useMemo(() => {
     const dollarsToMinor = (s: string): number | undefined => {
       const trimmed = s.trim();
       if (!trimmed) return undefined;
@@ -149,8 +160,8 @@ export default function Transactions({
       if (!Number.isFinite(n)) return undefined;
       return Math.round(n * 100);
     };
-    fetchTransactions({
-      limit: 50,
+    return {
+      limit: PAGE_SIZE,
       has_document: true,
       q: debouncedSearch.trim() || undefined,
       status: filters.status,
@@ -159,20 +170,10 @@ export default function Transactions({
       amount_max_minor: dollarsToMinor(debouncedAmountMax),
       from: dateRange.occurred_from,
       to: dateRange.occurred_to,
-      // Week-grouped rendering below only makes sense when rows are
-      // sorted by `occurred_on`; for amount / created_at sorts the
-      // render path drops the banners and shows a flat list.
       sort: activeSort.sort,
       order: activeSort.order,
-    })
-      .then((rows) => {
-        setTransactions(rows);
-        setError(null);
-      })
-      .catch((e: unknown) => setError(extractProblemMessage(e)))
-      .finally(() => setLoading(false));
+    };
   }, [
-    refreshKey,
     debouncedSearch,
     debouncedPayee,
     debouncedAmountMin,
@@ -183,6 +184,62 @@ export default function Transactions({
     activeSort.sort,
     activeSort.order,
   ]);
+
+  // First page: reset the list whenever the query changes. `cancelled`
+  // guards against a slow page-1 request resolving after the filters moved on.
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    loadingMoreRef.current = false;
+    fetchTransactionsPage(queryArgs)
+      .then(({ items, nextCursor: nc }) => {
+        if (cancelled) return;
+        setTransactions(items);
+        setNextCursor(nc);
+        setError(null);
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) setError(extractProblemMessage(e));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [queryArgs, refreshKey]);
+
+  // Load the next page and append. No-ops when there's nothing more or a
+  // request is already in flight.
+  const loadMore = useCallback(() => {
+    if (loadingMoreRef.current || !nextCursor) return;
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+    fetchTransactionsPage({ ...queryArgs, cursor: nextCursor })
+      .then(({ items, nextCursor: nc }) => {
+        setTransactions((prev) => [...prev, ...items]);
+        setNextCursor(nc);
+      })
+      .catch((e: unknown) => setError(extractProblemMessage(e)))
+      .finally(() => {
+        loadingMoreRef.current = false;
+        setLoadingMore(false);
+      });
+  }, [queryArgs, nextCursor]);
+
+  // Auto-load the next page when the bottom sentinel scrolls into view.
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el || !nextCursor) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) loadMore();
+      },
+      { rootMargin: '300px' },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [loadMore, nextCursor]);
 
   useEffect(() => {
     if (!showDeleted) {
@@ -380,6 +437,18 @@ export default function Transactions({
             </li>
           ))}
         </ul>
+      )}
+
+      {/* Infinite-scroll sentinel: when it scrolls into view (or near it,
+          per rootMargin) the next page loads and appends. Only present while
+          a next page exists. */}
+      {!loading && nextCursor && (
+        <div ref={sentinelRef} aria-hidden="true" className="h-1" />
+      )}
+      {loadingMore && (
+        <p className="py-3 text-center font-hand text-lg text-[var(--color-ink-muted)]">
+          loading more…
+        </p>
       )}
 
       <ConfirmActionDialog

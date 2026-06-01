@@ -620,10 +620,21 @@ export interface FetchTransactionsOpts {
   amount_max_minor?: number;
   sort?: 'occurred_on' | 'amount' | 'created_at';
   order?: 'asc' | 'desc';
+  // Opaque cursor from a previous page's nextCursor — for infinite scroll.
+  cursor?: string;
 }
 
 export async function fetchTransactions(opts?: FetchTransactionsOpts): Promise<Transaction[]> {
-  const { items } = await listTransactions({
+  const { items } = await fetchTransactionsPage(opts);
+  return items;
+}
+
+/** Like `fetchTransactions` but also returns the pagination cursor, so
+ *  callers can keep loading the next page (infinite scroll). */
+export async function fetchTransactionsPage(
+  opts?: FetchTransactionsOpts,
+): Promise<{ items: Transaction[]; nextCursor: string | null }> {
+  const { items, nextCursor } = await listTransactions({
     occurred_from: opts?.from,
     occurred_to: opts?.to,
     limit: opts?.limit,
@@ -633,10 +644,11 @@ export async function fetchTransactions(opts?: FetchTransactionsOpts): Promise<T
     payee_contains: opts?.payee_contains,
     amount_min_minor: opts?.amount_min_minor,
     amount_max_minor: opts?.amount_max_minor,
+    cursor: opts?.cursor,
     sort: opts?.sort ?? 'created_at',
     order: opts?.order ?? 'desc',
   });
-  return items.map(mapTransaction);
+  return { items: items.map(mapTransaction), nextCursor };
 }
 
 export async function getTransaction(id: string): Promise<WithETag<BackendTransaction>> {
