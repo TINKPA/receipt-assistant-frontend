@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import React, { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ChevronRight, ArrowLeft, RotateCw, GitMerge } from 'lucide-react';
 import { qk } from '../lib/queryKeys';
 import {
@@ -187,88 +187,74 @@ function ProductDetail({
   onBack: () => void;
   onMerged: () => void;
 }) {
-  const [product, setProduct] = useState<BackendProduct | null>(null);
-  const [owned, setOwned] = useState<BackendOwnedItem[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [customName, setCustomName] = useState('');
-  const [notes, setNotes] = useState('');
-  const [editDirty, setEditDirty] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const queryClient = useQueryClient();
   const [mergeTarget, setMergeTarget] = useState('');
-  const [mergeBusy, setMergeBusy] = useState(false);
-  const [recomputing, setRecomputing] = useState(false);
   const [banner, setBanner] = useState<{ tone: 'ok' | 'err'; text: string } | null>(null);
 
-  const loadAll = () => {
-    Promise.all([getProduct(productId), listOwnedItems({ product_id: productId, limit: 50 })])
-      .then(([p, o]) => {
-        setProduct(p);
-        setOwned(o);
-        setCustomName(p.custom_name ?? '');
-        setNotes(p.notes ?? '');
-        setEditDirty(false);
-      })
-      .catch((e: unknown) => setError(extractProblemMessage(e)));
-  };
+  const { data, error: queryError } = useQuery({
+    queryKey: qk.product(productId),
+    queryFn: () =>
+      Promise.all([
+        getProduct(productId),
+        listOwnedItems({ product_id: productId, limit: 50 }),
+      ]).then(([product, owned]) => ({ product, owned })),
+  });
+  const product = data?.product ?? null;
+  const owned = data?.owned ?? null;
+  const error = queryError ? extractProblemMessage(queryError) : null;
 
-  useEffect(loadAll, [productId]);
-
-  const onSave = async () => {
-    if (!product) return;
-    setSaving(true);
-    setBanner(null);
-    try {
-      const patch: { custom_name?: string | null; notes?: string | null } = {};
-      if (customName !== (product.custom_name ?? '')) {
-        patch.custom_name = customName.trim() === '' ? null : customName.trim();
-      }
-      if (notes !== (product.notes ?? '')) {
-        patch.notes = notes.trim() === '' ? null : notes.trim();
-      }
-      const updated = await patchProduct(product.id, patch);
-      setProduct(updated);
-      setEditDirty(false);
-      setBanner({ tone: 'ok', text: 'Saved.' });
-    } catch (e: unknown) {
-      setBanner({ tone: 'err', text: extractProblemMessage(e) });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const onMerge = async () => {
-    const target = mergeTarget.trim();
-    if (!target || !product) return;
-    setMergeBusy(true);
-    setBanner(null);
-    try {
-      const r = await mergeProductInto(product.id, target);
+  const mergeMut = useMutation({
+    mutationFn: (target: string) => mergeProductInto(productId, target),
+    onSuccess: (r) => {
       setBanner({
         tone: 'ok',
         text: `Merged → moved ${r.moved_transaction_items} line items, ${r.moved_owned_items} owned items.`,
       });
       setMergeTarget('');
       setTimeout(onMerged, 800);
-    } catch (e: unknown) {
-      setBanner({ tone: 'err', text: extractProblemMessage(e) });
-    } finally {
-      setMergeBusy(false);
-    }
+    },
+    onError: (e: unknown) => setBanner({ tone: 'err', text: extractProblemMessage(e) }),
+  });
+  const mergeBusy = mergeMut.isPending;
+
+  const recomputeMut = useMutation({
+    mutationFn: () => recomputeProduct(productId),
+    onSuccess: (r) => {
+      queryClient.setQueryData(
+        qk.product(productId),
+        (old: { product: BackendProduct; owned: BackendOwnedItem[] } | undefined) =>
+          old
+            ? {
+                ...old,
+                product: {
+                  ...old.product,
+                  purchase_count: r.purchase_count,
+                  total_spent_minor: r.total_spent_minor,
+                  first_purchased_on: r.first_purchased_on,
+                  last_purchased_on: r.last_purchased_on,
+                },
+              }
+            : old,
+      );
+      setBanner({
+        tone: 'ok',
+        text: `Recomputed: ${r.purchase_count}× / ${formatMinor(r.total_spent_minor)}.`,
+      });
+    },
+    onError: (e: unknown) => setBanner({ tone: 'err', text: extractProblemMessage(e) }),
+  });
+  const recomputing = recomputeMut.isPending;
+
+  const onMerge = () => {
+    const target = mergeTarget.trim();
+    if (!target) return;
+    setBanner(null);
+    mergeMut.mutate(target);
   };
 
-  const onRecompute = async () => {
-    if (!product) return;
-    setRecomputing(true);
+  const onRecompute = () => {
     setBanner(null);
-    try {
-      const r = await recomputeProduct(product.id);
-      setProduct({ ...product, purchase_count: r.purchase_count, total_spent_minor: r.total_spent_minor, first_purchased_on: r.first_purchased_on, last_purchased_on: r.last_purchased_on });
-      setBanner({ tone: 'ok', text: `Recomputed: ${r.purchase_count}× / ${formatMinor(r.total_spent_minor)}.` });
-    } catch (e: unknown) {
-      setBanner({ tone: 'err', text: extractProblemMessage(e) });
-    } finally {
-      setRecomputing(false);
-    }
+    recomputeMut.mutate();
   };
 
   if (error) {
@@ -332,40 +318,20 @@ function ProductDetail({
         </div>
       )}
 
-      <Section title="Customize">
-        <label className="block text-[11px] tracking-[0.14em] uppercase text-[var(--color-ink-muted)]">
-          Custom name (your label)
-        </label>
-        <input
-          type="text"
-          value={customName}
-          onChange={(e) => {
-            setCustomName(e.target.value);
-            setEditDirty(true);
-          }}
-          placeholder={product.canonical_name}
-          className="mt-1 w-full px-4 py-2 rounded-[14px] border border-[var(--color-rule)] bg-[var(--color-surface)] text-sm focus:outline-none focus:border-[var(--color-ink)]"
-        />
-        <label className="block text-[11px] tracking-[0.14em] uppercase text-[var(--color-ink-muted)] mt-3">
-          Notes
-        </label>
-        <textarea
-          value={notes}
-          onChange={(e) => {
-            setNotes(e.target.value);
-            setEditDirty(true);
-          }}
-          rows={2}
-          className="mt-1 w-full px-4 py-2 rounded-[14px] border border-[var(--color-rule)] bg-[var(--color-surface)] text-sm focus:outline-none focus:border-[var(--color-ink)]"
-        />
-        <div className="mt-3 flex gap-2">
-          <button
-            onClick={onSave}
-            disabled={!editDirty || saving}
-            className="px-4 py-2 rounded-full bg-[var(--color-ink)] text-[var(--color-paper)] text-sm font-medium disabled:opacity-40"
-          >
-            {saving ? 'Saving…' : 'Save'}
-          </button>
+      <ProductEditForm
+        key={product.id}
+        product={product}
+        onSaved={(updated) => {
+          queryClient.setQueryData(
+            qk.product(productId),
+            (old: { product: BackendProduct; owned: BackendOwnedItem[] } | undefined) =>
+              old ? { ...old, product: updated } : old,
+          );
+          setBanner({ tone: 'ok', text: 'Saved.' });
+        }}
+        onError={(text) => setBanner({ tone: 'err', text })}
+        onSaveStart={() => setBanner(null)}
+        recomputeSlot={
           <button
             onClick={onRecompute}
             disabled={recomputing}
@@ -373,8 +339,8 @@ function ProductDetail({
           >
             <RotateCw size={14} /> {recomputing ? 'Recomputing…' : 'Recompute stats'}
           </button>
-        </div>
-      </Section>
+        }
+      />
 
       <Section title={`Owned items (${owned?.length ?? 0})`}>
         {owned === null && (
@@ -444,6 +410,94 @@ function ProductDetail({
         </div>
       </Section>
     </div>
+  );
+}
+
+/**
+ * Editable name/notes form for a product. Split out of ProductDetail so its
+ * `customName` / `notes` / `editDirty` state can be seeded directly from the
+ * `product` prop via lazy `useState` initializers — no seed `useEffect`
+ * (the repo's `react-hooks/set-state-in-effect` lint rule forbids setState
+ * in effects). Re-mounting via `key={product.id}` in the parent re-runs the
+ * initializers whenever the product changes.
+ */
+function ProductEditForm({
+  product,
+  onSaved,
+  onError,
+  onSaveStart,
+  recomputeSlot,
+}: {
+  product: BackendProduct;
+  onSaved: (updated: BackendProduct) => void;
+  onError: (text: string) => void;
+  onSaveStart: () => void;
+  recomputeSlot: React.ReactNode;
+}) {
+  const [customName, setCustomName] = useState(() => product.custom_name ?? '');
+  const [notes, setNotes] = useState(() => product.notes ?? '');
+  const [editDirty, setEditDirty] = useState(false);
+
+  const saveMut = useMutation({
+    mutationFn: () => {
+      const patch: { custom_name?: string | null; notes?: string | null } = {};
+      if (customName !== (product.custom_name ?? '')) {
+        patch.custom_name = customName.trim() === '' ? null : customName.trim();
+      }
+      if (notes !== (product.notes ?? '')) {
+        patch.notes = notes.trim() === '' ? null : notes.trim();
+      }
+      return patchProduct(product.id, patch);
+    },
+    onSuccess: (updated) => {
+      setEditDirty(false);
+      onSaved(updated);
+    },
+    onError: (e: unknown) => onError(extractProblemMessage(e)),
+  });
+  const saving = saveMut.isPending;
+
+  return (
+    <Section title="Customize">
+      <label className="block text-[11px] tracking-[0.14em] uppercase text-[var(--color-ink-muted)]">
+        Custom name (your label)
+      </label>
+      <input
+        type="text"
+        value={customName}
+        onChange={(e) => {
+          setCustomName(e.target.value);
+          setEditDirty(true);
+        }}
+        placeholder={product.canonical_name}
+        className="mt-1 w-full px-4 py-2 rounded-[14px] border border-[var(--color-rule)] bg-[var(--color-surface)] text-sm focus:outline-none focus:border-[var(--color-ink)]"
+      />
+      <label className="block text-[11px] tracking-[0.14em] uppercase text-[var(--color-ink-muted)] mt-3">
+        Notes
+      </label>
+      <textarea
+        value={notes}
+        onChange={(e) => {
+          setNotes(e.target.value);
+          setEditDirty(true);
+        }}
+        rows={2}
+        className="mt-1 w-full px-4 py-2 rounded-[14px] border border-[var(--color-rule)] bg-[var(--color-surface)] text-sm focus:outline-none focus:border-[var(--color-ink)]"
+      />
+      <div className="mt-3 flex gap-2">
+        <button
+          onClick={() => {
+            onSaveStart();
+            saveMut.mutate();
+          }}
+          disabled={!editDirty || saving}
+          className="px-4 py-2 rounded-full bg-[var(--color-ink)] text-[var(--color-paper)] text-sm font-medium disabled:opacity-40"
+        >
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+        {recomputeSlot}
+      </div>
+    </Section>
   );
 }
 

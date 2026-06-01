@@ -1,5 +1,7 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useRef, useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ChevronRight, ArrowLeft, Lock, Globe, Upload } from 'lucide-react';
+import { qk } from '../lib/queryKeys';
 import {
   listBrands,
   getBrand,
@@ -31,16 +33,16 @@ interface BrandsProps {
 }
 
 export default function Brands({ onBack }: BrandsProps) {
-  const [brands, setBrands] = useState<BackendBrand[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<string | null>(null);
 
-  useEffect(() => {
-    listBrands()
-      .then(setBrands)
-      .catch((e: unknown) => setError(extractProblemMessage(e)));
-  }, []);
+  const { data, error: queryError } = useQuery({
+    queryKey: qk.brands,
+    queryFn: listBrands,
+  });
+  const brands = data ?? null;
+  const error = queryError ? extractProblemMessage(queryError) : null;
 
   if (selected) {
     return (
@@ -50,7 +52,7 @@ export default function Brands({ onBack }: BrandsProps) {
         onPatched={(b) => {
           // Update the cached list in-place so the locked indicator
           // refreshes without a roundtrip.
-          setBrands((prev) =>
+          queryClient.setQueryData(qk.brands, (prev: BackendBrand[] | undefined) =>
             prev ? prev.map((x) => (x.brand_id === b.brand_id ? b : x)) : prev,
           );
         }}
@@ -167,55 +169,31 @@ function BrandDetail({
   onBack: () => void;
   onPatched: (b: BackendBrand) => void;
 }) {
-  const [brand, setBrand] = useState<BackendBrand | null>(null);
-  const [assets, setAssets] = useState<BackendBrandAsset[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
+  const queryClient = useQueryClient();
   const [banner, setBanner] = useState<{ tone: 'ok' | 'err'; text: string } | null>(null);
-  const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  const loadAll = () => {
-    Promise.all([getBrand(brandId), listBrandAssets(brandId)])
-      .then(([b, a]) => {
-        setBrand(b);
-        setAssets(a);
-      })
-      .catch((e: unknown) => setError(extractProblemMessage(e)));
-  };
+  const { data, error: queryError } = useQuery({
+    queryKey: qk.brand(brandId),
+    queryFn: () =>
+      Promise.all([getBrand(brandId), listBrandAssets(brandId)]).then(([brand, assets]) => ({
+        brand,
+        assets,
+      })),
+  });
+  const brand = data?.brand ?? null;
+  const assets = data?.assets ?? null;
+  const error = queryError ? extractProblemMessage(queryError) : null;
 
-  useEffect(loadAll, [brandId]);
-
-  const handleUpload = async (file: File) => {
-    if (!brand) return;
-    setUploading(true);
-    setBanner(null);
-    try {
-      await uploadBrandAsset(brand.brand_id, file);
-      // Re-fetch both brand (preferred_asset_id + user_chose_at) and assets.
-      const [b, a] = await Promise.all([getBrand(brand.brand_id), listBrandAssets(brand.brand_id)]);
-      setBrand(b);
-      setAssets(a);
-      onPatched(b);
-      setBanner({
-        tone: 'ok',
-        text: `Uploaded "${file.name}" — set as preferred and locked from re-extract overrides.`,
-      });
-    } catch (e: unknown) {
-      setBanner({ tone: 'err', text: extractProblemMessage(e) });
-    } finally {
-      setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
-  };
-
-  const setPreferred = async (assetId: string | null) => {
-    if (!brand) return;
-    setBusy(assetId ?? 'clear');
-    setBanner(null);
-    try {
-      const updated = await patchBrand(brand.brand_id, { preferred_asset_id: assetId });
-      setBrand(updated);
+  const preferredMut = useMutation({
+    mutationFn: (assetId: string | null) =>
+      patchBrand(brandId, { preferred_asset_id: assetId }),
+    onSuccess: (updated, assetId) => {
+      queryClient.setQueryData(
+        qk.brand(brandId),
+        (old: { brand: BackendBrand; assets: BackendBrandAsset[] } | undefined) =>
+          old ? { ...old, brand: updated } : old,
+      );
       onPatched(updated);
       setBanner({
         tone: 'ok',
@@ -223,11 +201,44 @@ function BrandDetail({
           ? 'Preferred asset set — locked from re-extract overrides.'
           : 'Preferred asset cleared.',
       });
-    } catch (e: unknown) {
-      setBanner({ tone: 'err', text: extractProblemMessage(e) });
-    } finally {
-      setBusy(null);
-    }
+    },
+    onError: (e: unknown) => setBanner({ tone: 'err', text: extractProblemMessage(e) }),
+  });
+  // `busy` held the assetId in flight (or 'clear' when clearing) so the
+  // matching row could show its spinner. Mirror that from the mutation's
+  // in-flight variables.
+  const busy = preferredMut.isPending ? (preferredMut.variables ?? 'clear') : null;
+
+  const uploadMut = useMutation({
+    mutationFn: async (file: File) => {
+      await uploadBrandAsset(brandId, file);
+      // Re-fetch both brand (preferred_asset_id + user_chose_at) and assets.
+      const [b, a] = await Promise.all([getBrand(brandId), listBrandAssets(brandId)]);
+      return { brand: b, assets: a };
+    },
+    onSuccess: ({ brand: b, assets: a }, file) => {
+      queryClient.setQueryData(qk.brand(brandId), { brand: b, assets: a });
+      onPatched(b);
+      setBanner({
+        tone: 'ok',
+        text: `Uploaded "${file.name}" — set as preferred and locked from re-extract overrides.`,
+      });
+    },
+    onError: (e: unknown) => setBanner({ tone: 'err', text: extractProblemMessage(e) }),
+    onSettled: () => {
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    },
+  });
+  const uploading = uploadMut.isPending;
+
+  const handleUpload = (file: File) => {
+    setBanner(null);
+    uploadMut.mutate(file);
+  };
+
+  const setPreferred = (assetId: string | null) => {
+    setBanner(null);
+    preferredMut.mutate(assetId);
   };
 
   if (error) {
@@ -324,7 +335,7 @@ function BrandDetail({
             className="hidden"
             onChange={(e) => {
               const f = e.target.files?.[0];
-              if (f) void handleUpload(f);
+              if (f) handleUpload(f);
             }}
           />
         </div>
