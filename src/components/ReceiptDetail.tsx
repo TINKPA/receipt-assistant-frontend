@@ -888,12 +888,10 @@ function LocationCard({
   place,
   merchantId,
   payee,
-  onSelectMerchant,
 }: {
   place: ReceiptView['place'];
   merchantId: string | null;
   payee: string | null;
-  onSelectMerchant?: (merchantId: string) => void;
 }) {
   const addr = place?.formatted_address?.trim() || null;
   const cityState = (() => {

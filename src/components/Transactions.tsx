@@ -17,7 +17,6 @@ import { useDebouncedValue } from '../lib/useDebouncedValue';
 import { cn } from '../lib/utils';
 import type { Transaction } from '../types';
 import { isProcessing as txIsProcessing, statusBadge } from '../lib/transactionStatus';
-import { CategoryIcon } from './CategoryIcon';
 import { MerchantIcon } from './MerchantIcon';
 import TransactionRowMenu from './TransactionRowMenu';
 import ConfirmActionDialog from './ConfirmActionDialog';
@@ -394,7 +393,6 @@ export default function Transactions({
             <PeriodGroup
               key={g.startIso}
               group={g}
-              onSelect={(tx) => onSelectReceipt?.(tx.id)}
               onHardDelete={handleHardDeleteRequest}
               onUnreconcile={(id) => setUnreconcileTarget(id)}
             />
@@ -406,7 +404,6 @@ export default function Transactions({
             <li key={tx.id}>
               <LedgerRow
                 tx={tx}
-                onSelect={(t) => onSelectReceipt?.(t.id)}
                 onHardDelete={handleHardDeleteRequest}
                 onUnreconcile={(id) => setUnreconcileTarget(id)}
               />
@@ -614,12 +611,10 @@ interface PeriodBucket {
 
 function PeriodGroup({
   group,
-  onSelect,
   onHardDelete,
   onUnreconcile,
 }: {
   group: PeriodBucket;
-  onSelect: (tx: Transaction) => void;
   onHardDelete: (id: string) => void;
   onUnreconcile: (id: string) => void;
 }) {
@@ -644,7 +639,6 @@ function PeriodGroup({
           <li key={tx.id}>
             <LedgerRow
               tx={tx}
-              onSelect={onSelect}
               onHardDelete={onHardDelete}
               onUnreconcile={onUnreconcile}
             />
@@ -672,12 +666,10 @@ function sourceTag(
 
 function LedgerRow({
   tx,
-  onSelect,
   onHardDelete,
   onUnreconcile,
 }: {
   tx: Transaction;
-  onSelect: (tx: Transaction) => void;
   onHardDelete: (id: string) => void;
   onUnreconcile: (id: string) => void;
 }) {

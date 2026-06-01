@@ -8,7 +8,6 @@ import {
   patchMerchant,
   patchPlace,
   pickCjk,
-  placeName,
   postRefreshPlace,
   type MerchantDetailResponse,
   type MerchantTransactionRow,

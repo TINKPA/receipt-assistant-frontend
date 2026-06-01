@@ -4,7 +4,7 @@ import {
   transactionsSearchSchema,
   type TransactionsSearch,
 } from '../../lib/transactionsFilterState';
-import { useAppCtx } from '../../lib/appContext';
+import { useAppCtx } from '../../lib/appCtx';
 
 /**
  * /transactions — the Ledger.

@@ -1,9 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import {
   extractProblemMessage,
   fetchBrandRollup,
-  type BrandRollup,
   type BrandRollupLocation,
   type BrandRollupRecentRow,
   type BrandRollupSibling,
@@ -45,31 +44,15 @@ export default function BrandPage({
   onSelectBrand,
   onSelectReceipt,
 }: BrandPageProps) {
-  const [rollup, setRollup] = useState<BrandRollup | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    fetchBrandRollup(brandId)
-      .then((r) => {
-        if (!cancelled) {
-          setRollup(r);
-          setLoading(false);
-        }
-      })
-      .catch((e: unknown) => {
-        if (!cancelled) {
-          setError(extractProblemMessage(e));
-          setLoading(false);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [brandId]);
+  const {
+    data: rollup,
+    isLoading: loading,
+    error: queryError,
+  } = useQuery({
+    queryKey: ['brandRollup', brandId],
+    queryFn: () => fetchBrandRollup(brandId),
+  });
+  const error = queryError ? extractProblemMessage(queryError) : null;
 
   if (loading) {
     return (

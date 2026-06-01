@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from '@tanstack/react-router';
+import { createFileRoute } from '@tanstack/react-router';
 import BatchDetail from '../../../components/BatchDetail';
 import { useBack } from '../../../lib/useBack';
 
@@ -8,13 +8,8 @@ export const Route = createFileRoute('/_shell/batches/$batchId')({
 
 function BatchDetailRoute() {
   const { batchId } = Route.useParams();
-  const navigate = useNavigate();
   const back = useBack('/batches');
-  return (
-    <BatchDetail
-      batchId={batchId}
-      onBack={back}
-      onSelectTransaction={(id) => navigate({ to: '/receipt/$receiptId', params: { receiptId: id } })}
-    />
-  );
+  // Produced transaction IDs render as real <Link>s inside BatchDetail, so no
+  // onSelectTransaction callback is threaded through.
+  return <BatchDetail batchId={batchId} onBack={back} />;
 }
