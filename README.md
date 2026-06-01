@@ -145,14 +145,18 @@ The only path to true "one-time forever" camera consent on iOS is shipping a nat
 
 ```
 src/
-├── App.tsx                # Tab routing (state-based) + detail mounting
-├── main.tsx               # React entry
+├── main.tsx               # React entry: QueryClientProvider + RouterProvider (scrollRestoration)
+├── routes/                # TanStack Router file-based routes (_shell layout, /transactions, /receipt/$id, /brand/$id, /add, …)
+├── routeTree.gen.ts       # Generated route tree (do not edit by hand)
 ├── types.ts               # UI Transaction + Category types
 ├── constants.ts           # Static fixtures for as-yet-unwired sections
 ├── index.css              # Tailwind v4 @theme tokens (Variant B — Soft / Organic)
 ├── lib/
 │   ├── api.ts             # ★ Type-safe backend client (openapi-fetch wrapper)
 │   ├── api-types.ts       # Generated from backend OpenAPI spec
+│   ├── queryClient.ts     # ★ TanStack Query client + invalidateLedgerSurfaces()
+│   ├── appContext.tsx     # <AppProvider> — upload-job machinery
+│   ├── appCtx.ts          # AppCtx + useAppCtx (kept out of the provider file for Fast Refresh)
 │   ├── tombstones.ts      # localStorage cache of deleted document IDs
 │   ├── transactionsFilterState.ts  # Filter shape + URL/state helpers
 │   ├── useDebouncedValue.ts        # Debounced value hook
@@ -188,37 +192,36 @@ Components marked ★ are connected to the backend API.
 
 ```
 Transactions.tsx
-  └── useEffect → fetchTransactions({ has_document: true, limit: 50 })
-        └── GET /api/v1/transactions?has_document=true&limit=50
+  └── useInfiniteQuery(['transactions','list', queryArgs])
+        └── fetchTransactionsPage(...) → GET /api/v1/transactions?...&cursor=...
               └── Vite proxy → localhost:3000
                     └── PostgreSQL → transactions + postings + documents
 ```
 
-`src/lib/api.ts` maps the backend `Transaction` shape to the compact UI `Transaction` row (payee → description, signed minor-unit amount → float, metadata-derived category → `Dining` / `Travel` / …). Currency is never stored as a float — minor units are kept intact until the render boundary.
+Loaded pages live in the TanStack Query cache (keyed by the filter/sort args); the bottom IntersectionObserver sentinel calls `fetchNextPage()`. `src/lib/api.ts` maps the backend `Transaction` shape to the compact UI `Transaction` row (payee → description, signed minor-unit amount → float, metadata-derived category → `Dining` / `Travel` / …). Currency is never stored as a float — minor units are kept intact until the render boundary.
 
-Clicking a row sets `selectedReceiptId` in `App.tsx`, which mounts `ReceiptDetail` and calls `fetchReceiptDetail(id)` → `GET /v1/transactions/:id`. The response's `ETag` is captured for future PATCH / DELETE / void calls.
+Rows are real `<Link>`s (TanStack Router file-based routes), so clicking one navigates to `/receipt/:id` and tapping **Back** restores the exact scroll position — the list stays mounted and its pages rehydrate from cache. `ReceiptDetail` calls `fetchReceiptDetail(id)` → `GET /v1/transactions/:id`; the response's `ETag` is captured for future PATCH / DELETE / void calls.
 
 ### Capturing a receipt
 
 ```
-FloatingDock (Add pill clicked)
-  └── App.tsx → activeTab='add'
-        └── Capture.tsx mounts (full-bleed, dock hidden)
-              └── useEffect → navigator.mediaDevices.getUserMedia(env camera)
-                    ├── success → <video> shows live preview
-                    │     └── shutter pressed → canvas.drawImage(video) → toBlob → File
-                    │           └── ingestBatch([file])  # POST /api/v1/ingest/batch
-                    │                 └── { batchId, items: [{ ingestId, filename }] }
-                    │                       └── onComplete → ProcessingToast + back to Books
-                    └── denied / unsupported → shutter falls back to <input capture="environment">
+FloatingDock (Add pill clicked) → navigate to /add route
+  └── Capture.tsx mounts (full-bleed, outside _shell so no dock)
+        └── navigator.mediaDevices.getUserMedia(env camera)
+              ├── success → <video> shows live preview
+              │     └── shutter pressed → canvas.drawImage(video) → toBlob → File
+              │           └── ingestBatch([file])  # POST /api/v1/ingest/batch
+              │                 └── { batchId, items: [{ ingestId, filename }] }
+              │                       └── onComplete → addJob + invalidateLedgerSurfaces + back to Books
+              └── denied / unsupported → shutter falls back to <input capture="environment">
 
-App.tsx → useProcessingJobs
-  └── job added to localStorage (survives refresh)
-        └── ProcessingToast
-              └── polls GET /v1/batches/:id every 2–3 s
-                    ├── status 'extracted' / 'reconciled' → produce transactionId
-                    ├── any error → surface in toast
-                    └── refresh parent list on completion
+AppProvider → useProcessingJobs (job list in localStorage, survives refresh)
+  └── ProcessingToast
+        └── polls GET /v1/batches/:id every 2–3 s
+              ├── status 'extracted' / 'reconciled' → produce transactionId
+              ├── any error → surface in toast
+              └── on completion → invalidateLedgerSurfaces() refetches the
+                    ledger / dashboard / batches queries in place
 ```
 
 The backend pipeline is **single-call**: one `claude -p` invocation reads the image, reasons in plain text, and writes the extracted fields directly via a `psql` tool call. There is no quick-done / processing-full split anymore.
@@ -257,12 +260,24 @@ extractProblemMessage(err)        // pull a human-readable string out of a Probl
 
 Backend errors come back as `application/problem+json` per RFC 7807 — every helper funnels them through `extractProblemMessage` so callers only deal with readable strings.
 
+## Data fetching & state
+
+All **server state** goes through **TanStack Query** (React Query v5). There is no bespoke fetch-in-`useEffect` data layer — that pattern was fully removed (it lost scroll position, dropped loaded pages on navigation, and triggered cascading refetches on every mutation). Conventions for new code:
+
+- **Reads** — call a `src/lib/api.ts` helper as the `queryFn` of a `useQuery` / `useInfiniteQuery` in the component. Do **not** fetch in a `useEffect` and stash the result in `useState`. The shared `queryClient` singleton and its defaults (`staleTime 30s`, `gcTime 5m`, no refetch-on-focus) live in `src/lib/queryClient.ts`.
+- **Query-key namespaces** — `['transactions', …]` (ledger list + dashboard recent), `['summary', …]`, `['batches', …]`, `['brandRollup', id]`, `['monthlyReview', …]`, `['products', klass, search]`, `['tombstones']`. Invalidate by **prefix** so arg-tails don't have to match.
+- **Writes** — after any mutation (edit / void / delete / restore / re-extract) or a completed upload, call **`invalidateLedgerSurfaces()`** (`src/lib/queryClient.ts`). It invalidates `transactions` + `summary` + `batches` so every list/summary surface refetches in place. This replaced the old `refreshKey` / `bumpRefresh` whole-tree remount counter — screens now stay **mounted** (no `key={…}` remount).
+- **Scroll restoration** — enabled via `createRouter({ scrollRestoration: true })` in `src/main.tsx`. It works precisely *because* screens stay mounted and cached pages rehydrate the list to full height synchronously on Back.
+- **Lint** — `react-refresh/only-export-components` is disabled for `src/routes/**` (file-based route modules must `export const Route` alongside their component). The `useAppCtx` hook + context live in `src/lib/appCtx.ts` so `appContext.tsx` exports only its provider component. `npm run lint` must stay at **0 problems**.
+
 ## Tech Stack
 
 | Layer | Technology | Version |
 |-------|-----------|---------|
 | Framework | React | 19.0 |
 | Build | Vite | 6.2 |
+| Routing | TanStack Router (file-based) | 1.17 |
+| Server state | TanStack Query (React Query) | 5.x |
 | Styling | Tailwind CSS | 4.1 (v4, `@theme` tokens) |
 | HTTP client | openapi-fetch | 0.17 |
 | Types | openapi-typescript (dev) | 7.13 |
