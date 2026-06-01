@@ -1,8 +1,8 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { receiptLink } from '../lib/navLinks';
 import {
-  fetchTransactions,
+  fetchTransactionsPage,
   extractProblemMessage,
   getDocument,
   getTransaction,
@@ -26,7 +26,9 @@ import ProcessingCardList from './ProcessingCard';
 import type { ProcessingItem } from './useProcessingJobs';
 import TransactionsFilters from './TransactionsFilters';
 import {
+  DATE_PRESET_LABEL,
   DEFAULT_FILTERS,
+  currentMonthYM,
   effectiveDateRange,
   filterStateToSearch,
   isFilterActive,
@@ -35,6 +37,7 @@ import {
   type FilterState,
   type TransactionsSearch,
 } from '../lib/transactionsFilterState';
+import { addMonths, monthLabelLong } from '../lib/month';
 
 interface TransactionsProps {
   onSelectReceipt?: (receiptId: string) => void;
@@ -73,8 +76,15 @@ export default function Transactions({
 }: TransactionsProps) {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  // Guards loadMore against double-firing while a page request is in flight
+  // (the IntersectionObserver can fire repeatedly as the sentinel stays in
+  // view). A ref, not state, so it's synchronous.
+  const loadingMoreRef = useRef(false);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
 
   const [hardDeleteTarget, setHardDeleteTarget] = useState<{ id: string; etag: string } | null>(null);
   const [unreconcileTarget, setUnreconcileTarget] = useState<string | null>(null);
@@ -137,8 +147,12 @@ export default function Transactions({
   const dateRange = useMemo(() => effectiveDateRange(filters), [filters]);
   const hasActiveFilter = isFilterActive(filters, searchQuery);
 
-  useEffect(() => {
-    setLoading(true);
+  // The base query (everything except the cursor), shared by the first-page
+  // fetch and loadMore so both page the same result set. Week-grouped
+  // rendering only applies to the occurred_on sort; other sorts fall back to
+  // a flat list (handled in the render path).
+  const PAGE_SIZE = 50;
+  const queryArgs = useMemo(() => {
     const dollarsToMinor = (s: string): number | undefined => {
       const trimmed = s.trim();
       if (!trimmed) return undefined;
@@ -146,8 +160,8 @@ export default function Transactions({
       if (!Number.isFinite(n)) return undefined;
       return Math.round(n * 100);
     };
-    fetchTransactions({
-      limit: 50,
+    return {
+      limit: PAGE_SIZE,
       has_document: true,
       q: debouncedSearch.trim() || undefined,
       status: filters.status,
@@ -156,20 +170,10 @@ export default function Transactions({
       amount_max_minor: dollarsToMinor(debouncedAmountMax),
       from: dateRange.occurred_from,
       to: dateRange.occurred_to,
-      // Week-grouped rendering below only makes sense when rows are
-      // sorted by `occurred_on`; for amount / created_at sorts the
-      // render path drops the banners and shows a flat list.
       sort: activeSort.sort,
       order: activeSort.order,
-    })
-      .then((rows) => {
-        setTransactions(rows);
-        setError(null);
-      })
-      .catch((e: unknown) => setError(extractProblemMessage(e)))
-      .finally(() => setLoading(false));
+    };
   }, [
-    refreshKey,
     debouncedSearch,
     debouncedPayee,
     debouncedAmountMin,
@@ -180,6 +184,62 @@ export default function Transactions({
     activeSort.sort,
     activeSort.order,
   ]);
+
+  // First page: reset the list whenever the query changes. `cancelled`
+  // guards against a slow page-1 request resolving after the filters moved on.
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    loadingMoreRef.current = false;
+    fetchTransactionsPage(queryArgs)
+      .then(({ items, nextCursor: nc }) => {
+        if (cancelled) return;
+        setTransactions(items);
+        setNextCursor(nc);
+        setError(null);
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) setError(extractProblemMessage(e));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [queryArgs, refreshKey]);
+
+  // Load the next page and append. No-ops when there's nothing more or a
+  // request is already in flight.
+  const loadMore = useCallback(() => {
+    if (loadingMoreRef.current || !nextCursor) return;
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+    fetchTransactionsPage({ ...queryArgs, cursor: nextCursor })
+      .then(({ items, nextCursor: nc }) => {
+        setTransactions((prev) => [...prev, ...items]);
+        setNextCursor(nc);
+      })
+      .catch((e: unknown) => setError(extractProblemMessage(e)))
+      .finally(() => {
+        loadingMoreRef.current = false;
+        setLoadingMore(false);
+      });
+  }, [queryArgs, nextCursor]);
+
+  // Auto-load the next page when the bottom sentinel scrolls into view.
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el || !nextCursor) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) loadMore();
+      },
+      { rootMargin: '300px' },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [loadMore, nextCursor]);
 
   useEffect(() => {
     if (!showDeleted) {
@@ -234,8 +294,13 @@ export default function Transactions({
     .filter((tx) => tx.amount < 0)
     .reduce((sum, tx) => sum + tx.amount, 0);
 
-  // Group by ISO week (Mon-anchored) for the fig.02 week banners.
-  const weeks = useMemo(() => groupByWeek(filteredTransactions), [filteredTransactions]);
+  // Group by period: ISO weeks for the recent stretch (this/last week),
+  // calendar months for everything older — keeps history calm instead of
+  // one "week of … · 1 entry" banner per sparse receipt.
+  const groups = useMemo(
+    () => groupTransactions(filteredTransactions),
+    [filteredTransactions],
+  );
 
   const handleHardDeleteRequest = async (txnId: string) => {
     setRowError(null);
@@ -272,7 +337,14 @@ export default function Transactions({
 
   return (
     <div className="space-y-6">
-      <Header total={Math.abs(totalExpenses)} count={filteredTransactions.length} />
+      <Header
+        total={Math.abs(totalExpenses)}
+        count={filteredTransactions.length}
+        filters={filters}
+        onMonthChange={(ym) =>
+          setFilters({ ...filters, datePreset: 'month', month: ym })
+        }
+      />
 
       <SearchSoft
         value={searchInput}
@@ -333,17 +405,19 @@ export default function Transactions({
       ) : filteredTransactions.length === 0 ? (
         <EmptyState>
           <p className="font-display italic text-[var(--color-ink-muted)] text-lg">
-            {hasActiveFilter
-              ? 'No entries match the current filters.'
-              : 'No entries yet — capture your first receipt.'}
+            {filters.datePreset === 'month'
+              ? `Nothing in ${monthLabelLong(filters.month || currentMonthYM())}.`
+              : hasActiveFilter
+                ? 'No entries match the current filters.'
+                : 'No entries yet — capture your first receipt.'}
           </p>
         </EmptyState>
       ) : activeSort.sort === 'occurred_on' ? (
         <div className="space-y-7">
-          {weeks.map((wk) => (
-            <WeekGroup
-              key={wk.startIso}
-              week={wk}
+          {groups.map((g) => (
+            <PeriodGroup
+              key={g.startIso}
+              group={g}
               onSelect={(tx) => onSelectReceipt?.(tx.id)}
               onHardDelete={handleHardDeleteRequest}
               onUnreconcile={(id) => setUnreconcileTarget(id)}
@@ -363,6 +437,18 @@ export default function Transactions({
             </li>
           ))}
         </ul>
+      )}
+
+      {/* Infinite-scroll sentinel: when it scrolls into view (or near it,
+          per rootMargin) the next page loads and appends. Only present while
+          a next page exists. */}
+      {!loading && nextCursor && (
+        <div ref={sentinelRef} aria-hidden="true" className="h-1" />
+      )}
+      {loadingMore && (
+        <p className="py-3 text-center font-hand text-lg text-[var(--color-ink-muted)]">
+          loading more…
+        </p>
       )}
 
       <ConfirmActionDialog
@@ -401,26 +487,37 @@ export default function Transactions({
 
 /* ── Header ───────────────────────────────────────────────────── */
 
-function Header({ total, count }: { total: number; count: number }) {
-  const now = new Date();
-  const monthShort = now.toLocaleString('en-US', { month: 'long' });
-  const weekIn = Math.max(1, Math.ceil(now.getDate() / 7));
-  const weekIn_text =
-    weekIn === 1 ? 'first week in' :
-    weekIn === 2 ? 'two weeks in' :
-    weekIn === 3 ? 'three weeks in' :
-    'a full month';
+function Header({
+  total,
+  count,
+  filters,
+  onMonthChange,
+}: {
+  total: number;
+  count: number;
+  filters: FilterState;
+  onMonthChange: (ym: string) => void;
+}) {
   return (
     <div className="flex items-start justify-between gap-4">
-      <div>
+      <div className="min-w-0">
         <h1 className="font-display italic font-medium text-4xl leading-none tracking-tight">
           Ledger
         </h1>
-        <p className="mt-2 font-hand text-2xl text-[var(--color-terracotta)] leading-none">
-          {monthShort}, {weekIn_text}
-        </p>
+        {filters.datePreset === 'month' ? (
+          <MonthSwitcher
+            ym={filters.month || currentMonthYM()}
+            onChange={onMonthChange}
+          />
+        ) : (
+          <p className="mt-2 font-hand text-2xl text-[var(--color-terracotta)] leading-none">
+            {filters.datePreset === 'custom'
+              ? 'custom range'
+              : DATE_PRESET_LABEL[filters.datePreset].toLowerCase()}
+          </p>
+        )}
       </div>
-      <div className="text-right">
+      <div className="text-right flex-shrink-0">
         <p className="text-[11px] font-medium tracking-[0.18em] uppercase text-[var(--color-ink-muted)]">
           TOTAL
         </p>
@@ -431,6 +528,49 @@ function Header({ total, count }: { total: number; count: number }) {
           {count} {count === 1 ? 'entry' : 'entries'}
         </p>
       </div>
+    </div>
+  );
+}
+
+/**
+ * ‹ May 2026 › month stepper — the Ledger's primary navigation. "Next" is
+ * capped at the current month (no browsing into empty future months). The
+ * month name keeps the handwritten flourish so the header still feels warm.
+ */
+function MonthSwitcher({
+  ym,
+  onChange,
+}: {
+  ym: string;
+  onChange: (ym: string) => void;
+}) {
+  const atCurrent = ym >= currentMonthYM();
+  const arrow =
+    'flex h-7 w-7 items-center justify-center rounded-full text-[var(--color-ink-muted)] ' +
+    'hover:bg-[var(--color-paper-deep)] hover:text-[var(--color-ink)] transition-colors ' +
+    'disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-[var(--color-ink-muted)]';
+  return (
+    <div className="mt-1.5 flex items-center gap-1.5">
+      <button
+        type="button"
+        aria-label="Previous month"
+        className={arrow}
+        onClick={() => onChange(addMonths(ym, -1))}
+      >
+        ‹
+      </button>
+      <span className="font-hand text-2xl text-[var(--color-terracotta)] leading-none min-w-[7.5rem] text-center">
+        {monthLabelLong(ym)}
+      </span>
+      <button
+        type="button"
+        aria-label="Next month"
+        className={arrow}
+        disabled={atCurrent}
+        onClick={() => onChange(addMonths(ym, 1))}
+      >
+        ›
+      </button>
     </div>
   );
 }
@@ -487,41 +627,44 @@ function SearchSoft({
   );
 }
 
-/* ── Week group ───────────────────────────────────────────────── */
+/* ── Period group (recent weeks + older months) ───────────────── */
 
-interface WeekBucket {
+interface PeriodBucket {
   startIso: string;
   label: string;
   total: number;
   txs: Transaction[];
 }
 
-function WeekGroup({
-  week,
+function PeriodGroup({
+  group,
   onSelect,
   onHardDelete,
   onUnreconcile,
 }: {
-  week: WeekBucket;
+  group: PeriodBucket;
   onSelect: (tx: Transaction) => void;
   onHardDelete: (id: string) => void;
   onUnreconcile: (id: string) => void;
 }) {
   return (
     <section>
-      <div className="flex items-baseline gap-3 mb-3">
+      {/* Sticky band: while a group is in view its label + running total
+          pin to the top so a long month never loses context. The paper
+          background lets rows scroll cleanly underneath. */}
+      <div className="sticky top-0 z-10 flex items-baseline gap-3 mb-3 bg-[var(--color-paper)] pt-2 pb-2">
         <span className="font-hand text-xl text-[var(--color-terracotta)] leading-none">
-          {week.label}
+          {group.label}
         </span>
         <span className="text-[11px] tracking-[0.12em] uppercase text-[var(--color-ink-muted)]">
-          {week.txs.length} {week.txs.length === 1 ? 'entry' : 'entries'}
+          {group.txs.length} {group.txs.length === 1 ? 'entry' : 'entries'}
         </span>
         <span className="ml-auto font-display italic text-base font-medium tnum">
-          ${Math.round(Math.abs(week.total)).toLocaleString()}
+          ${Math.round(Math.abs(group.total)).toLocaleString()}
         </span>
       </div>
       <ul className="space-y-2">
-        {week.txs.map((tx) => (
+        {group.txs.map((tx) => (
           <li key={tx.id}>
             <LedgerRow
               tx={tx}
@@ -758,8 +901,23 @@ function EmptyState({ children }: { children: React.ReactNode }) {
 
 /* ── Helpers ──────────────────────────────────────────────────── */
 
-function groupByWeek(txs: Transaction[]): WeekBucket[] {
-  const buckets = new Map<string, WeekBucket>();
+/**
+ * Pick the grouping that fits the visible range. A single calendar month
+ * (the default month-scoped browse, or any one-month filter) groups by ISO
+ * week — there are at most ~5 banners, so weekly granularity reads well.
+ * Anything spanning multiple months (all-time, a wide custom range) groups
+ * by month instead, so sparse history stays calm instead of emitting one
+ * "week of … · 1 entry" banner per receipt.
+ */
+function groupTransactions(txs: Transaction[]): PeriodBucket[] {
+  const months = new Set(txs.map((tx) => tx.date.slice(0, 7)));
+  return months.size <= 1 ? groupByWeek(txs) : groupByMonth(txs);
+}
+
+/** Week buckets with relative labels ("this week" / "last week" / "week of
+ *  May 5"). Used when the view is a single month. */
+function groupByWeek(txs: Transaction[]): PeriodBucket[] {
+  const buckets = new Map<string, PeriodBucket>();
   for (const tx of txs) {
     const start = isoWeekStart(tx.date);
     if (!start) continue;
@@ -767,6 +925,70 @@ function groupByWeek(txs: Transaction[]): WeekBucket[] {
     if (!bucket) {
       bucket = { startIso: start, label: weekLabel(start), total: 0, txs: [] };
       buckets.set(start, bucket);
+    }
+    bucket.txs.push(tx);
+    bucket.total += tx.amount;
+  }
+  return [...buckets.values()].sort((a, b) => (a.startIso < b.startIso ? 1 : -1));
+}
+
+/** Relative week label from a Monday ISO date. Falls back to "week of May 5"
+ *  for weeks that aren't the current or previous one. */
+function weekLabel(startIso: string): string {
+  const today = new Date();
+  if (isoWeekStart(toIso(today)) === startIso) return 'this week';
+  const lastWeek = new Date(today);
+  lastWeek.setDate(lastWeek.getDate() - 7);
+  if (isoWeekStart(toIso(lastWeek)) === startIso) return 'last week';
+  const [y, m, d] = startIso.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  return `week of ${dt.toLocaleString('en-US', { month: 'short' })} ${dt.getDate()}`;
+}
+
+/**
+ * Month buckets for multi-month views (all-time, wide custom ranges). The
+ * current and previous ISO weeks keep their granular "this week" / "last
+ * week" banners; everything older collapses into calendar-month buckets
+ * ("April 2026", "December 2025"). This avoids the old failure mode where
+ * each sparse historical receipt got its own "week of … · 1 entry" header,
+ * and the month labels always carry the year so multi-year history reads in
+ * order. All bucket keys are sortable YYYY-MM-DD strings, so the single
+ * descending sort below stays monotonic across the week→month boundary.
+ */
+function groupByMonth(txs: Transaction[]): PeriodBucket[] {
+  const today = new Date();
+  const thisWeek = isoWeekStart(toIso(today));
+  const lastWeek = (() => {
+    const d = new Date(today);
+    d.setDate(d.getDate() - 7);
+    return isoWeekStart(toIso(d));
+  })();
+
+  const buckets = new Map<string, PeriodBucket>();
+  for (const tx of txs) {
+    const week = isoWeekStart(tx.date);
+    if (!week) continue;
+
+    let key: string;
+    let label: string;
+    if (week === thisWeek) {
+      key = week;
+      label = 'this week';
+    } else if (week === lastWeek) {
+      key = week;
+      label = 'last week';
+    } else {
+      // First of the transaction's own month (not the week's Monday, which
+      // could land in the prior month).
+      const [y, m] = tx.date.split('-');
+      key = `${y}-${m}-01`;
+      label = monthLabel(key);
+    }
+
+    let bucket = buckets.get(key);
+    if (!bucket) {
+      bucket = { startIso: key, label, total: 0, txs: [] };
+      buckets.set(key, bucket);
     }
     bucket.txs.push(tx);
     bucket.total += tx.amount;
@@ -790,23 +1012,11 @@ function isoWeekStart(isoDate: string): string | null {
   return `${yy}-${mm}-${dd}`;
 }
 
-function weekLabel(startIso: string): string {
-  const today = new Date();
-  const thisWeek = isoWeekStart(toIso(today));
-  if (thisWeek === startIso) return 'this week';
-
-  const lastWeek = (() => {
-    const d = new Date(today);
-    d.setDate(d.getDate() - 7);
-    return isoWeekStart(toIso(d));
-  })();
-  if (lastWeek === startIso) return 'last week';
-
-  // "Week of May 5" — pulled from the Monday date.
-  const [y, m, d] = startIso.split('-').map(Number);
-  const dt = new Date(y, m - 1, d);
-  const monthShort = dt.toLocaleString('en-US', { month: 'short' });
-  return `week of ${monthShort} ${dt.getDate()}`;
+/** "April 2026" — full month + year, from a YYYY-MM-01 key. */
+function monthLabel(startIso: string): string {
+  const [y, m] = startIso.split('-').map(Number);
+  const dt = new Date(y, m - 1, 1);
+  return dt.toLocaleString('en-US', { month: 'long', year: 'numeric' });
 }
 
 function toIso(d: Date): string {

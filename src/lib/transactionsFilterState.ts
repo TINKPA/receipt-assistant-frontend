@@ -7,10 +7,14 @@ import {
   type TransactionType,
 } from '../types';
 
-export type DatePreset = 'all' | 'last_30d' | 'last_90d' | 'this_year' | 'custom';
+export type DatePreset = 'month' | 'all' | 'last_30d' | 'last_90d' | 'this_year' | 'custom';
 
 export interface FilterState {
   datePreset: DatePreset;
+  // Only consulted when datePreset === 'month'. YYYY-MM; '' means the
+  // current calendar month (resolved against `now` in effectiveDateRange).
+  // This is the Ledger's default browse mode — see the month switcher.
+  month: string;
   // Only consulted when datePreset === 'custom'.
   customFrom: string;
   customTo: string;
@@ -27,7 +31,8 @@ export interface FilterState {
 }
 
 export const DEFAULT_FILTERS: FilterState = {
-  datePreset: 'all',
+  datePreset: 'month',
+  month: '',
   customFrom: '',
   customTo: '',
   categories: [],
@@ -39,6 +44,7 @@ export const DEFAULT_FILTERS: FilterState = {
 };
 
 export const DATE_PRESET_LABEL: Record<DatePreset, string> = {
+  month: 'This month',
   all: 'All time',
   last_30d: 'Last 30 days',
   last_90d: 'Last 90 days',
@@ -88,6 +94,11 @@ export function resolveSort(id: string): SortOption {
   return SORT_OPTIONS.find((o) => o.id === id) ?? SORT_OPTIONS[0];
 }
 
+/** Current calendar month as YYYY-MM, against a reference date. */
+export function currentMonthYM(now: Date = new Date()): string {
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+}
+
 /** Compute the ISO date range that should be sent to the backend
  *  for a given filter state. Returns undefined values for "no bound". */
 export function effectiveDateRange(
@@ -96,6 +107,16 @@ export function effectiveDateRange(
 ): { occurred_from?: string; occurred_to?: string } {
   const ymd = (d: Date) => d.toISOString().slice(0, 10);
   switch (filters.datePreset) {
+    case 'month': {
+      // Default browse mode: a single calendar month. '' = current month.
+      const ym = filters.month || currentMonthYM(now);
+      const [y, m] = ym.split('-').map(Number);
+      const lastDay = new Date(y, m, 0).getDate(); // day 0 of next month
+      return {
+        occurred_from: `${ym}-01`,
+        occurred_to: `${ym}-${String(lastDay).padStart(2, '0')}`,
+      };
+    }
     case 'all':
       return {};
     case 'last_30d': {
@@ -121,7 +142,8 @@ export function effectiveDateRange(
 
 export function isFilterActive(filters: FilterState, q: string): boolean {
   return (
-    filters.datePreset !== 'all' ||
+    // Month mode (any month) is the default browse mode, not a "filter".
+    filters.datePreset !== 'month' ||
     filters.categories.length > 0 ||
     filters.transactionTypes.length > 0 ||
     filters.status !== undefined ||
@@ -145,7 +167,7 @@ export function isFilterActive(filters: FilterState, q: string): boolean {
 // whose value differs from its default — TanStack drops `undefined`
 // keys from the querystring entirely.
 
-const datePresetSchema = z.enum(['all', 'last_30d', 'last_90d', 'this_year', 'custom']);
+const datePresetSchema = z.enum(['month', 'all', 'last_30d', 'last_90d', 'this_year', 'custom']);
 const statusSchema = z.enum(['draft', 'posted', 'voided', 'reconciled', 'error']);
 const sortIdSchema = z.enum(SORT_OPTIONS.map((o) => o.id) as [string, ...string[]]);
 
@@ -154,8 +176,9 @@ const sortIdSchema = z.enum(SORT_OPTIONS.map((o) => o.id) as [string, ...string[
 // hand-mangled URL) resolves to the default instead of throwing. This
 // is what lets `validateSearch` never reject a URL.
 export const transactionsSearchSchema = z.object({
-  // Date preset + (custom-only) bounds.
+  // Date preset + (month-only) month + (custom-only) bounds.
   datePreset: datePresetSchema.optional().catch(DEFAULT_FILTERS.datePreset),
+  month: z.string().optional().catch(''),
   from: z.string().optional().catch(''),
   to: z.string().optional().catch(''),
   // Multi-selects. A malformed value (or unknown member) falls to [].
@@ -184,6 +207,7 @@ export function searchToFilterState(search: TransactionsSearch): {
 } {
   const filters: FilterState = {
     datePreset: search.datePreset ?? DEFAULT_FILTERS.datePreset,
+    month: search.month ?? DEFAULT_FILTERS.month,
     customFrom: search.from ?? DEFAULT_FILTERS.customFrom,
     customTo: search.to ?? DEFAULT_FILTERS.customTo,
     categories: search.categories ?? DEFAULT_FILTERS.categories,
@@ -212,6 +236,9 @@ export function filterStateToSearch(args: {
   const { filters, sortId, q, showDeleted } = args;
   const out: TransactionsSearch = {};
   if (filters.datePreset !== DEFAULT_FILTERS.datePreset) out.datePreset = filters.datePreset;
+  // A non-current month is the only month worth putting in the URL — the
+  // default ('' = current month) stays implicit so the bare URL is clean.
+  if (filters.datePreset === 'month' && filters.month) out.month = filters.month;
   // Custom bounds are only meaningful for the 'custom' preset.
   if (filters.datePreset === 'custom') {
     if (filters.customFrom) out.from = filters.customFrom;
