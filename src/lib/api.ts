@@ -1459,76 +1459,22 @@ export async function getBrand(brandId: string): Promise<BackendBrand> {
   return unwrap('getBrand', data, error, response.status);
 }
 
-/**
- * Brand rollup response. Hand-authored mirror of `BrandRollup` in
- * `backend src/schemas/v1/brand.ts`; will switch to the
- * openapi-typescript generated form once the openapi.json on `main`
- * picks up the new path (codegen pulls from GitHub, see
- * `npm run api:types`).
- */
-export interface BrandRollupStats {
-  location_count: number;
-  transaction_count: number;
-  lifetime_spend_minor: number;
-  current_month_spend_minor: number;
-  last_transaction_date: string | null;
-  currency: string;
-}
-
-export interface BrandRollupLocation {
-  merchant: MerchantDetailResponse['merchant'];
-  stats: MerchantDetailResponse['stats'];
-}
-
-export interface BrandRollupRecentRow {
-  id: string;
-  occurred_on: string;
-  payee: string | null;
-  status: 'draft' | 'posted' | 'voided' | 'reconciled' | 'error';
-  total_minor: number;
-  currency: string;
-  document_id: string | null;
-  merchant_id: string;
-  merchant_canonical_name: string;
-  merchant_custom_name: string | null;
-}
-
-export interface BrandRollupSibling {
-  brand_id: string;
-  name: string;
-  domain: string | null;
-  icon_url: string | null;
-  location_count: number;
-}
-
-export interface BrandRollup {
-  brand: BackendBrand;
-  stats: BrandRollupStats;
-  locations: BrandRollupLocation[];
-  recent_transactions: BrandRollupRecentRow[];
-  sibling_brands: BrandRollupSibling[];
-}
+// Brand rollup — typed directly from the generated OpenAPI schema. The path
+// `/v1/brands/{brandId}/rollup` and the BrandRollup* schemas are in the
+// committed spec / api-types.ts, so this uses the typed client like every
+// other endpoint (the old hand-written fetch + hand-mirrored interfaces, which
+// predated the path landing in the spec, are gone).
+export type BrandRollupStats = components['schemas']['BrandRollupStats'];
+export type BrandRollupLocation = components['schemas']['BrandRollupLocation'];
+export type BrandRollupRecentRow = components['schemas']['BrandRollupRecentRow'];
+export type BrandRollupSibling = components['schemas']['BrandRollupSibling'];
+export type BrandRollup = components['schemas']['BrandRollup'];
 
 export async function fetchBrandRollup(brandId: string): Promise<BrandRollup> {
-  // openapi-fetch can't see the new path until the GitHub `main` is
-  // refreshed and `api:types` re-run. Use raw fetch for now; the call
-  // shape is trivial and there's no body to validate.
-  const res = await fetch(`/api/v1/brands/${encodeURIComponent(brandId)}/rollup`, {
-    headers: { Accept: 'application/json' },
+  const { data, error, response } = await client.GET('/v1/brands/{brandId}/rollup', {
+    params: { path: { brandId } },
   });
-  if (!res.ok) {
-    const body = await res.text();
-    let problem: unknown = body;
-    try {
-      problem = JSON.parse(body);
-    } catch {
-      /* not JSON */
-    }
-    throw new Error(
-      `fetchBrandRollup failed (${res.status}): ${extractProblemMessage(problem)}`,
-    );
-  }
-  return (await res.json()) as BrandRollup;
+  return unwrap('fetchBrandRollup', data, error, response.status);
 }
 
 export async function listBrandAssets(brandId: string): Promise<BackendBrandAsset[]> {
