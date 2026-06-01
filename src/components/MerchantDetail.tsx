@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import {
   extractProblemMessage,
@@ -9,11 +10,9 @@ import {
   patchPlace,
   pickCjk,
   postRefreshPlace,
-  type MerchantDetailResponse,
   type MerchantTransactionRow,
-  type PlaceFull,
-  type RefreshPlaceResult,
 } from '../lib/api';
+import { qk } from '../lib/queryKeys';
 import { CATEGORY_META } from '../categoryMeta';
 import type { Category } from '../types';
 import { cn } from '../lib/utils';
@@ -35,11 +34,40 @@ interface MerchantDetailProps {
 }
 
 export default function MerchantDetail({ merchantId, onBack, onSelectReceipt, onSelectBrand }: MerchantDetailProps) {
-  const [detail, setDetail] = useState<MerchantDetailResponse | null>(null);
-  const [txns, setTxns] = useState<MerchantTransactionRow[] | null>(null);
-  const [place, setPlace] = useState<PlaceFull | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+
+  // Primary read: merchant detail + its transactions, collapsed onto a
+  // single cache entry keyed by `qk.merchant(merchantId)` so the
+  // brand-rename mutation below can patch it in place.
+  const {
+    data: merchantData,
+    isLoading: loading,
+    error: queryError,
+  } = useQuery({
+    queryKey: qk.merchant(merchantId),
+    queryFn: () =>
+      Promise.all([
+        fetchMerchant(merchantId),
+        fetchMerchantTransactions(merchantId, { limit: 100 }),
+      ]).then(([detail, t]) => ({ detail, txns: t.items })),
+  });
+  const detail = merchantData?.detail ?? null;
+  const txns = merchantData?.txns ?? null;
+  const error = queryError ? extractProblemMessage(queryError) : null;
+
+  // Dependent read: the linked place, for the multilingual name
+  // fallback chain (#74). Best-effort — `retry: false` + a swallowed
+  // error means a missing place / 404 just leaves `place` null and the
+  // Chinese subtitle off, exactly as before. The `'none'` placeholder
+  // key is never fetched because `enabled` is false.
+  const placeId = detail?.merchant.place_id ?? null;
+  const { data: place = null } = useQuery({
+    queryKey: qk.place(placeId ?? 'none'),
+    queryFn: () => fetchPlace(placeId!),
+    enabled: !!placeId,
+    retry: false,
+  });
+
   // "Refresh from source" state machine. `idle` (the button is
   // armed), `pending` (Google call in flight, ~5-10s), `success`
   // (banner with `changed_keys`, auto-fades), `error` (banner with
@@ -51,66 +79,27 @@ export default function MerchantDetail({ merchantId, onBack, onSelectReceipt, on
     | { kind: 'error'; message: string }
   >({ kind: 'idle' });
 
-  useEffect(() => {
-    let cancelled = false;
-    Promise.all([
-      fetchMerchant(merchantId),
-      fetchMerchantTransactions(merchantId, { limit: 100 }),
-    ])
-      .then(([d, t]) => {
-        if (cancelled) return;
-        setDetail(d);
-        setTxns(t.items);
-        setLoading(false);
-        // Pull the linked place separately so its multilingual fields
-        // are available for the name fallback chain (#74). Best-effort —
-        // a missing place_id or 404 just leaves Chinese rendering off.
-        const pid = d.merchant.place_id;
-        if (pid) {
-          fetchPlace(pid)
-            .then((p) => {
-              if (!cancelled) setPlace(p);
-            })
-            .catch(() => {
-              /* ignore — Chinese subtitle just won't render */
-            });
-        }
-      })
-      .catch((e: unknown) => {
-        if (cancelled) return;
-        setError(extractProblemMessage(e));
-        setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [merchantId]);
-
-  const onRefreshFromSource = async () => {
-    if (!place) return;
-    if (refreshState.kind === 'pending') return;
-    setRefreshState({ kind: 'pending' });
-    try {
-      const result: RefreshPlaceResult = await postRefreshPlace(place.id);
-      // Pull the refreshed place so subtitle / Chinese name reflect the
-      // new data; the backend already returns derivation_event_id but
-      // the actual row contents come from a re-fetch.
-      const fresh = await fetchPlace(place.id);
-      setPlace(fresh);
+  // Re-fetch from Google and re-derive multilingual fields. On success
+  // we invalidate the place query so the subtitle reflects fresh data
+  // (replaces the old manual `fetchPlace` re-fetch).
+  const refreshMut = useMutation({
+    mutationFn: () => postRefreshPlace(place!.id),
+    onMutate: () => setRefreshState({ kind: 'pending' }),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: qk.place(place!.id) });
       setRefreshState({ kind: 'success', changedKeys: result.changed_keys });
       // Auto-dismiss the banner after 5s; user can still scroll the
       // page in the meantime. Cleared on next refresh attempt too.
       setTimeout(() => {
-        setRefreshState((s) =>
-          s.kind === 'success' ? { kind: 'idle' } : s,
-        );
+        setRefreshState((s) => (s.kind === 'success' ? { kind: 'idle' } : s));
       }, 5000);
-    } catch (e) {
-      setRefreshState({
-        kind: 'error',
-        message: extractProblemMessage(e),
-      });
-    }
+    },
+    onError: (e) => setRefreshState({ kind: 'error', message: extractProblemMessage(e) }),
+  });
+
+  const onRefreshFromSource = () => {
+    if (!place || refreshMut.isPending) return;
+    refreshMut.mutate();
   };
 
   // Place-level rename (#79 Phase B). Targets a SINGLE branch's
@@ -118,7 +107,13 @@ export default function MerchantDetail({ merchantId, onBack, onSelectReceipt, on
   // a different name from the brand-wide rename — e.g. "Costco
   // Wholesale Burbank" specifically vs. "Costco" everywhere else.
   // Most users want the brand-level rename below instead.
-  const onEditPlaceName = async () => {
+  const patchPlaceMut = useMutation({
+    mutationFn: (patch: { custom_name: string | null }) => patchPlace(place!.id, patch),
+    onSuccess: (updated) => queryClient.setQueryData(qk.place(place!.id), updated),
+    onError: (e) => window.alert(`Could not save: ${extractProblemMessage(e)}`),
+  });
+
+  const onEditPlaceName = () => {
     if (!place) return;
     const current =
       place.custom_name ?? place.custom_name_zh ?? pickCjk(place.display_name_zh) ?? '';
@@ -127,14 +122,7 @@ export default function MerchantDetail({ merchantId, onBack, onSelectReceipt, on
       current,
     );
     if (next === null) return; // user cancelled
-    try {
-      const updated = await patchPlace(place.id, {
-        custom_name: next.trim() === '' ? null : next.trim(),
-      });
-      setPlace(updated);
-    } catch (e) {
-      window.alert(`Could not save: ${extractProblemMessage(e)}`);
-    }
+    patchPlaceMut.mutate({ custom_name: next.trim() === '' ? null : next.trim() });
   };
 
   // Brand-level rename (#79 Phase C). Propagates to every place row
@@ -142,7 +130,19 @@ export default function MerchantDetail({ merchantId, onBack, onSelectReceipt, on
   // `place_id IS NULL` (Phase D effect). One rename here is the
   // typical user intent — fixes "Costco" everywhere instead of
   // having to override 5 separate place rows.
-  const onEditBrandName = async () => {
+  const patchMerchantMut = useMutation({
+    mutationFn: (patch: { custom_name: string | null }) =>
+      patchMerchant(detail!.merchant.id, patch),
+    onSuccess: (updated) =>
+      queryClient.setQueryData(qk.merchant(merchantId), (old: typeof merchantData) =>
+        old
+          ? { ...old, detail: { ...old.detail, merchant: { ...old.detail.merchant, ...updated } } }
+          : old,
+      ),
+    onError: (e) => window.alert(`Could not save: ${extractProblemMessage(e)}`),
+  });
+
+  const onEditBrandName = () => {
     if (!detail) return;
     const current = detail.merchant.custom_name ?? detail.merchant.canonical_name ?? '';
     const next = window.prompt(
@@ -150,17 +150,7 @@ export default function MerchantDetail({ merchantId, onBack, onSelectReceipt, on
       current,
     );
     if (next === null) return; // user cancelled
-    try {
-      const updated = await patchMerchant(detail.merchant.id, {
-        custom_name: next.trim() === '' ? null : next.trim(),
-      });
-      setDetail({
-        ...detail,
-        merchant: { ...detail.merchant, ...updated },
-      });
-    } catch (e) {
-      window.alert(`Could not save: ${extractProblemMessage(e)}`);
-    }
+    patchMerchantMut.mutate({ custom_name: next.trim() === '' ? null : next.trim() });
   };
 
   if (loading) {
