@@ -1,4 +1,5 @@
 import { QueryClient } from '@tanstack/react-query';
+import { qk } from './queryKeys';
 
 /**
  * Single app-wide QueryClient.
@@ -43,7 +44,7 @@ export const queryClient = new QueryClient({
  * the processing toast) can't drift apart. Replaces the migration bridge.
  */
 export function invalidateLedgerSurfaces() {
-  queryClient.invalidateQueries({ queryKey: ['transactions'] });
-  queryClient.invalidateQueries({ queryKey: ['summary'] });
-  queryClient.invalidateQueries({ queryKey: ['batches'] });
+  queryClient.invalidateQueries({ queryKey: qk.transactions.all });
+  queryClient.invalidateQueries({ queryKey: qk.summary.all });
+  queryClient.invalidateQueries({ queryKey: qk.batches.all });
 }

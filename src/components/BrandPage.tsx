@@ -8,6 +8,7 @@ import {
   type BrandRollupSibling,
 } from '../lib/api';
 import { cn } from '../lib/utils';
+import { qk } from '../lib/queryKeys';
 import { brandLink, merchantLink, receiptLink } from '../lib/navLinks';
 import { MerchantIcon } from './MerchantIcon';
 import { statusBadge } from '../lib/transactionStatus';
@@ -49,7 +50,7 @@ export default function BrandPage({
     isLoading: loading,
     error: queryError,
   } = useQuery({
-    queryKey: ['brandRollup', brandId],
+    queryKey: qk.brandRollup(brandId),
     queryFn: () => fetchBrandRollup(brandId),
   });
   const error = queryError ? extractProblemMessage(queryError) : null;

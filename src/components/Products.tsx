@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ChevronRight, ArrowLeft, RotateCw, GitMerge } from 'lucide-react';
+import { qk } from '../lib/queryKeys';
 import {
   listProducts,
   getProduct,
@@ -66,7 +67,7 @@ export default function Products({ onBack }: ProductsProps) {
     error: queryError,
     refetch,
   } = useQuery({
-    queryKey: ['products', klass, search.trim()],
+    queryKey: qk.products(klass, search.trim()),
     queryFn: () =>
       listProducts({
         class: klass === 'all' ? undefined : klass,

@@ -13,6 +13,7 @@ import {
   type BackendDocument,
 } from '../lib/api';
 import { listTombstones, removeTombstone } from '../lib/tombstones';
+import { qk } from '../lib/queryKeys';
 import { useDebouncedValue } from '../lib/useDebouncedValue';
 import { cn } from '../lib/utils';
 import type { Transaction } from '../types';
@@ -190,7 +191,7 @@ export default function Transactions({
     hasNextPage,
     fetchNextPage,
   } = useInfiniteQuery({
-    queryKey: ['transactions', 'list', queryArgs],
+    queryKey: qk.transactions.list(queryArgs),
     queryFn: ({ pageParam }) =>
       fetchTransactionsPage({ ...queryArgs, cursor: pageParam }),
     initialPageParam: undefined as string | undefined,
@@ -223,7 +224,7 @@ export default function Transactions({
   // backend (stale ones self-prune). Its own query so a restore/hard-delete can
   // invalidate it independently of the main list. Disabled unless showDeleted.
   const { data: tombstones = [], isLoading: tombstoneLoading } = useQuery({
-    queryKey: ['tombstones'],
+    queryKey: qk.tombstones,
     enabled: showDeleted,
     queryFn: async (): Promise<TombstoneRow[]> => {
       const ids = listTombstones();
@@ -294,8 +295,8 @@ export default function Transactions({
     await hardDeleteTransaction(hardDeleteTarget.id, hardDeleteTarget.etag);
     setHardDeleteTarget(null);
     // Hard delete drops the row from the list and creates a tombstone.
-    queryClient.invalidateQueries({ queryKey: ['transactions'] });
-    queryClient.invalidateQueries({ queryKey: ['tombstones'] });
+    queryClient.invalidateQueries({ queryKey: qk.transactions.all });
+    queryClient.invalidateQueries({ queryKey: qk.tombstones });
   };
 
   const handleRestoreTombstone = async (id: string) => {
@@ -303,8 +304,8 @@ export default function Transactions({
       await restoreDocument(id);
       removeTombstone(id);
       // Restore re-adds the row to the main list and removes the tombstone.
-      queryClient.invalidateQueries({ queryKey: ['transactions'] });
-      queryClient.invalidateQueries({ queryKey: ['tombstones'] });
+      queryClient.invalidateQueries({ queryKey: qk.transactions.all });
+      queryClient.invalidateQueries({ queryKey: qk.tombstones });
     } catch (err: unknown) {
       setRowError(extractProblemMessage(err));
     }
@@ -451,7 +452,7 @@ export default function Transactions({
         transactionId={unreconcileTarget}
         onUnreconciled={() => {
           setUnreconcileTarget(null);
-          queryClient.invalidateQueries({ queryKey: ['transactions'] });
+          queryClient.invalidateQueries({ queryKey: qk.transactions.all });
         }}
       />
     </div>

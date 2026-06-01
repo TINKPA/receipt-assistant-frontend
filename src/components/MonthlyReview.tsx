@@ -20,6 +20,7 @@ import {
 } from '../lib/api';
 import type { Category, Transaction } from '../types';
 import { cn } from '../lib/utils';
+import { qk } from '../lib/queryKeys';
 import { CategoryIcon } from './CategoryIcon';
 import { MerchantIcon } from './MerchantIcon';
 import { categoryLedgerLink, receiptLink } from '../lib/navLinks';
@@ -103,7 +104,7 @@ export default function MonthlyReview({ month }: { month?: string }) {
   // ~200-cap on the API call covers all but the most active months.
   // All five reports fetch together in one query keyed by the month pair.
   const { data, isLoading: loading, error: queryError } = useQuery({
-    queryKey: ['monthlyReview', yearMonthKey(now), yearMonthKey(prevMonth)],
+    queryKey: qk.monthlyReview(yearMonthKey(now), yearMonthKey(prevMonth)),
     queryFn: async () => {
       const [cf, tr, thisM, lastM, top] = await Promise.all([
         getCashflowReport({ from: startOfMonth(sixMonthsAgo(now)), to: endOfMonth(now) }),
