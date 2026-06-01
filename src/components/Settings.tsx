@@ -1,7 +1,9 @@
 import React from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Boxes, Tag, ChevronRight } from 'lucide-react';
 import BuildInfoPanel from './BuildInfoPanel';
-import { fetchBackendBuildInfo, type BuildInfo } from '../lib/api';
+import { fetchBackendBuildInfo } from '../lib/api';
+import { qk } from '../lib/queryKeys';
 
 interface SettingsProps {
   /** Open the Products catalog screen (route: /settings/products). */
@@ -16,11 +18,10 @@ interface SettingsProps {
  * each catalog card now drives a real route via the injected callbacks.
  */
 export default function Settings({ onOpenProducts, onOpenBrands }: SettingsProps) {
-  const [backendBuildInfo, setBackendBuildInfo] = React.useState<BuildInfo | null>(null);
-
-  React.useEffect(() => {
-    fetchBackendBuildInfo().then(setBackendBuildInfo).catch(() => setBackendBuildInfo(null));
-  }, []);
+  const { data: backendBuildInfo = null } = useQuery({
+    queryKey: qk.buildInfo,
+    queryFn: fetchBackendBuildInfo,
+  });
 
   return (
     <div className="space-y-6">
