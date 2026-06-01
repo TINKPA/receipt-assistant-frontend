@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { ChevronLeft, ChevronRight, TrendingUp, TrendingDown, Loader2, Landmark, PiggyBank, Wallet } from 'lucide-react';
 import {
@@ -17,11 +18,8 @@ import {
   getNetWorthReport,
   getSummaryReport,
   getTrendsReport,
-  type BackendCashflowReport,
-  type BackendNetWorthReport,
-  type BackendSummaryReport,
-  type BackendTrendsReport,
 } from '../lib/api';
+import { qk } from '../lib/queryKeys';
 import type { Category } from '../types';
 import { cn } from '../lib/utils';
 import { CategoryIcon } from './CategoryIcon';
@@ -83,37 +81,33 @@ export default function YearlyReview({ year }: { year?: number }) {
     navigate({ search: { y: displayYear + 1 } });
   };
 
-  const [netWorth, setNetWorth] = useState<BackendNetWorthReport | null>(null);
-  const [netWorthPrev, setNetWorthPrev] = useState<BackendNetWorthReport | null>(null);
-  const [cashflow, setCashflow] = useState<BackendCashflowReport | null>(null);
-  const [trends, setTrends] = useState<BackendTrendsReport | null>(null);
-  const [summary, setSummary] = useState<BackendSummaryReport | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    Promise.all([
-      getNetWorthReport({ asOf: now.toISOString().slice(0, 10) }),
-      getNetWorthReport({ asOf: lastYear.toISOString().slice(0, 10) }),
-      getCashflowReport({ from: startOfYear(now), to: endOfYear(now) }),
-      getTrendsReport({
-        from: startOfYear(now),
-        to: endOfYear(now),
-        period: 'month',
-        groupBy: 'total',
-      }),
-      getSummaryReport({ from: startOfYear(now), to: endOfYear(now), groupBy: 'category' }),
-    ])
-      .then(([nw, nwPrev, cf, tr, sm]) => {
-        setNetWorth(nw);
-        setNetWorthPrev(nwPrev);
-        setCashflow(cf);
-        setTrends(tr);
-        setSummary(sm);
-      })
-      .catch((e) => setError(extractProblemMessage(e)))
-      .finally(() => setLoading(false));
-  }, [now, lastYear]);
+  const { data, isLoading: loading, error: queryError } = useQuery({
+    queryKey: qk.yearlyReview(
+      now.toISOString().slice(0, 10),
+      lastYear.toISOString().slice(0, 10),
+    ),
+    queryFn: async () => {
+      const [nw, nwPrev, cf, tr, sm] = await Promise.all([
+        getNetWorthReport({ asOf: now.toISOString().slice(0, 10) }),
+        getNetWorthReport({ asOf: lastYear.toISOString().slice(0, 10) }),
+        getCashflowReport({ from: startOfYear(now), to: endOfYear(now) }),
+        getTrendsReport({
+          from: startOfYear(now),
+          to: endOfYear(now),
+          period: 'month',
+          groupBy: 'total',
+        }),
+        getSummaryReport({ from: startOfYear(now), to: endOfYear(now), groupBy: 'category' }),
+      ]);
+      return { netWorth: nw, netWorthPrev: nwPrev, cashflow: cf, trends: tr, summary: sm };
+    },
+  });
+  const error = queryError ? extractProblemMessage(queryError) : null;
+  const netWorth = data?.netWorth ?? null;
+  const netWorthPrev = data?.netWorthPrev ?? null;
+  const cashflow = data?.cashflow ?? null;
+  const trends = data?.trends ?? null;
+  const summary = data?.summary ?? null;
 
   if (loading) {
     return (
