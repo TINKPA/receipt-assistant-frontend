@@ -181,8 +181,8 @@ export default function Transactions({
   // keyed by queryArgs, so drilling into a receipt and coming back rehydrates
   // every page synchronously instead of refetching only page 1 — the
   // precondition for scroll restoration (#89). Refetch-on-mutation is driven
-  // by cache invalidation (the bumpRefresh bridge + the row handlers below),
-  // replacing the old refreshKey-as-effect-dep remount.
+  // by cache invalidation (invalidateLedgerSurfaces on upload-complete, plus
+  // the row handlers below), replacing the old refreshKey-as-effect-dep remount.
   const {
     data,
     isLoading: loading,

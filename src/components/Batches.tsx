@@ -1,9 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Loader2, FileStack, CheckCircle2, AlertCircle, Clock, Cog } from 'lucide-react';
 import {
   listBatches,
   extractProblemMessage,
-  type BackendBatchSummary,
   type BatchStatus,
 } from '../lib/api';
 import { cn } from '../lib/utils';
@@ -36,16 +36,12 @@ function formatDate(iso: string): string {
 }
 
 export default function Batches({ onSelectBatch }: BatchesProps) {
-  const [items, setItems] = useState<BackendBatchSummary[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    listBatches({ limit: 50 })
-      .then((r) => setItems(r.items))
-      .catch((e) => setError(extractProblemMessage(e)))
-      .finally(() => setLoading(false));
-  }, []);
+  const { data, isLoading: loading, error: queryError } = useQuery({
+    queryKey: ['batches', { limit: 50 }],
+    queryFn: () => listBatches({ limit: 50 }),
+  });
+  const items = data?.items ?? [];
+  const error = queryError ? extractProblemMessage(queryError) : null;
 
   return (
     <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-700">

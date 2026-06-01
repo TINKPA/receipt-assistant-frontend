@@ -30,3 +30,20 @@ export const queryClient = new QueryClient({
     },
   },
 });
+
+/**
+ * Refresh every list/summary surface that a receipt mutation or a completed
+ * upload can affect — the Ledger (`['transactions']`), the Dashboard month
+ * summary (`['summary']`), and the Batches list (`['batches']`).
+ *
+ * This is the exact replacement for the old `bumpRefresh()` fan-out: that
+ * counter remounted all three list screens at once; this invalidates the same
+ * three query namespaces (by prefix, so arg-tails don't have to match). One
+ * place to maintain so the call sites (upload-complete, add, receipt mutation,
+ * the processing toast) can't drift apart. Replaces the migration bridge.
+ */
+export function invalidateLedgerSurfaces() {
+  queryClient.invalidateQueries({ queryKey: ['transactions'] });
+  queryClient.invalidateQueries({ queryKey: ['summary'] });
+  queryClient.invalidateQueries({ queryKey: ['batches'] });
+}

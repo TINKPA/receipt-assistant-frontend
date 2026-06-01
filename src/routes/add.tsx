@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import Capture from '../components/Capture';
 import { useAppCtx } from '../lib/appContext';
+import { invalidateLedgerSurfaces } from '../lib/queryClient';
 
 /**
  * `/add` is a full-screen capture surface. It is intentionally a child of the
@@ -13,13 +14,13 @@ export const Route = createFileRoute('/add')({
 
 function AddRoute() {
   const navigate = useNavigate();
-  const { addJob, bumpRefresh } = useAppCtx();
+  const { addJob } = useAppCtx();
   return (
     <Capture
       onCancel={() => navigate({ to: '/' })}
       onComplete={(job) => {
         addJob(job);
-        bumpRefresh();
+        invalidateLedgerSurfaces();
         // Drop back to Books so the user sees their entry processing.
         navigate({ to: '/' });
       }}

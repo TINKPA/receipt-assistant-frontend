@@ -1,10 +1,10 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import {
   fetchTransactions,
   fetchSummary,
   classifyBackendCategory,
-  type SpendingSummary,
 } from '../lib/api';
 import type { Transaction, Category } from '../types';
 import { isProcessing as txIsProcessing } from '../lib/transactionStatus';
@@ -46,28 +46,22 @@ export default function Dashboard({
   processingItems = [],
   onDismissProcessing,
 }: DashboardProps) {
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [summary, setSummary] = useState<SpendingSummary[]>([]);
-  const [loading, setLoading] = useState(true);
-
   const monthRange = useMemo(() => currentMonthRange(new Date()), []);
 
-  useEffect(() => {
-    Promise.all([
-      // Recent = freshly-uploaded / re-processed, not "this month's
-      // activity". Ride the `created_at desc` default with no month
-      // filter so a receipt with `occurred_on` years ago still bubbles
-      // to the top right after upload.
-      fetchTransactions({ limit: 4 }),
-      fetchSummary({ from: monthRange.from, to: monthRange.to }),
-    ])
-      .then(([txs, sum]) => {
-        setTransactions(txs);
-        setSummary(sum);
-      })
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, [monthRange.from, monthRange.to]);
+  // Recent = freshly-uploaded / re-processed, not "this month's activity".
+  // Ride the `created_at desc` default with no month filter so a receipt with
+  // `occurred_on` years ago still bubbles to the top right after upload. Keyed
+  // under ['transactions','recent'] so it shares the namespace the Ledger and
+  // mutation invalidators target.
+  const { data: transactions = [], isLoading: txLoading } = useQuery({
+    queryKey: ['transactions', 'recent', { limit: 4 }],
+    queryFn: () => fetchTransactions({ limit: 4 }),
+  });
+  const { data: summary = [], isLoading: sumLoading } = useQuery({
+    queryKey: ['summary', { from: monthRange.from, to: monthRange.to }],
+    queryFn: () => fetchSummary({ from: monthRange.from, to: monthRange.to }),
+  });
+  const loading = txLoading || sumLoading;
 
   const spendingByCategory = useMemo<SpendingCategorySlice[]>(() => {
     const buckets = new Map<Category, { total: number; count: number }>();
