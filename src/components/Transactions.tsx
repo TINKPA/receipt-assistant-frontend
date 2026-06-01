@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { receiptLink } from '../lib/navLinks';
 import {
@@ -74,24 +75,13 @@ export default function Transactions({
   processingItems = [],
   onDismissProcessing,
 }: TransactionsProps) {
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [refreshKey, setRefreshKey] = useState(0);
-  // Guards loadMore against double-firing while a page request is in flight
-  // (the IntersectionObserver can fire repeatedly as the sentinel stays in
-  // view). A ref, not state, so it's synchronous.
-  const loadingMoreRef = useRef(false);
+  const queryClient = useQueryClient();
+  // The infinite-scroll sentinel; the IntersectionObserver below watches it.
   const sentinelRef = useRef<HTMLDivElement | null>(null);
 
   const [hardDeleteTarget, setHardDeleteTarget] = useState<{ id: string; etag: string } | null>(null);
   const [unreconcileTarget, setUnreconcileTarget] = useState<string | null>(null);
   const [rowError, setRowError] = useState<string | null>(null);
-
-  const [tombstones, setTombstones] = useState<TombstoneRow[]>([]);
-  const [tombstoneLoading, setTombstoneLoading] = useState(false);
 
   // All view state is derived from the URL — single source of truth.
   const { filters, sortId, q: searchQuery, showDeleted } = useMemo(
@@ -185,97 +175,80 @@ export default function Transactions({
     activeSort.order,
   ]);
 
-  // First page: reset the list whenever the query changes. `cancelled`
-  // guards against a slow page-1 request resolving after the filters moved on.
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    loadingMoreRef.current = false;
-    fetchTransactionsPage(queryArgs)
-      .then(({ items, nextCursor: nc }) => {
-        if (cancelled) return;
-        setTransactions(items);
-        setNextCursor(nc);
-        setError(null);
-      })
-      .catch((e: unknown) => {
-        if (!cancelled) setError(extractProblemMessage(e));
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [queryArgs, refreshKey]);
-
-  // Load the next page and append. No-ops when there's nothing more or a
-  // request is already in flight.
-  const loadMore = useCallback(() => {
-    if (loadingMoreRef.current || !nextCursor) return;
-    loadingMoreRef.current = true;
-    setLoadingMore(true);
-    fetchTransactionsPage({ ...queryArgs, cursor: nextCursor })
-      .then(({ items, nextCursor: nc }) => {
-        setTransactions((prev) => [...prev, ...items]);
-        setNextCursor(nc);
-      })
-      .catch((e: unknown) => setError(extractProblemMessage(e)))
-      .finally(() => {
-        loadingMoreRef.current = false;
-        setLoadingMore(false);
-      });
-  }, [queryArgs, nextCursor]);
+  // Ledger rows via TanStack Query infinite pagination. The cursor-based
+  // backend (fetchTransactionsPage → {items, nextCursor}) maps directly onto
+  // useInfiniteQuery. Crucially the loaded pages now live in the query cache
+  // keyed by queryArgs, so drilling into a receipt and coming back rehydrates
+  // every page synchronously instead of refetching only page 1 — the
+  // precondition for scroll restoration (#89). Refetch-on-mutation is driven
+  // by cache invalidation (the bumpRefresh bridge + the row handlers below),
+  // replacing the old refreshKey-as-effect-dep remount.
+  const {
+    data,
+    isLoading: loading,
+    isFetchingNextPage: loadingMore,
+    error: listError,
+    hasNextPage,
+    fetchNextPage,
+  } = useInfiniteQuery({
+    queryKey: ['transactions', 'list', queryArgs],
+    queryFn: ({ pageParam }) =>
+      fetchTransactionsPage({ ...queryArgs, cursor: pageParam }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (last) => last.nextCursor ?? undefined,
+  });
+  const transactions = useMemo(
+    () => data?.pages.flatMap((p) => p.items) ?? [],
+    [data],
+  );
+  const error = listError ? extractProblemMessage(listError) : null;
 
   // Auto-load the next page when the bottom sentinel scrolls into view.
+  // fetchNextPage self-guards against concurrent calls, so the old in-flight
+  // ref is gone.
   useEffect(() => {
     const el = sentinelRef.current;
-    if (!el || !nextCursor) return;
+    if (!el || !hasNextPage) return;
     const io = new IntersectionObserver(
       (entries) => {
-        if (entries[0]?.isIntersecting) loadMore();
+        if (entries[0]?.isIntersecting) fetchNextPage();
       },
       { rootMargin: '300px' },
     );
     io.observe(el);
     return () => io.disconnect();
-  }, [loadMore, nextCursor]);
+  }, [hasNextPage, fetchNextPage]);
 
-  useEffect(() => {
-    if (!showDeleted) {
-      setTombstones([]);
-      return;
-    }
-    const ids = listTombstones();
-    if (ids.length === 0) {
-      setTombstones([]);
-      return;
-    }
-    setTombstoneLoading(true);
-    setTombstones(ids.map((id) => ({ status: 'loading', id })));
-    Promise.allSettled(
-      ids.map(async (id): Promise<TombstoneRow> => {
-        try {
-          const { data } = await getDocument(id, { includeDeleted: true });
-          if (!data.deleted_at) {
+  // Soft-deleted documents the user chose to keep visible (showDeleted). Their
+  // ids are tracked client-side in localStorage; each is re-checked against the
+  // backend (stale ones self-prune). Its own query so a restore/hard-delete can
+  // invalidate it independently of the main list. Disabled unless showDeleted.
+  const { data: tombstones = [], isLoading: tombstoneLoading } = useQuery({
+    queryKey: ['tombstones'],
+    enabled: showDeleted,
+    queryFn: async (): Promise<TombstoneRow[]> => {
+      const ids = listTombstones();
+      if (ids.length === 0) return [];
+      const results = await Promise.allSettled(
+        ids.map(async (id): Promise<TombstoneRow> => {
+          try {
+            const { data: doc } = await getDocument(id, { includeDeleted: true });
+            if (!doc.deleted_at) {
+              removeTombstone(id);
+              return { status: 'gone', id };
+            }
+            return { status: 'present', id, doc };
+          } catch {
             removeTombstone(id);
             return { status: 'gone', id };
           }
-          return { status: 'present', id, doc: data };
-        } catch {
-          removeTombstone(id);
-          return { status: 'gone', id };
-        }
-      }),
-    )
-      .then((results) => {
-        const next = results
-          .map((r) => (r.status === 'fulfilled' ? r.value : null))
-          .filter((x): x is TombstoneRow => x !== null && x.status !== 'gone');
-        setTombstones(next);
-      })
-      .finally(() => setTombstoneLoading(false));
-  }, [showDeleted, refreshKey]);
+        }),
+      );
+      return results
+        .map((r) => (r.status === 'fulfilled' ? r.value : null))
+        .filter((x): x is TombstoneRow => x !== null && x.status !== 'gone');
+    },
+  });
 
   const filteredTransactions = useMemo(() => {
     let out = transactions;
@@ -321,15 +294,18 @@ export default function Transactions({
     if (!hardDeleteTarget) return;
     await hardDeleteTransaction(hardDeleteTarget.id, hardDeleteTarget.etag);
     setHardDeleteTarget(null);
-    setRefreshKey((k) => k + 1);
+    // Hard delete drops the row from the list and creates a tombstone.
+    queryClient.invalidateQueries({ queryKey: ['transactions'] });
+    queryClient.invalidateQueries({ queryKey: ['tombstones'] });
   };
 
   const handleRestoreTombstone = async (id: string) => {
     try {
       await restoreDocument(id);
       removeTombstone(id);
-      setTombstones((prev) => prev.filter((t) => t.id !== id));
-      setRefreshKey((k) => k + 1);
+      // Restore re-adds the row to the main list and removes the tombstone.
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['tombstones'] });
     } catch (err: unknown) {
       setRowError(extractProblemMessage(err));
     }
@@ -442,7 +418,7 @@ export default function Transactions({
       {/* Infinite-scroll sentinel: when it scrolls into view (or near it,
           per rootMargin) the next page loads and appends. Only present while
           a next page exists. */}
-      {!loading && nextCursor && (
+      {!loading && hasNextPage && (
         <div ref={sentinelRef} aria-hidden="true" className="h-1" />
       )}
       {loadingMore && (
@@ -478,7 +454,7 @@ export default function Transactions({
         transactionId={unreconcileTarget}
         onUnreconciled={() => {
           setUnreconcileTarget(null);
-          setRefreshKey((k) => k + 1);
+          queryClient.invalidateQueries({ queryKey: ['transactions'] });
         }}
       />
     </div>
