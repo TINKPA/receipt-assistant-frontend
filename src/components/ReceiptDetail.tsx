@@ -25,6 +25,8 @@ import EditReceiptModal from './EditReceiptModal';
 import ConfirmActionDialog from './ConfirmActionDialog';
 import DeleteReceiptDialog from './DeleteReceiptDialog';
 import DeletedBadge from './DeletedBadge';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { qk } from '../lib/queryKeys';
 import { removeTombstone } from '../lib/tombstones';
 
 interface ReceiptDetailProps {
@@ -58,11 +60,8 @@ function md<T = unknown>(meta: Metadata | undefined, key: string): T | undefined
  * Data source: fetchReceiptDetail → real backend. No mocks, no fixtures.
  */
 export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: ReceiptDetailProps) {
-  const [receipt, setReceipt] = useState<ReceiptView | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
   const [activeDialog, setActiveDialog] = useState<'edit' | 'void' | 'delete' | null>(null);
-  const [restoring, setRestoring] = useState(false);
   const [restoreError, setRestoreError] = useState<string | null>(null);
   // Re-extract state machine. `idle` armed; `pending` (~30-60s — the
   // agent re-OCRs the image); `success` shows `changed_keys` toast;
@@ -75,63 +74,85 @@ export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: Re
     | { kind: 'error'; message: string }
   >({ kind: 'idle' });
 
-  const loadReceipt = () => {
-    fetchReceiptDetail(receiptId)
-      .then(setReceipt)
-      .catch((e: unknown) => setError(extractProblemMessage(e)))
-      .finally(() => setLoading(false));
-  };
+  // The receipt detail (a Transaction + its documents) with its ETag embedded
+  // in the view. Auto-polls every 5s while the extractor is still working
+  // (status draft/error) via a conditional refetchInterval — replaces the old
+  // setInterval effect.
+  const {
+    data: receipt = null,
+    isLoading: loading,
+    error: queryError,
+  } = useQuery({
+    queryKey: qk.receipt(receiptId),
+    queryFn: () => fetchReceiptDetail(receiptId),
+    refetchInterval: (query) => {
+      const s = query.state.data?.status;
+      return s === 'draft' || s === 'error' ? 5000 : false;
+    },
+  });
+  const error = queryError ? extractProblemMessage(queryError) : null;
 
+  const invalidateReceipt = () =>
+    queryClient.invalidateQueries({ queryKey: qk.receipt(receiptId) });
+
+  // ETag write-back invariant: a PATCH/void response carries a FRESH ETag.
+  // Write the updated view straight into the cache so a subsequent edit sends
+  // the current If-Match. Invalidate-and-refetch would leave a stale-etag
+  // window in which a fast second edit 412s — so this is setQueryData, not
+  // invalidate. (EditReceiptModal calls this via onUpdated on PATCH success.)
   const handleUpdated = (txn: BackendTransaction, etag: string | null) => {
-    setReceipt(toReceiptView(txn, etag));
+    queryClient.setQueryData(qk.receipt(receiptId), toReceiptView(txn, etag));
   };
 
-  const handleVoidConfirm = async (reason: string) => {
-    if (!receipt?.etag) {
-      const fresh = await getTransaction(receipt!.id);
-      if (!fresh.etag) throw new Error('No ETag — reload and retry.');
-      await voidTransaction(receipt!.id, reason, fresh.etag);
-    } else {
-      await voidTransaction(receipt.id, reason, receipt.etag);
-    }
-    setActiveDialog(null);
-    loadReceipt();
-    onAfterMutation?.();
-  };
+  const voidMut = useMutation({
+    mutationFn: async (reason: string) => {
+      // Defensive: if the cached view lacks an etag, re-fetch a fresh one.
+      let etag = receipt?.etag ?? null;
+      if (!etag) {
+        const fresh = await getTransaction(receipt!.id);
+        if (!fresh.etag) throw new Error('No ETag — reload and retry.');
+        etag = fresh.etag;
+      }
+      return voidTransaction(receipt!.id, reason, etag);
+    },
+    onSuccess: () => {
+      setActiveDialog(null);
+      invalidateReceipt();
+      onAfterMutation?.();
+    },
+  });
 
   const handleDeleted = () => {
     setActiveDialog(null);
+    // A delete soft-tombstones the document; refresh the tombstone list too.
+    queryClient.invalidateQueries({ queryKey: qk.tombstones });
     onAfterMutation?.();
     onBack();
   };
 
-  const handleRestore = async () => {
-    if (!receipt?.documentId) return;
-    setRestoring(true);
-    setRestoreError(null);
-    try {
-      await restoreDocument(receipt.documentId);
-      removeTombstone(receipt.documentId);
+  const restoreMut = useMutation({
+    mutationFn: () => restoreDocument(receipt!.documentId!),
+    onSuccess: () => {
+      removeTombstone(receipt!.documentId!);
+      invalidateReceipt();
+      queryClient.invalidateQueries({ queryKey: qk.tombstones });
       onAfterMutation?.();
-      loadReceipt();
-    } catch (err: unknown) {
-      setRestoreError(extractProblemMessage(err));
-    } finally {
-      setRestoring(false);
-    }
+    },
+    onError: (err: unknown) => setRestoreError(extractProblemMessage(err)),
+  });
+  const handleRestore = () => {
+    if (!receipt?.documentId) return;
+    setRestoreError(null);
+    restoreMut.mutate();
   };
 
-  const handleReExtract = async () => {
-    if (!receipt?.documentId) return;
-    if (reExtractState.kind === 'pending') return;
-    setReExtractState({ kind: 'pending' });
-    try {
-      const result: ReExtractDocumentResult = await postReExtractDocument(
-        receipt.documentId,
-      );
-      // Reload the transaction so the UI reflects any field changes the
+  const reExtractMut = useMutation({
+    mutationFn: () => postReExtractDocument(receipt!.documentId!),
+    onMutate: () => setReExtractState({ kind: 'pending' }),
+    onSuccess: (result: ReExtractDocumentResult) => {
+      // Refresh the transaction so the UI reflects any field changes the
       // agent committed (payee, occurred_on, occurred_at, etc).
-      loadReceipt();
+      invalidateReceipt();
       onAfterMutation?.();
       setReExtractState({
         kind: 'success',
@@ -139,31 +160,16 @@ export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: Re
         ocrChanged: result.ocr_text_changed,
       });
       setTimeout(() => {
-        setReExtractState((s) =>
-          s.kind === 'success' ? { kind: 'idle' } : s,
-        );
+        setReExtractState((s) => (s.kind === 'success' ? { kind: 'idle' } : s));
       }, 6000);
-    } catch (err: unknown) {
-      setReExtractState({
-        kind: 'error',
-        message: extractProblemMessage(err),
-      });
-    }
+    },
+    onError: (err: unknown) =>
+      setReExtractState({ kind: 'error', message: extractProblemMessage(err) }),
+  });
+  const handleReExtract = () => {
+    if (!receipt?.documentId || reExtractMut.isPending) return;
+    reExtractMut.mutate();
   };
-
-  useEffect(() => {
-    loadReceipt();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [receiptId]);
-
-  // Auto-poll while extractor is still working.
-  useEffect(() => {
-    if (!receipt) return;
-    if (receipt.status !== 'draft' && receipt.status !== 'error') return;
-    const interval = setInterval(loadReceipt, 5000);
-    return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [receipt?.status]);
 
   if (loading) {
     return (
@@ -252,7 +258,7 @@ export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: Re
         canEdit={canEdit}
         canVoid={canVoid}
         canDelete={canDelete}
-        restoring={restoring}
+        restoring={restoreMut.isPending}
         onEdit={() => setActiveDialog('edit')}
         onVoid={() => setActiveDialog('void')}
         onDelete={() => setActiveDialog('delete')}
@@ -390,7 +396,7 @@ export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: Re
         onClose={() => setActiveDialog(null)}
         receipt={receipt}
         onUpdated={handleUpdated}
-        onStale={loadReceipt}
+        onStale={invalidateReceipt}
       />
 
       <ConfirmActionDialog
@@ -412,7 +418,7 @@ export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: Re
         destructive
         requireReason
         reasonPlaceholder="Why are you voiding this? (optional)"
-        onConfirm={handleVoidConfirm}
+        onConfirm={(reason) => voidMut.mutateAsync(reason).then(() => undefined)}
       />
 
       <DeleteReceiptDialog

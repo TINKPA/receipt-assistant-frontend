@@ -1,4 +1,5 @@
 import React from 'react';
+import { useMutation } from '@tanstack/react-query';
 import { X, Save, Loader2, AlertCircle, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -22,7 +23,7 @@ interface EditReceiptModalProps {
   onStale: () => void;
 }
 
-type SaveState = 'idle' | 'saving' | 'error' | 'stale';
+type SaveState = 'idle' | 'error' | 'stale';
 
 export default function EditReceiptModal({
   isOpen,
@@ -48,13 +49,35 @@ export default function EditReceiptModal({
     }
   }, [isOpen, receipt.id, receipt.payee, receipt.narration, receipt.occurred_on]);
 
-  const handleSave = async () => {
+  const saveMut = useMutation({
+    mutationFn: (patch: UpdateTransactionRequest) =>
+      patchTransaction(receipt.id, patch, receipt.etag!),
+    onSuccess: ({ data, etag }) => {
+      onUpdated(data, etag);
+      onClose();
+    },
+    onError: (err: unknown) => {
+      const problem = (err as Error & { problem?: { status?: number } })?.problem;
+      const status = problem?.status ?? 0;
+      // 412 → ETag stale; 409 → some other conflict. Both mean "reload".
+      if (status === 412 || status === 409 || /412|409/.test(extractProblemMessage(err))) {
+        setState('stale');
+        setError(
+          'This receipt was modified elsewhere. Reload to see the latest version, then try again.',
+        );
+      } else {
+        setState('error');
+        setError(extractProblemMessage(err));
+      }
+    },
+  });
+
+  const handleSave = () => {
     if (!receipt.etag) {
       setState('error');
       setError('No ETag available — reload the receipt and try again.');
       return;
     }
-    setState('saving');
     setError(null);
 
     // Only send fields that actually changed; PATCH is merge-patch.
@@ -69,24 +92,8 @@ export default function EditReceiptModal({
       return;
     }
 
-    try {
-      const { data, etag } = await patchTransaction(receipt.id, patch, receipt.etag);
-      onUpdated(data, etag);
-      onClose();
-    } catch (err: unknown) {
-      const problem = (err as Error & { problem?: { status?: number } })?.problem;
-      const status = problem?.status ?? 0;
-      // 412 → ETag stale; 409 → some other conflict. Both mean "reload".
-      if (status === 412 || status === 409 || /412|409/.test(extractProblemMessage(err))) {
-        setState('stale');
-        setError(
-          'This receipt was modified elsewhere. Reload to see the latest version, then try again.',
-        );
-      } else {
-        setState('error');
-        setError(extractProblemMessage(err));
-      }
-    }
+    setState('idle');
+    saveMut.mutate(patch);
   };
 
   return (
@@ -183,15 +190,15 @@ export default function EditReceiptModal({
                 ) : (
                   <button
                     onClick={handleSave}
-                    disabled={state === 'saving'}
+                    disabled={saveMut.isPending}
                     className={cn(
                       'w-full py-4 rounded-xl font-bold text-lg transition-all flex items-center justify-center gap-2',
-                      state === 'saving'
+                      saveMut.isPending
                         ? 'bg-primary/50 text-on-primary cursor-wait'
                         : 'bg-primary text-on-primary hover:scale-[1.02] active:scale-95 shadow-lg shadow-primary/20',
                     )}
                   >
-                    {state === 'saving' ? (
+                    {saveMut.isPending ? (
                       <>
                         <Loader2 className="animate-spin" size={20} />
                         Saving...
