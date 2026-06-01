@@ -1,5 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { getBatch, extractProblemMessage } from '../lib/api';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useQueries } from '@tanstack/react-query';
+import { getBatch } from '../lib/api';
+import { qk } from '../lib/queryKeys';
+
+/** Stable empty reference so the common (no-uploads) case never churns the
+ *  context value / consumers. */
+const EMPTY_ITEMS: ProcessingItem[] = [];
 
 const STORAGE_KEY = 'receipt-processing-batches-v1';
 const LEGACY_STORAGE_KEY = 'receipt-processing-jobs';
@@ -26,16 +32,6 @@ export interface ProcessingItem {
   transactionId?: string;
   error?: string;
 }
-
-/** Per-batch terminal override. `jobs` is the persistent record of
- *  outstanding uploads; this map layers terminal state on top, so items
- *  stay *derived* from (jobs, statusMap, dismissed) — sidestepping the
- *  react-hooks/set-state-in-effect lint. */
-type StatusOverride = {
-  status: 'done' | 'duplicate' | 'error';
-  transactionId?: string;
-  error?: string;
-};
 
 const TERMINAL_DONE = new Set(['extracted', 'reconciled']);
 const TERMINAL_ERROR = new Set(['failed', 'reconcile_error']);
@@ -78,7 +74,6 @@ export function useProcessingJobs({ onRefresh }: { onRefresh?: () => void } = {}
       return [];
     }
   });
-  const [statusMap, setStatusMap] = useState<Record<string, StatusOverride>>({});
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
 
   // Keep the latest callback in a ref so the polling interval can use it
@@ -107,89 +102,65 @@ export function useProcessingJobs({ onRefresh }: { onRefresh?: () => void } = {}
   // against `removeJob`. It's the same operation as `dismiss`.
   const removeJob = dismiss;
 
-  const items: ProcessingItem[] = useMemo(() => {
-    return jobs
-      .filter((j) => !dismissed.has(j.batchId))
-      .map<ProcessingItem>((j) => {
-        const override = statusMap[j.batchId];
-        return {
-          batchId: j.batchId,
-          ingestId: j.ingestId,
-          filename: j.filename,
-          status: override?.status ?? 'processing',
-          transactionId: override?.transactionId,
-          error: override?.error,
-        };
-      });
-  }, [jobs, statusMap, dismissed]);
+  // Poll each visible (non-dismissed) batch through the SHARED ['batch',id]
+  // cache — the same key BatchDetail uses — so there is exactly one network
+  // poll per batch no matter how many surfaces are watching. Polling stops
+  // automatically once a batch hits a terminal status.
+  const visibleJobs = jobs.filter((j) => !dismissed.has(j.batchId));
+  const batchQueries = useQueries({
+    queries: visibleJobs.map((j) => ({
+      queryKey: qk.batch(j.batchId),
+      queryFn: () => getBatch(j.batchId),
+      refetchInterval: (q: { state: { data?: { status: string } } }) => {
+        const s = q.state.data?.status;
+        return s && (TERMINAL_DONE.has(s) || TERMINAL_ERROR.has(s)) ? false : 5000;
+      },
+    })),
+  });
 
-  // Poll batches that are still in a non-terminal state.
-  useEffect(() => {
-    const active = jobs.filter(
-      (j) => !dismissed.has(j.batchId) && !statusMap[j.batchId],
-    );
-    if (active.length === 0) return;
-
-    let cancelled = false;
-    const autoDismiss = (batchId: string, delay: number) => {
-      setTimeout(() => {
-        setDismissed((prev) => new Set(prev).add(batchId));
-        setJobs((prev) => prev.filter((j) => j.batchId !== batchId));
-      }, delay);
-    };
-
-    const interval = setInterval(async () => {
-      for (const job of active) {
-        if (cancelled) return;
-        try {
-          const batch = await getBatch(job.batchId);
+  // Project (jobs × live batch snapshots) → render-ready items. Status is
+  // DERIVED from the query data — no statusMap state — so there is no
+  // setState-in-effect anywhere. Stable EMPTY reference while idle so the
+  // context value doesn't churn when there are no uploads.
+  const items: ProcessingItem[] =
+    visibleJobs.length === 0
+      ? EMPTY_ITEMS
+      : visibleJobs.map<ProcessingItem>((j, i) => {
+          const batch = batchQueries[i]?.data;
+          const base = { batchId: j.batchId, ingestId: j.ingestId, filename: j.filename };
+          if (!batch) return { ...base, status: 'processing' };
           if (TERMINAL_DONE.has(batch.status)) {
-            // Per-file outcome: dedup is decided by the *ingest item's*
-            // own status, not the batch's. A byte-identical re-upload is
-            // born terminal with `status='dedup'` and points at the
-            // pre-existing transaction — no new row was written, so we
-            // surface a neutral "already in your ledger" state and skip
-            // onRefresh (there's nothing new to fetch).
-            const item = batch.items.find((i) => i.id === job.ingestId);
+            // Per-file outcome: dedup is decided by the ingest item's own
+            // status. A byte-identical re-upload is born terminal with
+            // status 'dedup', pointing at the pre-existing transaction.
+            const item = batch.items.find((it) => it.id === j.ingestId);
             const transactionId = item?.produced?.transaction_ids?.[0];
-            if (item?.status === 'dedup') {
-              setStatusMap((prev) => ({
-                ...prev,
-                [job.batchId]: { status: 'duplicate', transactionId },
-              }));
-              // Intentionally no onRefresh() — dedup adds no new data.
-              autoDismiss(job.batchId, 5000);
-            } else {
-              setStatusMap((prev) => ({
-                ...prev,
-                [job.batchId]: { status: 'done', transactionId },
-              }));
-              onRefreshRef.current?.();
-              autoDismiss(job.batchId, 3000);
-            }
-          } else if (TERMINAL_ERROR.has(batch.status)) {
-            const ingestErr = batch.items.find((i) => i.id === job.ingestId)?.error ?? null;
-            setStatusMap((prev) => ({
-              ...prev,
-              [job.batchId]: {
-                status: 'error',
-                error: ingestErr ?? `Batch ${batch.status}`,
-              },
-            }));
-            autoDismiss(job.batchId, 5000);
+            return item?.status === 'dedup'
+              ? { ...base, status: 'duplicate', transactionId }
+              : { ...base, status: 'done', transactionId };
           }
-        } catch (err: unknown) {
-          // Ignore individual poll failures; next tick retries.
-          console.debug('batch poll error', job.batchId, extractProblemMessage(err));
-        }
-      }
-    }, 5000);
+          if (TERMINAL_ERROR.has(batch.status)) {
+            const ingestErr = batch.items.find((it) => it.id === j.ingestId)?.error ?? null;
+            return { ...base, status: 'error', error: ingestErr ?? `Batch ${batch.status}` };
+          }
+          return { ...base, status: 'processing' };
+        });
 
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, [jobs, dismissed, statusMap]);
+  // Terminal side-effects, exactly once per batch. A freshly-done upload
+  // refreshes the ledger surfaces (dedup/error add nothing new, so they
+  // don't); every terminal item auto-dismisses after a beat. `notifiedRef`
+  // guarantees once-only. Nothing here setStates synchronously — onRefresh
+  // invalidates, dismiss is deferred via setTimeout — so this stays clear of
+  // the react-hooks/set-state-in-effect lint.
+  const notifiedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    for (const it of items) {
+      if (it.status === 'processing' || notifiedRef.current.has(it.batchId)) continue;
+      notifiedRef.current.add(it.batchId);
+      if (it.status === 'done') onRefreshRef.current?.();
+      setTimeout(() => dismiss(it.batchId), it.status === 'done' ? 3000 : 5000);
+    }
+  }, [items, dismiss]);
 
   return { jobs, addJob, removeJob, items, dismiss };
 }
