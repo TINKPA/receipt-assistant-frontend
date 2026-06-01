@@ -1,4 +1,5 @@
 import React from 'react';
+import { useMutation } from '@tanstack/react-query';
 import ConfirmActionDialog from './ConfirmActionDialog';
 import { getTransaction, unreconcileTransaction } from '../lib/api';
 
@@ -20,17 +21,22 @@ export default function UnreconcileDialog({
   transactionId,
   onUnreconciled,
 }: UnreconcileDialogProps) {
-  const handleConfirm = async (reason: string) => {
-    if (!transactionId) throw new Error('No transaction selected');
-    const { etag } = await getTransaction(transactionId);
-    if (!etag) throw new Error('Missing ETag — refresh and retry.');
-    await unreconcileTransaction(
-      transactionId,
-      reason.trim() ? reason.trim() : undefined,
-      etag,
-    );
-    onUnreconciled();
-  };
+  const unreconcileMut = useMutation({
+    mutationFn: async (reason: string) => {
+      if (!transactionId) throw new Error('No transaction selected');
+      const { etag } = await getTransaction(transactionId);
+      if (!etag) throw new Error('Missing ETag — refresh and retry.');
+      return unreconcileTransaction(
+        transactionId,
+        reason.trim() ? reason.trim() : undefined,
+        etag,
+      );
+    },
+    onSuccess: () => onUnreconciled(),
+  });
+  // ConfirmActionDialog awaits this and manages working/error UI; a rejection
+  // surfaces there. Coerce to Promise<void> for its onConfirm contract.
+  const handleConfirm = (reason: string) => unreconcileMut.mutateAsync(reason).then(() => undefined);
 
   return (
     <ConfirmActionDialog

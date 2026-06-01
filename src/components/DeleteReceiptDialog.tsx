@@ -1,4 +1,5 @@
 import React from 'react';
+import { useMutation } from '@tanstack/react-query';
 import { X, Loader2, AlertCircle, AlertTriangle, Trash2, FileMinus, Flame, ArrowLeft } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
@@ -127,9 +128,8 @@ export default function DeleteReceiptDialog({
     return false;
   };
 
-  const runDelete = async (chosen: Mode) => {
-    setState({ kind: 'working' });
-    try {
+  const deleteMut = useMutation({
+    mutationFn: async (chosen: Mode) => {
       switch (chosen) {
         case 'soft':
           if (!documentId) throw new Error('No document linked');
@@ -152,8 +152,10 @@ export default function DeleteReceiptDialog({
           await hardDeleteTransaction(transactionId, transactionEtag);
           break;
       }
-      onDeleted();
-    } catch (err: unknown) {
+    },
+    onMutate: () => setState({ kind: 'working' }),
+    onSuccess: () => onDeleted(),
+    onError: (err: unknown) => {
       const problem = parseProblem(err);
       const handled = handleProblem(problem);
       if (!handled) {
@@ -162,12 +164,12 @@ export default function DeleteReceiptDialog({
           message: err instanceof Error ? err.message : String(err),
         });
       }
-    }
-  };
+    },
+  });
 
   const handleConfirm = () => {
     if (mode === 'cascade-hard' && !confirmHardOk) return;
-    void runDelete(mode);
+    deleteMut.mutate(mode);
   };
 
   const renderOptions = () => (
@@ -323,7 +325,7 @@ export default function DeleteReceiptDialog({
         onClick={() => {
           setMode('cascade-hard');
           setConfirmHardOk(true);
-          void runDelete('cascade-hard');
+          deleteMut.mutate('cascade-hard');
         }}
         className="w-full py-3 rounded-xl bg-error text-on-error font-bold hover:scale-[1.02] active:scale-95 transition-all"
       >
@@ -337,7 +339,7 @@ export default function DeleteReceiptDialog({
     if (state.kind === 'block-cannot-delete-reconciled') {
       // The receipt's own transaction was unreconciled — retry the
       // user's last chosen mode.
-      void runDelete(mode);
+      deleteMut.mutate(mode);
       return;
     }
     if (state.kind === 'block-cascade-reconciled') {
@@ -347,7 +349,7 @@ export default function DeleteReceiptDialog({
         (x) => x !== unreconcileTarget,
       );
       if (remaining.length === 0) {
-        void runDelete(mode);
+        deleteMut.mutate(mode);
       } else {
         setState({ ...state, reconciledTxnIds: remaining });
       }
