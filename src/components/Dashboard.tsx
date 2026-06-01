@@ -10,6 +10,7 @@ import type { Transaction, Category } from '../types';
 import { isProcessing as txIsProcessing } from '../lib/transactionStatus';
 import { cn } from '../lib/utils';
 import { receiptLink, categoryLedgerLink } from '../lib/navLinks';
+import { qk } from '../lib/queryKeys';
 import { CategoryIcon } from './CategoryIcon';
 import { MerchantIcon } from './MerchantIcon';
 import ProcessingCardList from './ProcessingCard';
@@ -54,11 +55,11 @@ export default function Dashboard({
   // under ['transactions','recent'] so it shares the namespace the Ledger and
   // mutation invalidators target.
   const { data: transactions = [], isLoading: txLoading } = useQuery({
-    queryKey: ['transactions', 'recent', { limit: 4 }],
+    queryKey: qk.transactions.recent({ limit: 4 }),
     queryFn: () => fetchTransactions({ limit: 4 }),
   });
   const { data: summary = [], isLoading: sumLoading } = useQuery({
-    queryKey: ['summary', { from: monthRange.from, to: monthRange.to }],
+    queryKey: qk.summary.range({ from: monthRange.from, to: monthRange.to }),
     queryFn: () => fetchSummary({ from: monthRange.from, to: monthRange.to }),
   });
   const loading = txLoading || sumLoading;

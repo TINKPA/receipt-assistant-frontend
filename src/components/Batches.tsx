@@ -7,6 +7,7 @@ import {
   type BatchStatus,
 } from '../lib/api';
 import { cn } from '../lib/utils';
+import { qk } from '../lib/queryKeys';
 
 interface BatchesProps {
   onSelectBatch: (batchId: string) => void;
@@ -37,7 +38,7 @@ function formatDate(iso: string): string {
 
 export default function Batches({ onSelectBatch }: BatchesProps) {
   const { data, isLoading: loading, error: queryError } = useQuery({
-    queryKey: ['batches', { limit: 50 }],
+    queryKey: qk.batches.list({ limit: 50 }),
     queryFn: () => listBatches({ limit: 50 }),
   });
   const items = data?.items ?? [];
