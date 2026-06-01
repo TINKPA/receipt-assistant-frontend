@@ -25,11 +25,11 @@ function TransactionsRoute() {
   const navigate = useNavigate({ from: '/transactions' });
   const { items: processingItems, dismiss: dismissProcessing } = useAppCtx();
   return (
-    // No `key={refreshKey}` remount: the Ledger now refetches via TanStack
-    // Query cache invalidation (the bumpRefresh bridge invalidates
-    // ['transactions']), so it stays MOUNTED across mutations and uploads.
-    // Keeping it mounted is what lets the router's scrollRestoration preserve
-    // the scroll offset on Back (#89) instead of the list snapping to the top.
+    // No remount key: the Ledger refetches via TanStack Query cache
+    // invalidation (invalidateLedgerSurfaces on upload-complete / mutation),
+    // so it stays MOUNTED across mutations and uploads. Keeping it mounted is
+    // what lets the router's scrollRestoration preserve the scroll offset on
+    // Back (#89) instead of the list snapping to the top.
     <Transactions
       search={search}
       onSearchChange={(next: TransactionsSearch) =>
@@ -42,7 +42,7 @@ function TransactionsRoute() {
         navigate({ to: '/receipt/$receiptId', params: { receiptId: id } })
       }
       // Inline upload status (#85). The in-flight receipt renders as a card
-      // at the top of the ledger; on completion the bumpRefresh bridge
+      // at the top of the ledger; on completion invalidateLedgerSurfaces
       // invalidates the ['transactions'] query and the real row arrives in
       // place. Tapping a terminal card navigates via onSelectReceipt above.
       processingItems={processingItems}

@@ -1,6 +1,5 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import Batches from '../../../components/Batches';
-import { useAppCtx } from '../../../lib/appContext';
 
 export const Route = createFileRoute('/_shell/batches/')({
   component: BatchesRoute,
@@ -8,10 +7,10 @@ export const Route = createFileRoute('/_shell/batches/')({
 
 function BatchesRoute() {
   const navigate = useNavigate();
-  const { refreshKey } = useAppCtx();
+  // Batches reads via useQuery and refetches on cache invalidation, so it
+  // stays mounted — no refreshKey remount needed.
   return (
     <Batches
-      key={refreshKey}
       onSelectBatch={(id) => navigate({ to: '/batches/$batchId', params: { batchId: id } })}
     />
   );
