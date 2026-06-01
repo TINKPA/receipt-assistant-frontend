@@ -1,11 +1,14 @@
 import React from 'react';
 import { useProcessingJobs } from '../components/useProcessingJobs';
 import { invalidateLedgerSurfaces } from './queryClient';
+import { AppCtx, type AppCtxValue } from './appCtx';
 
 /**
- * Cross-route application context — now scoped to just the upload-job
+ * Cross-route application context provider — scoped to the upload-job
  * machinery (the post-mutation refresh moved entirely to TanStack Query cache
  * invalidation in #90, so the old `refreshKey`/`bumpRefresh` counter is gone).
+ * The context object + `useAppCtx` accessor live in `./appCtx` so this module
+ * exports only the component (keeps Fast Refresh happy).
  *
  * - `jobs/addJob/removeJob` come from useProcessingJobs (localStorage-backed,
  *   so outstanding uploads survive a full page reload). The root-level
@@ -16,17 +19,6 @@ import { invalidateLedgerSurfaces } from './queryClient';
  *   `onRefresh` fires `invalidateLedgerSurfaces()` and every list query
  *   (ledger / month summary / batches) refetches in place.
  */
-interface AppCtxValue {
-  jobs: ReturnType<typeof useProcessingJobs>['jobs'];
-  addJob: ReturnType<typeof useProcessingJobs>['addJob'];
-  removeJob: ReturnType<typeof useProcessingJobs>['removeJob'];
-  items: ReturnType<typeof useProcessingJobs>['items'];
-  dismiss: ReturnType<typeof useProcessingJobs>['dismiss'];
-}
-
-const AppCtx = React.createContext<AppCtxValue | null>(null);
-
-/** Provider — mounted once in __root.tsx. */
 export function AppProvider({ children }: { children: React.ReactNode }) {
   // A completed upload (non-dedup) calls onRefresh; invalidate every list
   // surface so the inline card's real row appears in place without a reload.
@@ -40,10 +32,4 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   );
 
   return <AppCtx.Provider value={value}>{children}</AppCtx.Provider>;
-}
-
-export function useAppCtx(): AppCtxValue {
-  const ctx = React.useContext(AppCtx);
-  if (!ctx) throw new Error('useAppCtx must be used within <AppProvider>');
-  return ctx;
 }

@@ -25,4 +25,16 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    // TanStack Router file-based route modules must `export const Route =
+    // createFileRoute(...)` alongside their route component. That's a non-
+    // component export the react-refresh rule can't reconcile, so it false-
+    // positives on every route file. Fast-refresh of route modules is handled
+    // by @tanstack/router-plugin's own HMR, so this dev-only ergonomics rule
+    // adds no value here — turn it off for the routes directory specifically.
+    files: ['src/routes/**/*.{ts,tsx}'],
+    rules: {
+      'react-refresh/only-export-components': 'off',
+    },
+  },
 )

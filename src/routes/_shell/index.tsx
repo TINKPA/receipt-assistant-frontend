@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import Dashboard from '../../components/Dashboard';
-import { useAppCtx } from '../../lib/appContext';
+import { useAppCtx } from '../../lib/appCtx';
 
 export const Route = createFileRoute('/_shell/')({
   component: DashboardRoute,

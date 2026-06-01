@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { ChevronRight, ArrowLeft, RotateCw, GitMerge } from 'lucide-react';
 import {
   listProducts,
@@ -56,21 +57,24 @@ interface ProductsProps {
 export default function Products({ onBack }: ProductsProps) {
   const [klass, setKlass] = useState<ProductClass | 'all'>('all');
   const [search, setSearch] = useState('');
-  const [products, setProducts] = useState<BackendProduct[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  useEffect(() => {
-    setProducts(null);
-    setError(null);
-    listProducts({
-      class: klass === 'all' ? undefined : klass,
-      search: search.trim() || undefined,
-      limit: 100,
-    })
-      .then(setProducts)
-      .catch((e: unknown) => setError(extractProblemMessage(e)));
-  }, [klass, search]);
+  // `products === null` is the loading sentinel the render relies on, so default
+  // the (undefined-while-loading) query data to null rather than [].
+  const {
+    data: products = null,
+    error: queryError,
+    refetch,
+  } = useQuery({
+    queryKey: ['products', klass, search.trim()],
+    queryFn: () =>
+      listProducts({
+        class: klass === 'all' ? undefined : klass,
+        search: search.trim() || undefined,
+        limit: 100,
+      }),
+  });
+  const error = queryError ? extractProblemMessage(queryError) : null;
 
   if (selectedId) {
     return (
@@ -79,11 +83,8 @@ export default function Products({ onBack }: ProductsProps) {
         onBack={() => setSelectedId(null)}
         onMerged={() => {
           setSelectedId(null);
-          // Trigger refetch by twiddling the filter (cheap idempotent).
-          setProducts(null);
-          listProducts({ class: klass === 'all' ? undefined : klass, limit: 100 })
-            .then(setProducts)
-            .catch((e: unknown) => setError(extractProblemMessage(e)));
+          // A merge changes the product set — refetch the list query.
+          refetch();
         }}
       />
     );

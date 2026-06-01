@@ -24,7 +24,6 @@ import { receiptLink } from '../lib/navLinks';
 interface BatchDetailProps {
   batchId: string;
   onBack: () => void;
-  onSelectTransaction: (txnId: string) => void;
 }
 
 const INGEST_STATUS_META: Record<
@@ -46,7 +45,7 @@ interface LiveEvent {
   payload: unknown;
 }
 
-export default function BatchDetail({ batchId, onBack, onSelectTransaction }: BatchDetailProps) {
+export default function BatchDetail({ batchId, onBack }: BatchDetailProps) {
   const [batch, setBatch] = useState<BackendBatch | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -184,7 +183,7 @@ export default function BatchDetail({ batchId, onBack, onSelectTransaction }: Ba
           </thead>
           <tbody className="divide-y divide-outline-variant/5">
             {batch.items.map((ing) => (
-              <IngestRow key={ing.id} ingest={ing} onSelectTransaction={onSelectTransaction} />
+              <IngestRow key={ing.id} ingest={ing} />
             ))}
           </tbody>
         </table>
@@ -257,13 +256,7 @@ function StatCard({
   );
 }
 
-function IngestRow({
-  ingest,
-  onSelectTransaction,
-}: {
-  ingest: BackendIngest;
-  onSelectTransaction: (id: string) => void;
-}) {
+function IngestRow({ ingest }: { ingest: BackendIngest }) {
   const meta = INGEST_STATUS_META[ingest.status];
   const Icon = meta.icon;
   const txnIds = ingest.produced?.transaction_ids ?? [];

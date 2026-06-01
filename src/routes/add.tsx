@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import Capture from '../components/Capture';
-import { useAppCtx } from '../lib/appContext';
+import { useAppCtx } from '../lib/appCtx';
 import { invalidateLedgerSurfaces } from '../lib/queryClient';
 
 /**

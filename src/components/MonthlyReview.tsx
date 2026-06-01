@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { ChevronLeft, ChevronRight, TrendingDown, TrendingUp, Loader2, PieChart as PieIcon, Receipt } from 'lucide-react';
 import {
@@ -16,9 +17,6 @@ import {
   getCashflowReport,
   getSummaryReport,
   getTrendsReport,
-  type BackendCashflowReport,
-  type BackendSummaryReport,
-  type BackendTrendsReport,
 } from '../lib/api';
 import type { Category, Transaction } from '../types';
 import { cn } from '../lib/utils';
@@ -100,60 +98,51 @@ export default function MonthlyReview({ month }: { month?: string }) {
     });
   };
 
-  const [cashflow, setCashflow] = useState<BackendCashflowReport | null>(null);
-  const [trends, setTrends] = useState<BackendTrendsReport | null>(null);
-  const [thisMonth, setThisMonth] = useState<BackendSummaryReport | null>(null);
-  const [lastMonth, setLastMonth] = useState<BackendSummaryReport | null>(null);
-  // FE#23: full this-month receipt list (sorted by amount desc).
-  // Seeds both the "Notable transactions" section (top-3 spending)
-  // and the Receipts count KPI. ~200-cap on the API call covers all
-  // but the most active months.
-  const [allReceipts, setAllReceipts] = useState<Transaction[] | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    setLoading(true);
-    setError(null);
-    Promise.all([
-      getCashflowReport({ from: startOfMonth(sixMonthsAgo(now)), to: endOfMonth(now) }),
-      getTrendsReport({
-        from: startOfMonth(sixMonthsAgo(now)),
-        to: endOfMonth(now),
-        period: 'month',
-        groupBy: 'total',
-      }),
-      getSummaryReport({ from: startOfMonth(now), to: endOfMonth(now), groupBy: 'category' }),
-      getSummaryReport({
-        from: startOfMonth(prevMonth),
-        to: endOfMonth(prevMonth),
-        groupBy: 'category',
-      }),
-      fetchTransactions({
-        from: startOfMonth(now),
-        to: endOfMonth(now),
-        // Backend only supports sort=occurred_on / sort=created_at —
-        // sort=amount needs a JOIN over postings and isn't wired yet.
-        // Pull the full month and sort by amount client-side; 200-cap
-        // covers all but the most active months.
-        sort: 'occurred_on',
-        order: 'desc',
-        limit: 200,
-      }),
-    ])
-      .then(([cf, tr, thisM, lastM, top]) => {
-        setCashflow(cf);
-        setTrends(tr);
-        setThisMonth(thisM);
-        setLastMonth(lastM);
-        // Client-side sort by amount desc so Notable picks largest;
-        // KPI count is independent of sort order.
-        const byAmount = [...top].sort((a, b) => b.amount - a.amount);
-        setAllReceipts(byAmount);
-      })
-      .catch((e) => setError(extractProblemMessage(e)))
-      .finally(() => setLoading(false));
-  }, [now, prevMonth]);
+  // FE#23: the this-month receipt list (sorted by amount desc) seeds both the
+  // "Notable transactions" section (top-3 spending) and the Receipts count KPI.
+  // ~200-cap on the API call covers all but the most active months.
+  // All five reports fetch together in one query keyed by the month pair.
+  const { data, isLoading: loading, error: queryError } = useQuery({
+    queryKey: ['monthlyReview', yearMonthKey(now), yearMonthKey(prevMonth)],
+    queryFn: async () => {
+      const [cf, tr, thisM, lastM, top] = await Promise.all([
+        getCashflowReport({ from: startOfMonth(sixMonthsAgo(now)), to: endOfMonth(now) }),
+        getTrendsReport({
+          from: startOfMonth(sixMonthsAgo(now)),
+          to: endOfMonth(now),
+          period: 'month',
+          groupBy: 'total',
+        }),
+        getSummaryReport({ from: startOfMonth(now), to: endOfMonth(now), groupBy: 'category' }),
+        getSummaryReport({
+          from: startOfMonth(prevMonth),
+          to: endOfMonth(prevMonth),
+          groupBy: 'category',
+        }),
+        fetchTransactions({
+          from: startOfMonth(now),
+          to: endOfMonth(now),
+          // Backend only supports sort=occurred_on / sort=created_at —
+          // sort=amount needs a JOIN over postings and isn't wired yet.
+          // Pull the full month and sort by amount client-side; 200-cap
+          // covers all but the most active months.
+          sort: 'occurred_on',
+          order: 'desc',
+          limit: 200,
+        }),
+      ]);
+      // Client-side sort by amount desc so Notable picks largest;
+      // KPI count is independent of sort order.
+      const allReceipts = [...top].sort((a, b) => b.amount - a.amount);
+      return { cashflow: cf, trends: tr, thisMonth: thisM, lastMonth: lastM, allReceipts };
+    },
+  });
+  const error = queryError ? extractProblemMessage(queryError) : null;
+  const cashflow = data?.cashflow ?? null;
+  const trends = data?.trends ?? null;
+  const thisMonth = data?.thisMonth ?? null;
+  const lastMonth = data?.lastMonth ?? null;
+  const allReceipts = data?.allReceipts ?? null;
 
   if (loading) {
     return (

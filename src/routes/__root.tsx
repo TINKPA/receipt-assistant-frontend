@@ -1,5 +1,6 @@
 import { createRootRoute, Outlet, useNavigate } from '@tanstack/react-router';
-import { AppProvider, useAppCtx } from '../lib/appContext';
+import { AppProvider } from '../lib/appContext';
+import { useAppCtx } from '../lib/appCtx';
 import { invalidateLedgerSurfaces } from '../lib/queryClient';
 import ProcessingToast from '../components/ProcessingToast';
 
