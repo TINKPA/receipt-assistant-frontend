@@ -234,8 +234,13 @@ export default function Transactions({
     .filter((tx) => tx.amount < 0)
     .reduce((sum, tx) => sum + tx.amount, 0);
 
-  // Group by ISO week (Mon-anchored) for the fig.02 week banners.
-  const weeks = useMemo(() => groupByWeek(filteredTransactions), [filteredTransactions]);
+  // Group by period: ISO weeks for the recent stretch (this/last week),
+  // calendar months for everything older — keeps history calm instead of
+  // one "week of … · 1 entry" banner per sparse receipt.
+  const groups = useMemo(
+    () => groupByPeriod(filteredTransactions),
+    [filteredTransactions],
+  );
 
   const handleHardDeleteRequest = async (txnId: string) => {
     setRowError(null);
@@ -340,10 +345,10 @@ export default function Transactions({
         </EmptyState>
       ) : activeSort.sort === 'occurred_on' ? (
         <div className="space-y-7">
-          {weeks.map((wk) => (
-            <WeekGroup
-              key={wk.startIso}
-              week={wk}
+          {groups.map((g) => (
+            <PeriodGroup
+              key={g.startIso}
+              group={g}
               onSelect={(tx) => onSelectReceipt?.(tx.id)}
               onHardDelete={handleHardDeleteRequest}
               onUnreconcile={(id) => setUnreconcileTarget(id)}
@@ -487,22 +492,22 @@ function SearchSoft({
   );
 }
 
-/* ── Week group ───────────────────────────────────────────────── */
+/* ── Period group (recent weeks + older months) ───────────────── */
 
-interface WeekBucket {
+interface PeriodBucket {
   startIso: string;
   label: string;
   total: number;
   txs: Transaction[];
 }
 
-function WeekGroup({
-  week,
+function PeriodGroup({
+  group,
   onSelect,
   onHardDelete,
   onUnreconcile,
 }: {
-  week: WeekBucket;
+  group: PeriodBucket;
   onSelect: (tx: Transaction) => void;
   onHardDelete: (id: string) => void;
   onUnreconcile: (id: string) => void;
@@ -511,17 +516,17 @@ function WeekGroup({
     <section>
       <div className="flex items-baseline gap-3 mb-3">
         <span className="font-hand text-xl text-[var(--color-terracotta)] leading-none">
-          {week.label}
+          {group.label}
         </span>
         <span className="text-[11px] tracking-[0.12em] uppercase text-[var(--color-ink-muted)]">
-          {week.txs.length} {week.txs.length === 1 ? 'entry' : 'entries'}
+          {group.txs.length} {group.txs.length === 1 ? 'entry' : 'entries'}
         </span>
         <span className="ml-auto font-display italic text-base font-medium tnum">
-          ${Math.round(Math.abs(week.total)).toLocaleString()}
+          ${Math.round(Math.abs(group.total)).toLocaleString()}
         </span>
       </div>
       <ul className="space-y-2">
-        {week.txs.map((tx) => (
+        {group.txs.map((tx) => (
           <li key={tx.id}>
             <LedgerRow
               tx={tx}
@@ -758,15 +763,50 @@ function EmptyState({ children }: { children: React.ReactNode }) {
 
 /* ── Helpers ──────────────────────────────────────────────────── */
 
-function groupByWeek(txs: Transaction[]): WeekBucket[] {
-  const buckets = new Map<string, WeekBucket>();
+/**
+ * Group transactions for the date-sorted ledger. The current and previous
+ * ISO weeks keep their granular "this week" / "last week" banners; everything
+ * older collapses into calendar-month buckets ("April 2026", "December 2025").
+ * This avoids the old failure mode where each sparse historical receipt got
+ * its own "week of … · 1 entry" header, and the month labels always carry the
+ * year so multi-year history reads in order. All bucket keys are sortable
+ * YYYY-MM-DD strings, so the single descending sort below stays monotonic
+ * across the week→month boundary.
+ */
+function groupByPeriod(txs: Transaction[]): PeriodBucket[] {
+  const today = new Date();
+  const thisWeek = isoWeekStart(toIso(today));
+  const lastWeek = (() => {
+    const d = new Date(today);
+    d.setDate(d.getDate() - 7);
+    return isoWeekStart(toIso(d));
+  })();
+
+  const buckets = new Map<string, PeriodBucket>();
   for (const tx of txs) {
-    const start = isoWeekStart(tx.date);
-    if (!start) continue;
-    let bucket = buckets.get(start);
+    const week = isoWeekStart(tx.date);
+    if (!week) continue;
+
+    let key: string;
+    let label: string;
+    if (week === thisWeek) {
+      key = week;
+      label = 'this week';
+    } else if (week === lastWeek) {
+      key = week;
+      label = 'last week';
+    } else {
+      // First of the transaction's own month (not the week's Monday, which
+      // could land in the prior month).
+      const [y, m] = tx.date.split('-');
+      key = `${y}-${m}-01`;
+      label = monthLabel(key);
+    }
+
+    let bucket = buckets.get(key);
     if (!bucket) {
-      bucket = { startIso: start, label: weekLabel(start), total: 0, txs: [] };
-      buckets.set(start, bucket);
+      bucket = { startIso: key, label, total: 0, txs: [] };
+      buckets.set(key, bucket);
     }
     bucket.txs.push(tx);
     bucket.total += tx.amount;
@@ -790,23 +830,11 @@ function isoWeekStart(isoDate: string): string | null {
   return `${yy}-${mm}-${dd}`;
 }
 
-function weekLabel(startIso: string): string {
-  const today = new Date();
-  const thisWeek = isoWeekStart(toIso(today));
-  if (thisWeek === startIso) return 'this week';
-
-  const lastWeek = (() => {
-    const d = new Date(today);
-    d.setDate(d.getDate() - 7);
-    return isoWeekStart(toIso(d));
-  })();
-  if (lastWeek === startIso) return 'last week';
-
-  // "Week of May 5" — pulled from the Monday date.
-  const [y, m, d] = startIso.split('-').map(Number);
-  const dt = new Date(y, m - 1, d);
-  const monthShort = dt.toLocaleString('en-US', { month: 'short' });
-  return `week of ${monthShort} ${dt.getDate()}`;
+/** "April 2026" — full month + year, from a YYYY-MM-01 key. */
+function monthLabel(startIso: string): string {
+  const [y, m] = startIso.split('-').map(Number);
+  const dt = new Date(y, m - 1, 1);
+  return dt.toLocaleString('en-US', { month: 'long', year: 'numeric' });
 }
 
 function toIso(d: Date): string {
