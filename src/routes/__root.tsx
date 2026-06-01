@@ -1,7 +1,6 @@
 import { createRootRoute, Outlet, useNavigate } from '@tanstack/react-router';
 import { AppProvider } from '../lib/appContext';
 import { useAppCtx } from '../lib/appCtx';
-import { invalidateLedgerSurfaces } from '../lib/queryClient';
 import ProcessingToast from '../components/ProcessingToast';
 
 export const Route = createRootRoute({
@@ -23,13 +22,12 @@ function RootComponent() {
  * list from AppCtx and jumps to the produced transaction on tap.
  */
 function ToastHost() {
-  const { jobs, removeJob } = useAppCtx();
+  const { items, removeJob } = useAppCtx();
   const navigate = useNavigate();
   return (
     <ProcessingToast
-      jobs={jobs}
+      items={items}
       onJobDone={removeJob}
-      onRefresh={invalidateLedgerSurfaces}
       onSelectTransaction={(id) =>
         navigate({ to: '/receipt/$receiptId', params: { receiptId: id } })
       }

@@ -1,175 +1,45 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, CheckCircle, XCircle, Layers, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { getBatch, extractProblemMessage } from '../lib/api';
-import type { ProcessingJob } from './useProcessingJobs';
+import type { ProcessingItem, ProcessingJob } from './useProcessingJobs';
 
 /**
  * Receipt upload UX (floating toast variant).
  *
- * The old backend had per-image jobs queried via `GET /jobs/:id`. The
- * v1 backend uses *ingest batches* — a single upload creates a batch
- * with N ingests (we always use N=1 from the UI), and the batch
- * progresses through `pending → processing → extracted → reconciled`.
+ * Purely presentational now: it renders the projected {@link ProcessingItem}s
+ * that `useProcessingJobs` owns. The hook does all the work — polling each
+ * batch through the shared `['batch',id]` query cache, deriving terminal
+ * status, firing the ledger refresh once, and auto-dismissing. This toast and
+ * the inline `ProcessingCardList` are two views of that same `items` array, so
+ * there is a single poll per batch (the old per-component pollers are gone).
  *
- * We could SSE-subscribe via `subscribeToBatch(batchId, …)`, but for
- * minimum diff we keep polling: every 5s fetch the batch and watch for
- * `status=extracted` (or `reconciled`). On completion we extract the
- * first produced `transaction_id` to give callers a stable anchor.
- *
- * `ProcessingJob` now lives in ./useProcessingJobs.ts (the hook owns the
- * job shape so the inline `ProcessingCard` can share it); we re-export it
- * here so existing importers keep working.
+ * `ProcessingJob` lives in ./useProcessingJobs.ts; re-exported for importers.
  */
 export type { ProcessingJob };
 
-interface ToastState {
-  batchId: string;
-  ingestId: string;
-  filename: string;
-  status: 'processing' | 'done' | 'duplicate' | 'error';
-  transactionId?: string;
-  error?: string;
-}
-
 interface ProcessingToastProps {
-  jobs: ProcessingJob[];
+  /** Projected upload state from `useProcessingJobs` (shared with the inline
+   *  cards). The hook owns polling / terminal transitions / auto-dismiss. */
+  items: ProcessingItem[];
+  /** Manual dismiss (the X button). The hook auto-dismisses terminal items. */
   onJobDone: (batchId: string) => void;
-  onRefresh: () => void;
-  /** Tap a terminal toast to jump to the produced transaction. For a
-   *  dedup hit this is the *pre-existing* transaction the upload matched. */
+  /** Tap a terminal toast to jump to the produced transaction. For a dedup
+   *  hit this is the *pre-existing* transaction the upload matched. */
   onSelectTransaction?: (transactionId: string) => void;
 }
 
-// `useProcessingJobs` hook lives in ./useProcessingJobs.ts (separate
-// file so react-refresh/only-export-components stays happy).
-
-const TERMINAL_DONE = new Set(['extracted', 'reconciled']);
-const TERMINAL_ERROR = new Set(['failed', 'reconcile_error']);
-
-/** Per-batch status overrides. `jobs` (the source list) is the
- *  persistent record of outstanding uploads; this map stores in-memory
- *  terminal state + error text. Toasts are then *derived* from
- *  (jobs, statusMap, dismissed), which sidesteps the
- *  react-hooks/set-state-in-effect lint. */
-type StatusOverride = {
-  status: 'done' | 'duplicate' | 'error';
-  transactionId?: string;
-  error?: string;
-};
-
 export default function ProcessingToast({
-  jobs,
+  items,
   onJobDone,
-  onRefresh,
   onSelectTransaction,
 }: ProcessingToastProps) {
-  const [statusMap, setStatusMap] = useState<Record<string, StatusOverride>>({});
-  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
-  // Keep the latest callbacks in a ref so the polling interval can use
-  // them without re-creating the timer every render.
-  const callbacksRef = useRef({ onJobDone, onRefresh });
-  useEffect(() => {
-    callbacksRef.current = { onJobDone, onRefresh };
-  }, [onJobDone, onRefresh]);
+  const dismiss = (batchId: string) => onJobDone(batchId);
 
-  const toasts: ToastState[] = useMemo(() => {
-    return jobs
-      .filter((j) => !dismissed.has(j.batchId))
-      .map<ToastState>((j) => {
-        const override = statusMap[j.batchId];
-        return {
-          batchId: j.batchId,
-          ingestId: j.ingestId,
-          filename: j.filename,
-          status: override?.status ?? 'processing',
-          transactionId: override?.transactionId,
-          error: override?.error,
-        };
-      });
-  }, [jobs, statusMap, dismissed]);
-
-  // Poll batches that are still in `processing` state.
-  useEffect(() => {
-    const active = jobs.filter(
-      (j) => !dismissed.has(j.batchId) && !statusMap[j.batchId],
-    );
-    if (active.length === 0) return;
-
-    let cancelled = false;
-    const interval = setInterval(async () => {
-      for (const job of active) {
-        if (cancelled) return;
-        try {
-          const batch = await getBatch(job.batchId);
-          if (TERMINAL_DONE.has(batch.status)) {
-            // Per-file outcome: dedup is decided by the *ingest item's*
-            // own status, not the batch's. A byte-identical re-upload is
-            // born terminal with `status='dedup'` and points at the
-            // pre-existing transaction — no new row was written, so we
-            // surface a neutral "already in your ledger" state and skip
-            // onRefresh (there's nothing new to fetch).
-            const item = batch.items.find((i) => i.id === job.ingestId);
-            const transactionId = item?.produced?.transaction_ids?.[0];
-            if (item?.status === 'dedup') {
-              setStatusMap((prev) => ({
-                ...prev,
-                [job.batchId]: { status: 'duplicate', transactionId },
-              }));
-              // Intentionally no onRefresh() — dedup adds no new data.
-              setTimeout(() => {
-                setDismissed((prev) => new Set(prev).add(job.batchId));
-                callbacksRef.current.onJobDone(job.batchId);
-              }, 5000);
-            } else {
-              setStatusMap((prev) => ({
-                ...prev,
-                [job.batchId]: { status: 'done', transactionId },
-              }));
-              callbacksRef.current.onRefresh();
-              setTimeout(() => {
-                setDismissed((prev) => new Set(prev).add(job.batchId));
-                callbacksRef.current.onJobDone(job.batchId);
-              }, 3000);
-            }
-          } else if (TERMINAL_ERROR.has(batch.status)) {
-            const ingestErr = batch.items.find((i) => i.id === job.ingestId)?.error ?? null;
-            setStatusMap((prev) => ({
-              ...prev,
-              [job.batchId]: {
-                status: 'error',
-                error: ingestErr ?? `Batch ${batch.status}`,
-              },
-            }));
-            setTimeout(() => {
-              setDismissed((prev) => new Set(prev).add(job.batchId));
-              callbacksRef.current.onJobDone(job.batchId);
-            }, 5000);
-          }
-        } catch (err: unknown) {
-          // Ignore individual poll failures; next tick retries.
-          console.debug('batch poll error', job.batchId, extractProblemMessage(err));
-        }
-      }
-    }, 5000);
-
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, [jobs, dismissed, statusMap]);
-
-  const dismiss = (batchId: string) => {
-    setDismissed((prev) => new Set(prev).add(batchId));
-    onJobDone(batchId);
-  };
-
-  if (toasts.length === 0) return null;
+  if (items.length === 0) return null;
 
   return (
     <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-3">
       <AnimatePresence>
-        {toasts.map((toast) => {
+        {items.map((toast) => {
           // A terminal toast that produced a transaction is tappable —
           // jump to that transaction. For dedup this is the pre-existing
           // row the upload matched, so the user can confirm it's already
