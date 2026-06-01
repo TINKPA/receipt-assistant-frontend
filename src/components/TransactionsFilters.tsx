@@ -5,10 +5,12 @@ import {
   DEFAULT_SORT_ID,
   SORT_OPTIONS,
   STATUS_OPTIONS,
+  currentMonthYM,
   resolveSort,
   type DatePreset,
   type FilterState,
 } from '../lib/transactionsFilterState';
+import { monthLabelLong } from '../lib/month';
 import {
   CATEGORIES,
   TRANSACTION_TYPES,
@@ -72,11 +74,13 @@ export default function TransactionsFilters({
   const activeSort = resolveSort(sortId);
 
   const dateLabel =
-    filters.datePreset === 'custom'
-      ? filters.customFrom || filters.customTo
-        ? `${filters.customFrom || '…'} → ${filters.customTo || '…'}`
-        : 'Custom range'
-      : DATE_PRESET_LABEL[filters.datePreset];
+    filters.datePreset === 'month'
+      ? monthLabelLong(filters.month || currentMonthYM())
+      : filters.datePreset === 'custom'
+        ? filters.customFrom || filters.customTo
+          ? `${filters.customFrom || '…'} → ${filters.customTo || '…'}`
+          : 'Custom range'
+        : DATE_PRESET_LABEL[filters.datePreset];
 
   const categoryLabel =
     filters.categories.length === 0
@@ -122,7 +126,7 @@ export default function TransactionsFilters({
         <div ref={dateRef} className="relative">
           <Chip
             data-testid="filter-date"
-            active={filters.datePreset !== 'all'}
+            active={filters.datePreset !== 'month'}
             onClick={() => setOpenPopover((p) => (p === 'date' ? null : 'date'))}
           >
             <span className="text-[var(--color-ink-muted)] mr-1">Date:</span>
@@ -136,7 +140,14 @@ export default function TransactionsFilters({
                   key={preset}
                   data-testid={`filter-date-${preset}`}
                   onClick={() => {
-                    onChange({ ...filters, datePreset: preset });
+                    // Picking "This month" always returns to the current
+                    // month (month: ''), regardless of where the switcher
+                    // had stepped to.
+                    onChange(
+                      preset === 'month'
+                        ? { ...filters, datePreset: 'month', month: '' }
+                        : { ...filters, datePreset: preset },
+                    );
                     if (preset !== 'custom') setOpenPopover(null);
                   }}
                   className={cn(
