@@ -1379,8 +1379,12 @@ export interface ListProductsOptions {
 }
 
 export async function listProducts(opts: ListProductsOptions = {}): Promise<BackendProduct[]> {
+  // The catalog's free-text filter is the contract's `q` param (the backend
+  // ILIKEs name/custom_name/product_key). The UI calls it `search`; map it
+  // here. (Sending `search` was silently dropped by the server → #129.)
+  const { search, ...rest } = opts;
   const { data, error, response } = await client.GET('/v1/products', {
-    params: { query: opts },
+    params: { query: { ...rest, q: search?.trim() || undefined } },
   });
   return unwrap('listProducts', data, error, response.status).items;
 }
