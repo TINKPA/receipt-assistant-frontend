@@ -10,7 +10,14 @@ import './index.css';
 // The router-plugin generates the `Register` module augmentation (which wires
 // `typeof router` into TanStack's type system) inside routeTree.gen.ts, so we
 // must NOT declare it again here — doing so triggers TS2300 duplicate identifier.
-const router = createRouter({routeTree});
+//
+// `scrollRestoration` makes the router save/restore window scroll per location.
+// It's the second half of the #89 fix: now that the Ledger's pages live in the
+// TanStack Query cache (PR3), navigating into a receipt and back rehydrates the
+// full list synchronously, so the page is tall again and the saved scroll
+// offset actually exists to restore to. (The deprecated <ScrollRestoration/>
+// component is replaced by this router option.)
+const router = createRouter({routeTree, scrollRestoration: true});
 
 // QueryClientProvider wraps the router so every route/component can use
 // TanStack Query hooks. Devtools render only in dev (tree-shaken from prod
