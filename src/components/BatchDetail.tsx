@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
   CheckCircle2,
@@ -14,11 +15,11 @@ import {
   getBatch,
   subscribeToBatch,
   extractProblemMessage,
-  type BackendBatch,
   type BackendIngest,
   type IngestStatus,
 } from '../lib/api';
 import { cn } from '../lib/utils';
+import { qk } from '../lib/queryKeys';
 import { receiptLink } from '../lib/navLinks';
 
 interface BatchDetailProps {
@@ -46,25 +47,21 @@ interface LiveEvent {
 }
 
 export default function BatchDetail({ batchId, onBack }: BatchDetailProps) {
-  const [batch, setBatch] = useState<BackendBatch | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
   const [events, setEvents] = useState<LiveEvent[]>([]);
   const eventCounter = useRef(0);
 
-  const refetch = () => {
-    getBatch(batchId)
-      .then(setBatch)
-      .catch((e) => setError(extractProblemMessage(e)));
-  };
-
-  useEffect(() => {
-    setLoading(true);
-    getBatch(batchId)
-      .then(setBatch)
-      .catch((e) => setError(extractProblemMessage(e)))
-      .finally(() => setLoading(false));
-  }, [batchId]);
+  // Snapshot of the batch. SSE (below) is the freshness driver — each
+  // meaningful event invalidates this query rather than the screen polling.
+  const {
+    data: batch = null,
+    isLoading: loading,
+    error: queryError,
+  } = useQuery({
+    queryKey: qk.batch(batchId),
+    queryFn: () => getBatch(batchId),
+  });
+  const error = queryError ? extractProblemMessage(queryError) : null;
 
   // Subscribe to the live stream. Each recognized event refetches the
   // batch so status/counts stay in sync; we also accumulate a running log.
@@ -80,8 +77,10 @@ export default function BatchDetail({ batchId, onBack }: BatchDetailProps) {
           payload,
         };
         setEvents((prev) => [evt, ...prev].slice(0, 50));
-        // Any meaningful state change → refetch the batch snapshot.
-        if (name !== 'hello' && name !== 'message') refetch();
+        // Any meaningful state change → invalidate the batch snapshot so the
+        // useQuery refetches (coalesced across bursts, unlike the old N×refetch).
+        if (name !== 'hello' && name !== 'message')
+          queryClient.invalidateQueries({ queryKey: qk.batch(batchId) });
       },
       () => {
         // EventSource errors are common when the server closes after a
