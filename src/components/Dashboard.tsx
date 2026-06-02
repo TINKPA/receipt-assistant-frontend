@@ -107,7 +107,11 @@ export default function Dashboard({
 
       <SectionTitle
         title="recent"
-        more={totalCount > 0 ? `all ${totalCount} →` : undefined}
+        // Always offer the Ledger entry point — this is the only path from the
+        // home view to /transactions. Don't gate on the current-month count
+        // (totalCount), which is 0 early in a month and used to make the link
+        // vanish entirely. Show the count when we have one, plain "all →" else.
+        more={totalCount > 0 ? `all ${totalCount} →` : 'all →'}
         onMore={onViewAllTransactions}
       />
       <ProcessingCardList
