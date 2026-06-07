@@ -1,7 +1,5 @@
-import { createRootRoute, Outlet, useNavigate } from '@tanstack/react-router';
+import { createRootRoute, Outlet } from '@tanstack/react-router';
 import { AppProvider } from '../lib/appContext';
-import { useAppCtx } from '../lib/appCtx';
-import ProcessingToast from '../components/ProcessingToast';
 
 export const Route = createRootRoute({
   component: RootComponent,
@@ -11,26 +9,6 @@ function RootComponent() {
   return (
     <AppProvider>
       <Outlet />
-      <ToastHost />
     </AppProvider>
-  );
-}
-
-/**
- * The upload-progress toast lives at the root, outside the route Outlet, so
- * it survives navigation between any two screens. It reads the shared job
- * list from AppCtx and jumps to the produced transaction on tap.
- */
-function ToastHost() {
-  const { items, removeJob } = useAppCtx();
-  const navigate = useNavigate();
-  return (
-    <ProcessingToast
-      items={items}
-      onJobDone={removeJob}
-      onSelectTransaction={(id) =>
-        navigate({ to: '/receipt/$receiptId', params: { receiptId: id } })
-      }
-    />
   );
 }

@@ -45,19 +45,15 @@ const TERMINAL_ERROR = new Set(['failed', 'reconcile_error']);
  * than in a presentational component) so the *same* status can drive
  * inline cards in any list that wants them.
  *
- * The hook exposes two parallel views of the same underlying jobs:
+ * The hook exposes:
  *
- * - `jobs` + `addJob` + `removeJob` — the raw, persistent record. The
- *   root-level floating `ProcessingToast` consumes this (it runs its own
- *   polling) and `appContext` re-exports it so any route can enqueue an
- *   upload or dismiss one.
+ * - `addJob` — enqueue an upload (the `add` route calls this on submit).
  * - `items` + `dismiss` — the *projected*, polled state. The inline
  *   `ProcessingCardList` consumes this; polling happens here so the card
  *   needs no logic of its own.
  *
  * @param onRefresh Called once when a batch produces a new transaction,
- *   so the host can refetch lists and surface the real row. Only relevant
- *   to the `items` consumers; the toast does its own refresh wiring.
+ *   so the host can refetch lists and surface the real row.
  */
 export function useProcessingJobs({ onRefresh }: { onRefresh?: () => void } = {}) {
   const [jobs, setJobs] = useState<ProcessingJob[]>(() => {
@@ -97,10 +93,6 @@ export function useProcessingJobs({ onRefresh }: { onRefresh?: () => void } = {}
     setDismissed((prev) => new Set(prev).add(batchId));
     setJobs((prev) => prev.filter((j) => j.batchId !== batchId));
   }, []);
-
-  // Back-compat alias: `appContext` / `ProcessingToast` were written
-  // against `removeJob`. It's the same operation as `dismiss`.
-  const removeJob = dismiss;
 
   // Poll each visible (non-dismissed) batch through the SHARED ['batch',id]
   // cache — the same key BatchDetail uses — so there is exactly one network
@@ -162,5 +154,5 @@ export function useProcessingJobs({ onRefresh }: { onRefresh?: () => void } = {}
     }
   }, [items, dismiss]);
 
-  return { jobs, addJob, removeJob, items, dismiss };
+  return { addJob, items, dismiss };
 }
