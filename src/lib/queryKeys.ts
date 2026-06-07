@@ -26,8 +26,8 @@ export const qk = {
     all: ['batches'] as const,
     list: (args: { limit: number }) => ['batches', args] as const,
   },
-  /** A single ingest batch — shared by BatchDetail, ProcessingToast, and the
-   *  upload-job poller so all three collapse onto one cache entry per batch. */
+  /** A single ingest batch — shared by BatchDetail and the upload-job poller
+   *  (ProcessingCardList) so both collapse onto one cache entry per batch. */
   batch: (id: string) => ['batch', id] as const,
   receipt: (id: string) => ['receipt', id] as const,
   merchant: (id: string) => ['merchant', id] as const,

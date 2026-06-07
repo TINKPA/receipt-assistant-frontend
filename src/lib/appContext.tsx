@@ -10,10 +10,9 @@ import { AppCtx, type AppCtxValue } from './appCtx';
  * The context object + `useAppCtx` accessor live in `./appCtx` so this module
  * exports only the component (keeps Fast Refresh happy).
  *
- * - `jobs/addJob/removeJob` come from useProcessingJobs (localStorage-backed,
- *   so outstanding uploads survive a full page reload). The root-level
- *   floating `ProcessingToast` consumes these.
- * - `items/dismiss` are the same jobs projected to polled, render-ready state.
+ * - `addJob` comes from useProcessingJobs (localStorage-backed, so outstanding
+ *   uploads survive a full page reload); the `add` route enqueues with it.
+ * - `items/dismiss` are those jobs projected to polled, render-ready state.
  *   The inline `ProcessingCardList` (top of the ledger / dashboard) consumes
  *   these. Polling lives in the hook; when an upload completes the hook's
  *   `onRefresh` fires `invalidateLedgerSurfaces()` and every list query
@@ -22,13 +21,13 @@ import { AppCtx, type AppCtxValue } from './appCtx';
 export function AppProvider({ children }: { children: React.ReactNode }) {
   // A completed upload (non-dedup) calls onRefresh; invalidate every list
   // surface so the inline card's real row appears in place without a reload.
-  const { jobs, addJob, removeJob, items, dismiss } = useProcessingJobs({
+  const { addJob, items, dismiss } = useProcessingJobs({
     onRefresh: invalidateLedgerSurfaces,
   });
 
   const value = React.useMemo<AppCtxValue>(
-    () => ({ jobs, addJob, removeJob, items, dismiss }),
-    [jobs, addJob, removeJob, items, dismiss],
+    () => ({ addJob, items, dismiss }),
+    [addJob, items, dismiss],
   );
 
   return <AppCtx.Provider value={value}>{children}</AppCtx.Provider>;
