@@ -35,6 +35,10 @@ const INGEST_STATUS_META: Record<
   processing: { label: 'Processing', badge: 'bg-tertiary/10 text-tertiary', icon: Cog },
   done: { label: 'Done', badge: 'bg-primary/10 text-primary', icon: CheckCircle2 },
   dedup: { label: 'Duplicate', badge: 'bg-sky-400/10 text-sky-300', icon: Layers },
+  // #134: probabilistic attach — the agent judged this a copy of an
+  // existing transaction and linked the document to it. Amber (not sky)
+  // because, unlike byte-certain `dedup`, this one is reviewable.
+  near_dup: { label: 'Matched existing', badge: 'bg-amber-400/10 text-amber-300', icon: Layers },
   error: { label: 'Error', badge: 'bg-error/10 text-error', icon: AlertCircle },
   unsupported: { label: 'Unsupported', badge: 'bg-error/10 text-error', icon: AlertCircle },
 };
@@ -114,7 +118,8 @@ export default function BatchDetail({ batchId, onBack }: BatchDetailProps) {
 
   const { counts } = batch;
   // dedup + unsupported are terminal too, so they count toward completion.
-  const terminalDone = counts.done + counts.dedup + counts.error + counts.unsupported;
+  const terminalDone =
+    counts.done + counts.dedup + counts.near_dup + counts.error + counts.unsupported;
   const pct = counts.total > 0 ? Math.round((terminalDone / counts.total) * 100) : 0;
 
   return (
@@ -149,7 +154,7 @@ export default function BatchDetail({ batchId, onBack }: BatchDetailProps) {
           <StatCard label="Queued" value={counts.queued} tone="muted" />
           <StatCard label="Processing" value={counts.processing} tone="tertiary" />
           <StatCard label="Done" value={counts.done} tone="primary" />
-          <StatCard label="Duplicate" value={counts.dedup} tone="info" />
+          <StatCard label="Duplicate" value={counts.dedup + counts.near_dup} tone="info" />
           <StatCard label="Error" value={counts.error + counts.unsupported} tone="error" />
         </div>
 

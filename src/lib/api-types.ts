@@ -4561,6 +4561,7 @@ export interface components {
             workspace_id: string;
             /** @enum {string} */
             kind: "receipt_image" | "receipt_email" | "receipt_pdf" | "statement_pdf" | "other";
+            /** @description Server-side storage path, relative to the server's uploads dir (#128). Opaque to clients — fetch bytes via /content or /rendered. */
             file_path: string | null;
             mime_type: string | null;
             sha256: string;
@@ -4613,9 +4614,10 @@ export interface components {
             error: number;
             unsupported: number;
             dedup: number;
+            near_dup: number;
         };
         /** @enum {string} */
-        IngestStatus: "queued" | "processing" | "done" | "error" | "unsupported" | "dedup";
+        IngestStatus: "queued" | "processing" | "done" | "error" | "unsupported" | "dedup" | "near_dup";
         /** @enum {string|null} */
         IngestClassification: "receipt_image" | "receipt_email" | "receipt_pdf" | "statement_pdf" | "unsupported" | null;
         IngestProduced: {

@@ -127,7 +127,7 @@ export function useProcessingJobs({ onRefresh }: { onRefresh?: () => void } = {}
             // status 'dedup', pointing at the pre-existing transaction.
             const item = batch.items.find((it) => it.id === j.ingestId);
             const transactionId = item?.produced?.transaction_ids?.[0];
-            return item?.status === 'dedup'
+            return item?.status === 'dedup' || item?.status === 'near_dup'
               ? { ...base, status: 'duplicate', transactionId }
               : { ...base, status: 'done', transactionId };
           }
