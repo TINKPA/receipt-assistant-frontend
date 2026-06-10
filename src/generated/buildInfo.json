@@ -1,8 +1,8 @@
 {
   "service": "receipt-assistant-frontend",
   "version": "0.0.0",
-  "gitSha": "a95c5b80ff606d9c6634762e73e0c93cd80017f5",
-  "gitShortSha": "a95c5b8",
-  "gitBranch": "main",
-  "builtAt": "2026-06-10T12:55:53.313Z"
+  "gitSha": "7d2b373f22f8ab108570f2de5b859eeda84e6759",
+  "gitShortSha": "7d2b373",
+  "gitBranch": "feat/near-dup-ui",
+  "builtAt": "2026-06-10T15:04:02.131Z"
 }
