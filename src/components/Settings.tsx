@@ -1,6 +1,6 @@
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Boxes, Tag, ChevronRight } from 'lucide-react';
+import { Boxes, Tag, History, ChevronRight } from 'lucide-react';
 import BuildInfoPanel from './BuildInfoPanel';
 import { fetchBackendBuildInfo } from '../lib/api';
 import { qk } from '../lib/queryKeys';
@@ -10,6 +10,9 @@ interface SettingsProps {
   onOpenProducts: () => void;
   /** Open the Brands registry screen (route: /settings/brands). */
   onOpenBrands: () => void;
+  /** Open the upload/batch history screen (route: /batches). FE#80 —
+   *  this is the sole UI entry point for the Batches surface. */
+  onOpenUploads: () => void;
 }
 
 /**
@@ -17,7 +20,7 @@ interface SettingsProps {
  * arm when the app moved from state-based navigation to TanStack Router —
  * each catalog card now drives a real route via the injected callbacks.
  */
-export default function Settings({ onOpenProducts, onOpenBrands }: SettingsProps) {
+export default function Settings({ onOpenProducts, onOpenBrands, onOpenUploads }: SettingsProps) {
   const { data: backendBuildInfo = null } = useQuery({
     queryKey: qk.buildInfo,
     queryFn: fetchBackendBuildInfo,
@@ -44,6 +47,12 @@ export default function Settings({ onOpenProducts, onOpenBrands }: SettingsProps
           title="Brands"
           subtitle="Brand registry + icon asset picker"
           onClick={onOpenBrands}
+        />
+        <SettingsCard
+          icon={<History size={18} />}
+          title="Uploads"
+          subtitle="Batch history, processing status, dedup skips"
+          onClick={onOpenUploads}
         />
       </div>
 
