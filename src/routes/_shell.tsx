@@ -10,7 +10,10 @@ export const Route = createFileRoute('/_shell')({
 function dockDestinationFor(pathname: string): DockDestination {
   if (pathname.startsWith('/review')) return 'review';
   if (pathname.startsWith('/settings')) return 'settings';
-  // /, /transactions, /batches, /receipt, /merchant, /brand → Books
+  // /batches is entered from the Settings → Uploads card (FE#80), so it
+  // keeps the Settings pill lit like the other Settings sub-screens.
+  if (pathname.startsWith('/batches')) return 'settings';
+  // /, /transactions, /receipt, /merchant, /brand → Books
   return 'books';
 }
 

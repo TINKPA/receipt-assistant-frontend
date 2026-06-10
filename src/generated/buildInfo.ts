@@ -1,8 +1,8 @@
 export const buildInfo = {
   "service": "receipt-assistant-frontend",
   "version": "0.0.0",
-  "gitSha": "03b6eb556a63ac777dbc3333a191f72d2dc99ae0",
-  "gitShortSha": "03b6eb5",
-  "gitBranch": "feat/tanstack-router",
-  "builtAt": "2026-05-31T06:02:23.554Z"
+  "gitSha": "a95c5b80ff606d9c6634762e73e0c93cd80017f5",
+  "gitShortSha": "a95c5b8",
+  "gitBranch": "main",
+  "builtAt": "2026-06-10T12:55:53.313Z"
 } as const;

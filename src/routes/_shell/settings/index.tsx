@@ -11,6 +11,7 @@ function SettingsRoute() {
     <Settings
       onOpenProducts={() => navigate({ to: '/settings/products' })}
       onOpenBrands={() => navigate({ to: '/settings/brands' })}
+      onOpenUploads={() => navigate({ to: '/batches' })}
     />
   );
 }
