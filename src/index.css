@@ -1,50 +1,71 @@
 @import "tailwindcss";
 
 /* ─────────────────────────────────────────────────────────────────────
-   Design tokens — Variant B (Soft / Organic).
-   Locked 2026-05-10. Canonical reference: docs/2026-05-10_Mockup_frontend_redesign-B-soft.html
-   in the outer iCloud project root. DESIGN.md §9 has the rationale.
+   Design tokens — Editorial (warm cream · cardinal).
+   Adopted 2026-06-12, supersedes Variant B (locked 2026-05-10, retired).
+   Canonical reference: the 28-screen board `receipt_assistant_mobile.html`
+   in the outer iCloud project (backfilled 2026-06-12). DESIGN.md has the
+   rationale.
+
+   Migration note: legacy token NAMES (terracotta / sage / stamp / butter,
+   font-hand) are kept as deprecated aliases so every page keeps rendering
+   through the P1 reskin; their VALUES already point at the editorial
+   palette. Delete the alias lines when their last consumer is rewritten.
    ──────────────────────────────────────────────────────────────────── */
 @theme {
   /* Typography */
-  --font-display: "Lora", Georgia, ui-serif, serif;
-  --font-body:    "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Fraunces", "Times New Roman", ui-serif, serif;
+  --font-body:    "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono:    "JetBrains Mono", "Menlo", ui-monospace, monospace;
+  /* Deprecated — Caveat survives only until the last font-hand surface is reskinned in P1. */
   --font-hand:    "Caveat", ui-rounded, cursive;
   /* Back-compat alias so any straggler `font-headline` class keeps resolving until pages are rewritten. */
   --font-headline: var(--font-display);
 
   /* Spacing — Tailwind's defaults already follow the 4px grid; nothing to override.
      Only need to add named radii. */
-  --radius-card:       18px;
-  --radius-input:      16px;
+  --radius-card:       16px;
+  --radius-input:      14px;
   --radius-pill:       9999px;
-  --radius-thumb:      14px;
+  --radius-thumb:      12px;
   --radius-viewfinder: 28px;
   --radius-phone:      52px;
 
   /* Surfaces */
-  --color-paper:      #faf6ec;   /* page bg */
-  --color-paper-deep: #f1e9d8;   /* sunken / progress track */
-  --color-surface:    #ffffff;   /* cards */
-  --color-butter:     #f5e6c3;   /* atmospheric only — radial blobs */
+  --color-paper:      #F8F3E8;   /* page bg (board: --app-bg) */
+  --color-paper-deep: #ECE3D2;   /* sunken / progress track */
+  --color-paper-fold: #DDD3BE;   /* deepest paper — folds, knocked-back text on ink */
+  --color-surface:    #FFFCF5;   /* cards (board: --app-surface) */
+  --color-elev:       #FFFFFF;   /* highest elevation */
+  --color-butter:     #DDD3BE;   /* deprecated alias → paper-fold (atmospheric blobs) */
 
   /* Ink (text) */
-  --color-ink:        #2d2520;   /* primary text — warm dark brown, not pure black */
-  --color-ink-muted:  #8b7e72;
-  --color-ink-soft:   #5a4838;   /* mid-tone for receipt-image body text */
+  --color-ink:        #1A1612;   /* primary text — warm near-black */
+  --color-ink-soft:   #4F4639;
+  --color-ink-muted:  #8C8273;
+  --color-ink-faint:  #B5AC9C;
 
-  /* Rule lines (DESIGN.md §3.3 — barely visible) */
-  --color-rule:      rgba(45, 37, 32, 0.08);
-  --color-rule-soft: rgba(45, 37, 32, 0.05);
+  /* Rule lines — editorial hairlines, solid (crisper than the old rgba washes) */
+  --color-rule:      #DCD2BD;
+  --color-rule-soft: #E8DFCD;
 
-  /* Accent — terracotta, single & sparingly used */
-  --color-terracotta:        #c97b5c;
-  --color-terracotta-deep:   #b8654a;
-  --color-terracotta-soft:   rgba(201, 123, 92, 0.10);
+  /* Accent — cardinal, single & sparingly used */
+  --color-accent:        #B5341A;
+  --color-accent-deep:   #8B2613;
+  --color-accent-soft:   rgba(181, 52, 26, 0.10);
+  /* Deprecated aliases (Variant B names) — values now cardinal */
+  --color-terracotta:        #B5341A;
+  --color-terracotta-deep:   #8B2613;
+  --color-terracotta-soft:   rgba(181, 52, 26, 0.10);
 
-  /* Secondary accents — rare */
-  --color-sage:   #8b9d72;   /* positive deltas, savings */
-  --color-stamp:  #8a2828;   /* errors / destructive only */
+  /* Role colors — party-graph facets (channel / seller / maker / place) */
+  --color-amber:  #BC8624;
+  --color-olive:  #5C6B3D;
+  --color-slate:  #3F5563;
+  --color-plum:   #6E3F5F;
+  /* Deprecated aliases (Variant B names) */
+  --color-sage:   #5C6B3D;   /* → olive: positive deltas, savings */
+  --color-stamp:  #8B2613;   /* → accent-deep: errors / destructive only */
 
   /* ── Material-3-style aliases so legacy pages keep rendering until rewritten ──
      Each page rewrite in PRs 2–5 will drop its dependency on these and they
@@ -73,7 +94,7 @@
   --color-on-tertiary-container:       var(--color-ink);
   --color-error:                       var(--color-stamp);
   --color-on-error:                    #ffffff;
-  --color-error-container:             rgba(138, 40, 40, 0.12);
+  --color-error-container:             rgba(139, 38, 19, 0.12);
   --color-on-error-container:          var(--color-stamp);
 
   /* Motion (DESIGN.md §5.2) */
@@ -111,7 +132,7 @@
 }
 
 .neon-glow-primary {
-  filter: drop-shadow(0 0 8px rgba(201, 123, 92, 0.25));
+  filter: drop-shadow(0 0 8px rgba(181, 52, 26, 0.22));
 }
 
 .no-scrollbar::-webkit-scrollbar { display: none; }
