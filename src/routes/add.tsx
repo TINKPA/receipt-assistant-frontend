@@ -21,8 +21,11 @@ function AddRoute() {
       onComplete={(job) => {
         addJob(job);
         invalidateLedgerSurfaces();
-        // Drop back to Books so the user sees their entry processing.
-        navigate({ to: '/' });
+        // Board screen 16: land on the live extraction trace (BatchDetail's
+        // SSE stage view) instead of dropping back to Home — every stage
+        // visible. The inline processing card still covers Home/Ledger for
+        // anyone who navigates away mid-extraction.
+        navigate({ to: '/batches/$batchId', params: { batchId: job.batchId } });
       }}
     />
   );
