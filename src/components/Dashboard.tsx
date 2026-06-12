@@ -132,13 +132,15 @@ function GreetingRow() {
       <p className="font-hand text-2xl text-[var(--color-terracotta)] leading-none">
         Hi Daniel <span aria-hidden="true">🌿</span>
       </p>
-      <div
-        aria-hidden="true"
-        className="h-9 w-9 rounded-full"
-        style={{
-          background: 'linear-gradient(135deg, var(--color-butter) 0%, var(--color-terracotta) 100%)',
-        }}
-      />
+      {/* Settings moved off the dock in the v2 IA — it's the stack behind
+          the Home gear (board screen 01 / lane VI). */}
+      <Link
+        to="/settings"
+        aria-label="Settings"
+        className="flex h-9 w-9 items-center justify-center rounded-full border-[0.5px] border-[var(--color-rule-soft)] bg-[var(--color-surface)] text-[15px] text-[var(--color-ink-muted)] transition-colors hover:text-[var(--color-ink)]"
+      >
+        <span aria-hidden="true">⚙</span>
+      </Link>
     </div>
   );
 }

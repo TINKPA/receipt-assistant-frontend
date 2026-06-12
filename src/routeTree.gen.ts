@@ -14,6 +14,8 @@ import { Route as ShellRouteImport } from './routes/_shell'
 import { Route as ShellIndexRouteImport } from './routes/_shell/index'
 import { Route as ShellTransactionsRouteImport } from './routes/_shell/transactions'
 import { Route as ShellSettingsIndexRouteImport } from './routes/_shell/settings/index'
+import { Route as ShellOwnedIndexRouteImport } from './routes/_shell/owned/index'
+import { Route as ShellInsightsIndexRouteImport } from './routes/_shell/insights/index'
 import { Route as ShellBatchesIndexRouteImport } from './routes/_shell/batches/index'
 import { Route as ShellReviewYearlyRouteImport } from './routes/_shell/review/yearly'
 import { Route as ShellReviewMonthlyRouteImport } from './routes/_shell/review/monthly'
@@ -46,6 +48,16 @@ const ShellTransactionsRoute = ShellTransactionsRouteImport.update({
 const ShellSettingsIndexRoute = ShellSettingsIndexRouteImport.update({
   id: '/settings/',
   path: '/settings/',
+  getParentRoute: () => ShellRoute,
+} as any)
+const ShellOwnedIndexRoute = ShellOwnedIndexRouteImport.update({
+  id: '/owned/',
+  path: '/owned/',
+  getParentRoute: () => ShellRoute,
+} as any)
+const ShellInsightsIndexRoute = ShellInsightsIndexRouteImport.update({
+  id: '/insights/',
+  path: '/insights/',
   getParentRoute: () => ShellRoute,
 } as any)
 const ShellBatchesIndexRoute = ShellBatchesIndexRouteImport.update({
@@ -107,6 +119,8 @@ export interface FileRoutesByFullPath {
   '/review/monthly': typeof ShellReviewMonthlyRoute
   '/review/yearly': typeof ShellReviewYearlyRoute
   '/batches/': typeof ShellBatchesIndexRoute
+  '/insights/': typeof ShellInsightsIndexRoute
+  '/owned/': typeof ShellOwnedIndexRoute
   '/settings/': typeof ShellSettingsIndexRoute
   '/settings/brands/': typeof ShellSettingsBrandsIndexRoute
   '/settings/products/': typeof ShellSettingsProductsIndexRoute
@@ -122,6 +136,8 @@ export interface FileRoutesByTo {
   '/review/monthly': typeof ShellReviewMonthlyRoute
   '/review/yearly': typeof ShellReviewYearlyRoute
   '/batches': typeof ShellBatchesIndexRoute
+  '/insights': typeof ShellInsightsIndexRoute
+  '/owned': typeof ShellOwnedIndexRoute
   '/settings': typeof ShellSettingsIndexRoute
   '/settings/brands': typeof ShellSettingsBrandsIndexRoute
   '/settings/products': typeof ShellSettingsProductsIndexRoute
@@ -139,6 +155,8 @@ export interface FileRoutesById {
   '/_shell/review/monthly': typeof ShellReviewMonthlyRoute
   '/_shell/review/yearly': typeof ShellReviewYearlyRoute
   '/_shell/batches/': typeof ShellBatchesIndexRoute
+  '/_shell/insights/': typeof ShellInsightsIndexRoute
+  '/_shell/owned/': typeof ShellOwnedIndexRoute
   '/_shell/settings/': typeof ShellSettingsIndexRoute
   '/_shell/settings/brands/': typeof ShellSettingsBrandsIndexRoute
   '/_shell/settings/products/': typeof ShellSettingsProductsIndexRoute
@@ -156,6 +174,8 @@ export interface FileRouteTypes {
     | '/review/monthly'
     | '/review/yearly'
     | '/batches/'
+    | '/insights/'
+    | '/owned/'
     | '/settings/'
     | '/settings/brands/'
     | '/settings/products/'
@@ -171,6 +191,8 @@ export interface FileRouteTypes {
     | '/review/monthly'
     | '/review/yearly'
     | '/batches'
+    | '/insights'
+    | '/owned'
     | '/settings'
     | '/settings/brands'
     | '/settings/products'
@@ -187,6 +209,8 @@ export interface FileRouteTypes {
     | '/_shell/review/monthly'
     | '/_shell/review/yearly'
     | '/_shell/batches/'
+    | '/_shell/insights/'
+    | '/_shell/owned/'
     | '/_shell/settings/'
     | '/_shell/settings/brands/'
     | '/_shell/settings/products/'
@@ -232,6 +256,20 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings/'
       preLoaderRoute: typeof ShellSettingsIndexRouteImport
+      parentRoute: typeof ShellRoute
+    }
+    '/_shell/owned/': {
+      id: '/_shell/owned/'
+      path: '/owned'
+      fullPath: '/owned/'
+      preLoaderRoute: typeof ShellOwnedIndexRouteImport
+      parentRoute: typeof ShellRoute
+    }
+    '/_shell/insights/': {
+      id: '/_shell/insights/'
+      path: '/insights'
+      fullPath: '/insights/'
+      preLoaderRoute: typeof ShellInsightsIndexRouteImport
       parentRoute: typeof ShellRoute
     }
     '/_shell/batches/': {
@@ -310,6 +348,8 @@ interface ShellRouteChildren {
   ShellReviewMonthlyRoute: typeof ShellReviewMonthlyRoute
   ShellReviewYearlyRoute: typeof ShellReviewYearlyRoute
   ShellBatchesIndexRoute: typeof ShellBatchesIndexRoute
+  ShellInsightsIndexRoute: typeof ShellInsightsIndexRoute
+  ShellOwnedIndexRoute: typeof ShellOwnedIndexRoute
   ShellSettingsIndexRoute: typeof ShellSettingsIndexRoute
   ShellSettingsBrandsIndexRoute: typeof ShellSettingsBrandsIndexRoute
   ShellSettingsProductsIndexRoute: typeof ShellSettingsProductsIndexRoute
@@ -325,6 +365,8 @@ const ShellRouteChildren: ShellRouteChildren = {
   ShellReviewMonthlyRoute: ShellReviewMonthlyRoute,
   ShellReviewYearlyRoute: ShellReviewYearlyRoute,
   ShellBatchesIndexRoute: ShellBatchesIndexRoute,
+  ShellInsightsIndexRoute: ShellInsightsIndexRoute,
+  ShellOwnedIndexRoute: ShellOwnedIndexRoute,
   ShellSettingsIndexRoute: ShellSettingsIndexRoute,
   ShellSettingsBrandsIndexRoute: ShellSettingsBrandsIndexRoute,
   ShellSettingsProductsIndexRoute: ShellSettingsProductsIndexRoute,
