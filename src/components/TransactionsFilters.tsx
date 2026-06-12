@@ -349,7 +349,7 @@ export default function TransactionsFilters({
             type="button"
             data-testid="filter-clear-all"
             onClick={onClear}
-            className="font-hand text-base text-[var(--color-terracotta)] hover:text-[var(--color-terracotta-deep)] px-2"
+            className="font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--color-accent)] hover:text-[var(--color-accent-deep)] px-2"
           >
             clear all ×
           </button>
@@ -360,7 +360,7 @@ export default function TransactionsFilters({
           data-testid="filter-more-toggle"
           onClick={() => setMoreOpen((s) => !s)}
           className={cn(
-            'ml-auto font-hand text-lg leading-none',
+            'ml-auto font-display italic text-[15px] leading-none',
             moreOpen ? 'text-[var(--color-ink)]' : 'text-[var(--color-terracotta)] hover:text-[var(--color-terracotta-deep)]',
           )}
         >
