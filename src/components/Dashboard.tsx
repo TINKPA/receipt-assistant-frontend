@@ -6,12 +6,12 @@ import {
   fetchSummary,
   classifyBackendCategory,
 } from '../lib/api';
-import type { Transaction, Category } from '../types';
+import { listBatches } from '../lib/api/ingest';
+import type { Transaction } from '../types';
 import { isProcessing as txIsProcessing } from '../lib/transactionStatus';
 import { cn } from '../lib/utils';
-import { receiptLink, categoryLedgerLink } from '../lib/navLinks';
+import { receiptLink } from '../lib/navLinks';
 import { qk } from '../lib/queryKeys';
-import { CategoryIcon } from './CategoryIcon';
 import { MerchantIcon } from './MerchantIcon';
 import ProcessingCardList from './ProcessingCard';
 import type { ProcessingItem } from './useProcessingJobs';
@@ -24,22 +24,17 @@ interface DashboardProps {
   onDismissProcessing?: (batchId: string) => void;
 }
 
-interface SpendingCategorySlice {
-  category: Category;
-  total: number;
-  count: number;
-}
-
 /**
- * Books — the home view in Variant B (Soft / Organic).
+ * Home — the landing tab in the v2 editorial IA (board screen 01,
+ * tracking receipt-assistant#149).
  *
- * Layout follows docs/2026-05-10_Mockup_frontend_redesign-B-soft.html (fig.01),
- * scoped to the current month. All data is live from the backend: no mocks,
- * no fixtures, no "demo mode" toggles (see memory feedback_no_mock_api.md).
+ * Anatomy follows the board: greeting + date/gear row, the ink-dark month
+ * card, a fat capture CTA, the Inbox/Uploads quick row, then Recent.
+ * The Variant B category grid moved to the Monthly review (Insights lane) —
+ * the month card's meta line carries the summary here.
  *
- * The mockup's "86% of $5000 plan" budget meter is intentionally omitted —
- * there is no /budget endpoint on the backend yet. The big spend card stands
- * on its own without an invented number.
+ * All data is live from the backend: no mocks, no fixtures (see memory
+ * feedback_no_mock_api.md).
  */
 export default function Dashboard({
   onSelectReceipt,
@@ -48,6 +43,7 @@ export default function Dashboard({
   onDismissProcessing,
 }: DashboardProps) {
   const monthRange = useMemo(() => currentMonthRange(new Date()), []);
+  const priorRange = useMemo(() => priorMonthRange(monthRange.now), [monthRange]);
 
   // Recent = freshly-uploaded / re-processed, not "this month's activity".
   // Ride the `created_at desc` default with no month filter so a receipt with
@@ -62,55 +58,51 @@ export default function Dashboard({
     queryKey: qk.summary.range({ from: monthRange.from, to: monthRange.to }),
     queryFn: () => fetchSummary({ from: monthRange.from, to: monthRange.to }),
   });
+  // Prior month, for the month card's "vs last month" delta. Cheap (the
+  // summary endpoint aggregates server-side) and cached under its own range.
+  const { data: priorSummary = [] } = useQuery({
+    queryKey: qk.summary.range({ from: priorRange.from, to: priorRange.to }),
+    queryFn: () => fetchSummary({ from: priorRange.from, to: priorRange.to }),
+  });
+  // Inbox = drafts awaiting review. Capped fetch; the count only feeds the
+  // quick-row label so "50" reads as "lots" without a dedicated endpoint.
+  const { data: drafts = [] } = useQuery({
+    queryKey: qk.transactions.recent({ limit: 50, status: 'draft' }),
+    queryFn: () => fetchTransactions({ limit: 50, status: 'draft' }),
+  });
+  const { data: lastBatches = [] } = useQuery({
+    queryKey: ['batches', 'latest'],
+    queryFn: async () => (await listBatches({ limit: 1 })).items ?? [],
+  });
   const loading = txLoading || sumLoading;
 
-  const spendingByCategory = useMemo<SpendingCategorySlice[]>(() => {
-    const buckets = new Map<Category, { total: number; count: number }>();
-    for (const item of summary) {
-      const { category, transactionType } = classifyBackendCategory(item.category);
-      if (transactionType !== 'spending' || !category) continue;
-      const amount = Math.abs(Number(item.total_spent));
-      const existing = buckets.get(category);
-      if (existing) {
-        existing.total += amount;
-        existing.count += item.count;
-      } else {
-        buckets.set(category, { total: amount, count: item.count });
-      }
-    }
-    return Array.from(buckets, ([category, v]) => ({ category, total: v.total, count: v.count }))
-      .sort((a, b) => b.total - a.total);
-  }, [summary]);
-
-  const totalSpent = useMemo(
-    () => spendingByCategory.reduce((s, c) => s + c.total, 0),
-    [spendingByCategory],
+  const { total: totalSpent, count: totalCount } = useMemo(
+    () => spendingTotals(summary),
+    [summary],
   );
-  const totalCount = useMemo(
-    () => spendingByCategory.reduce((s, c) => s + c.count, 0),
-    [spendingByCategory],
-  );
+  const { total: priorSpent } = useMemo(() => spendingTotals(priorSummary), [priorSummary]);
 
   return (
-    <div className="space-y-7">
-      <GreetingRow />
-      <MonthHeading date={monthRange.now} />
+    <div className="space-y-6">
+      <GreetingRow now={monthRange.now} />
 
-      <SpentCard amount={totalSpent} count={totalCount} loading={loading} />
-
-      <SectionTitle title="where it went" />
-      <CategoryGrid
-        items={spendingByCategory}
+      <MonthCard
+        now={monthRange.now}
+        amount={totalSpent}
+        count={totalCount}
+        priorAmount={priorSpent}
         loading={loading}
-        range={{ from: monthRange.from, to: monthRange.to }}
       />
+
+      <CaptureCTA />
+
+      <QuickRow draftCount={drafts.length} lastBatchAt={lastBatches[0]?.created_at ?? null} />
 
       <SectionTitle
         title="recent"
         // Always offer the Ledger entry point — this is the only path from the
-        // home view to /transactions. Don't gate on the current-month count
-        // (totalCount), which is 0 early in a month and used to make the link
-        // vanish entirely. Show the count when we have one, plain "all →" else.
+        // home view to /transactions besides the tab bar. Show the count when
+        // we have one, plain "all →" else.
         more={totalCount > 0 ? `all ${totalCount} →` : 'all →'}
         onMore={onViewAllTransactions}
       />
@@ -126,93 +118,170 @@ export default function Dashboard({
 
 /* ── Greeting ─────────────────────────────────────────────────── */
 
-function GreetingRow() {
-  return (
-    <div className="flex items-center justify-between">
-      <p className="font-hand text-2xl text-[var(--color-terracotta)] leading-none">
-        Hi Daniel <span aria-hidden="true">🌿</span>
-      </p>
-      {/* Settings moved off the dock in the v2 IA — it's the stack behind
-          the Home gear (board screen 01 / lane VI). */}
-      <Link
-        to="/settings"
-        aria-label="Settings"
-        className="flex h-9 w-9 items-center justify-center rounded-full border-[0.5px] border-[var(--color-rule-soft)] bg-[var(--color-surface)] text-[15px] text-[var(--color-ink-muted)] transition-colors hover:text-[var(--color-ink)]"
-      >
-        <span aria-hidden="true">⚙</span>
-      </Link>
-    </div>
-  );
-}
-
-/* ── Month heading ────────────────────────────────────────────── */
-
-function MonthHeading({ date }: { date: Date }) {
-  const month = date.toLocaleString('en-US', { month: 'long' });
+function GreetingRow({ now }: { now: Date }) {
+  const hour = now.getHours();
+  const daypart = hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : 'evening';
+  const dateLine = now
+    .toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+    .replace(/,/g, ' ·');
   return (
     <div>
-      <h1 className="font-display italic font-normal text-4xl sm:text-5xl leading-[1.05] tracking-tight">
-        Your <span className="font-medium not-italic">{month}</span>
+      <h1 className="font-display text-[2rem] leading-[1.08] tracking-tight">
+        Good {daypart},
+        <br />
+        <em className="italic text-[var(--color-accent)]">Daniel.</em>
       </h1>
-      <p className="mt-2 text-[15px] text-[var(--color-ink-muted)]">
-        {weekProgressSentence(date)}
-      </p>
+      <div className="mt-2 flex items-center">
+        <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--color-ink-muted)]">
+          {dateLine} · {now.getFullYear()}
+        </p>
+        {/* Settings is the stack behind the Home gear (v2 IA, board lane VI). */}
+        <Link
+          to="/settings"
+          aria-label="Settings"
+          className="ml-auto flex h-8 w-8 items-center justify-center rounded-full text-[15px] text-[var(--color-ink-muted)] transition-colors hover:text-[var(--color-ink)]"
+        >
+          <span aria-hidden="true">⚙</span>
+        </Link>
+      </div>
     </div>
   );
 }
 
-/* ── Spent card ───────────────────────────────────────────────── */
+/* ── Month card (ink-dark, board screen 01) ───────────────────── */
 
-function SpentCard({
+function MonthCard({
+  now,
   amount,
   count,
+  priorAmount,
   loading,
 }: {
+  now: Date;
   amount: number;
   count: number;
+  priorAmount: number;
   loading: boolean;
 }) {
+  const month = now.toLocaleString('en-US', { month: 'long' });
+  const priorMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1).toLocaleString('en-US', {
+    month: 'long',
+  });
   const { whole, cents } = splitAmount(amount);
+  // Pace, not raw total: compare against the same number of days into the
+  // prior month so mid-month the delta isn't trivially "down".
+  const dayOfMonth = now.getDate();
+  const daysInPrior = new Date(now.getFullYear(), now.getMonth(), 0).getDate();
+  const pacedPrior = priorAmount * Math.min(1, dayOfMonth / daysInPrior);
+  const delta = pacedPrior > 0 ? Math.round(((amount - pacedPrior) / pacedPrior) * 100) : null;
+
   return (
-    <section
-      className={cn(
-        'relative overflow-hidden rounded-[18px] p-6',
-        'border border-[var(--color-rule)] bg-[var(--color-surface)]',
-        'shadow-[0_4px_16px_-8px_rgba(45,37,32,0.08)]',
-      )}
-    >
+    <section className="relative overflow-hidden rounded-[18px] bg-[var(--color-ink)] px-6 py-5 text-[var(--color-paper)]">
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute -top-10 -right-10 h-36 w-36 rounded-full opacity-60"
-        style={{
-          background: 'radial-gradient(circle, var(--color-butter), transparent 70%)',
-        }}
+        className="pointer-events-none absolute -right-8 -top-10 h-32 w-32 rounded-full"
+        style={{ background: 'radial-gradient(circle, rgba(181,52,26,0.45), transparent 70%)' }}
       />
-
-      <p className="relative text-xs font-medium text-[var(--color-ink-muted)] mb-2">SPENT</p>
-
+      <p className="relative font-mono text-[9px] uppercase tracking-[0.2em] text-[var(--color-paper-fold)]">
+        Your {month} · so far
+      </p>
       {loading ? (
-        <p className="relative font-display italic text-4xl text-[var(--color-ink-muted)]">
-          loading…
-        </p>
+        <p className="relative mt-2 font-display text-3xl text-[var(--color-paper-fold)]">…</p>
       ) : (
-        <p className="relative font-display italic font-medium text-[clamp(2.5rem,9vw,3.5rem)] leading-none tracking-tight tnum">
-          <span className="text-[0.55em] font-normal text-[var(--color-terracotta)] align-top mr-[0.1em]">
-            $
-          </span>
-          {whole.toLocaleString()}
-          <span className="text-[0.5em] font-normal text-[var(--color-ink-muted)]">.{cents}</span>
+        <p className="relative mt-1.5 font-display text-[clamp(2.6rem,10vw,3.4rem)] font-light leading-none tracking-tight tnum">
+          ${whole.toLocaleString()}
+          <span className="text-[0.5em] text-[var(--color-paper-fold)]">.{cents}</span>
         </p>
       )}
-
-      <p className="relative mt-3 text-[13px] text-[var(--color-ink-muted)]">
-        {loading
-          ? ' '
-          : count === 0
-            ? 'No entries yet — capture your first receipt below.'
-            : `${count} ${count === 1 ? 'receipt' : 'receipts'} this month`}
+      <p className="relative mt-2.5 text-[12px] text-[color:rgba(221,211,190,0.85)]">
+        {loading ? (
+          ' '
+        ) : count === 0 ? (
+          'No entries yet — snap your first receipt below.'
+        ) : (
+          <>
+            {delta !== null && (
+              <span className={delta <= 0 ? 'text-[#8FA468]' : 'text-[#D08770]'}>
+                {delta <= 0 ? '↓' : '↑'} {Math.abs(delta)}% vs {priorMonth} pace ·{' '}
+              </span>
+            )}
+            <strong className="font-medium text-[var(--color-paper)]">{count}</strong>{' '}
+            {count === 1 ? 'transaction' : 'transactions'}
+          </>
+        )}
       </p>
     </section>
+  );
+}
+
+/* ── Capture CTA (board screen 01) ────────────────────────────── */
+
+function CaptureCTA() {
+  return (
+    <Link
+      to="/add"
+      className={cn(
+        'flex items-center gap-4 rounded-[18px] px-5 py-4',
+        'border-[0.5px] border-[var(--color-rule)] bg-[var(--color-surface)]',
+        'transition-shadow hover:shadow-[0_6px_20px_-10px_rgba(26,22,18,0.18)]',
+      )}
+    >
+      <span
+        aria-hidden="true"
+        className="flex h-11 w-11 items-center justify-center rounded-[12px] bg-[var(--color-accent)] text-[18px] text-white"
+      >
+        📷
+      </span>
+      <span className="min-w-0">
+        <span className="block font-display text-[17px] font-medium leading-tight">
+          Snap a receipt
+        </span>
+        <span className="mt-0.5 block text-[11.5px] text-[var(--color-ink-muted)]">
+          or upload a photo, PDF, or email
+        </span>
+      </span>
+      <span aria-hidden="true" className="ml-auto text-[15px] text-[var(--color-ink-faint)]">
+        ›
+      </span>
+    </Link>
+  );
+}
+
+/* ── Quick row: Inbox drafts + Uploads (board screen 01) ──────── */
+
+function QuickRow({
+  draftCount,
+  lastBatchAt,
+}: {
+  draftCount: number;
+  lastBatchAt: string | null;
+}) {
+  return (
+    <div className="grid grid-cols-2 gap-2.5">
+      <Link
+        to="/transactions"
+        search={{ status: 'draft' as const }}
+        className="rounded-[14px] border-[0.5px] border-[var(--color-rule-soft)] bg-[var(--color-surface)] px-4 py-3 transition-colors hover:border-[var(--color-rule)]"
+      >
+        <p className="font-mono text-[8.5px] uppercase tracking-[0.16em] text-[var(--color-ink-muted)]">
+          ⚡ Inbox
+        </p>
+        <p className="mt-1 font-display text-[15px] font-medium">
+          {draftCount >= 50 ? '50+' : draftCount} {draftCount === 1 ? 'draft' : 'drafts'}
+        </p>
+      </Link>
+      <Link
+        to="/batches"
+        className="rounded-[14px] border-[0.5px] border-[var(--color-rule-soft)] bg-[var(--color-surface)] px-4 py-3 transition-colors hover:border-[var(--color-rule)]"
+      >
+        <p className="font-mono text-[8.5px] uppercase tracking-[0.16em] text-[var(--color-ink-muted)]">
+          ⇪ Uploads · last
+        </p>
+        <p className="mt-1 font-display text-[15px] font-medium">
+          {lastBatchAt ? relativeTime(lastBatchAt) : '—'}
+        </p>
+      </Link>
+    </div>
   );
 }
 
@@ -228,8 +297,8 @@ function SectionTitle({
   onMore?: () => void;
 }) {
   return (
-    <div className="flex items-center justify-between pt-2">
-      <h2 className="font-display italic font-medium text-2xl leading-none tracking-tight">
+    <div className="flex items-baseline justify-between pt-1">
+      <h2 className="font-display italic text-[1.35rem] font-medium leading-none tracking-tight">
         {title}
       </h2>
       {more && (
@@ -238,76 +307,15 @@ function SectionTitle({
           onClick={onMore}
           disabled={!onMore}
           className={cn(
-            'font-hand text-lg text-[var(--color-terracotta)]',
+            'font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--color-accent)]',
             'leading-none',
             !onMore && 'cursor-default opacity-50',
-            onMore && 'hover:text-[var(--color-terracotta-deep)]',
+            onMore && 'hover:text-[var(--color-accent-deep)]',
           )}
         >
           {more}
         </button>
       )}
-    </div>
-  );
-}
-
-/* ── Category grid (up to 7 spending categories) ─────────────── */
-
-function CategoryGrid({
-  items,
-  loading,
-  range,
-}: {
-  items: SpendingCategorySlice[];
-  loading: boolean;
-  range: { from: string; to: string };
-}) {
-  if (loading) {
-    return (
-      <div className="grid grid-cols-2 gap-3">
-        {[0, 1, 2, 3].map((i) => (
-          <div
-            key={i}
-            className="h-[100px] rounded-[18px] border border-[var(--color-rule)] bg-[var(--color-surface)]"
-            aria-hidden="true"
-          />
-        ))}
-      </div>
-    );
-  }
-  if (items.length === 0) {
-    return (
-      <p className="font-hand text-lg text-[var(--color-ink-muted)] py-4">
-        nothing here yet —
-      </p>
-    );
-  }
-  return (
-    <div className="grid grid-cols-2 gap-3">
-      {items.map((c) => (
-        <Link
-          key={c.category}
-          {...categoryLedgerLink(c.category, range)}
-          className={cn(
-            'rounded-[18px] p-4 min-h-[100px]',
-            'border border-[var(--color-rule)] bg-[var(--color-surface)]',
-            'flex flex-col justify-between',
-            'cursor-pointer transition-shadow',
-            'hover:shadow-[0_4px_16px_-8px_rgba(45,37,32,0.12)]',
-            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-terracotta)]',
-          )}
-        >
-          <CategoryIcon category={c.category} size={28} />
-          <div>
-            <p className="text-[13px] font-medium text-[var(--color-ink-muted)] mb-0.5">
-              {c.category}
-            </p>
-            <p className="font-display italic font-medium text-[1.375rem] leading-none tracking-tight tnum">
-              ${Math.round(c.total).toLocaleString()}
-            </p>
-          </div>
-        </Link>
-      ))}
     </div>
   );
 }
@@ -323,22 +331,20 @@ function RecentList({
 }) {
   if (loading) {
     return (
-      <div className="rounded-[18px] border border-[var(--color-rule)] bg-[var(--color-surface)] px-5 py-6">
-        <p className="font-hand text-lg text-[var(--color-ink-muted)]">loading…</p>
+      <div className="rounded-[16px] border-[0.5px] border-[var(--color-rule-soft)] bg-[var(--color-surface)] px-5 py-6">
+        <p className="font-display italic text-[var(--color-ink-muted)]">loading…</p>
       </div>
     );
   }
   if (items.length === 0) {
     return (
-      <div className="rounded-[18px] border border-[var(--color-rule)] bg-[var(--color-surface)] px-5 py-6 text-center">
-        <p className="font-display italic text-[var(--color-ink-muted)]">
-          Nothing here yet.
-        </p>
+      <div className="rounded-[16px] border-[0.5px] border-[var(--color-rule-soft)] bg-[var(--color-surface)] px-5 py-6 text-center">
+        <p className="font-display italic text-[var(--color-ink-muted)]">Nothing here yet.</p>
       </div>
     );
   }
   return (
-    <ul className="rounded-[18px] border border-[var(--color-rule)] bg-[var(--color-surface)] px-5">
+    <ul className="rounded-[16px] border-[0.5px] border-[var(--color-rule-soft)] bg-[var(--color-surface)] px-5">
       {items.map((tx, idx) => {
         const isProcessing = txIsProcessing(tx.rawStatus);
         const dateLabel = formatRelativeDate(tx.date);
@@ -374,7 +380,7 @@ function RecentList({
             {(() => {
               const body = (
                 <>
-                  <p className="text-[15px] font-medium leading-snug truncate">
+                  <p className="font-display text-[14.5px] font-medium leading-snug truncate">
                     {tx.description}
                   </p>
                   {subtitle && (
@@ -382,9 +388,9 @@ function RecentList({
                   )}
                   <p
                     className={cn(
-                      'mt-0.5 text-xs tnum truncate',
+                      'mt-0.5 font-mono text-[10px] tnum truncate',
                       isToday
-                        ? 'text-[var(--color-terracotta)] font-medium'
+                        ? 'font-medium text-[var(--color-accent)]'
                         : 'text-[var(--color-ink-muted)]',
                     )}
                   >
@@ -400,7 +406,7 @@ function RecentList({
                 </Link>
               );
             })()}
-            <span className="font-display italic font-medium text-[17px] tnum">
+            <span className="font-mono text-[14px] font-semibold tracking-tight tnum">
               ${Math.abs(tx.amount).toFixed(2)}
             </span>
           </li>
@@ -412,12 +418,34 @@ function RecentList({
 
 /* ── Helpers ──────────────────────────────────────────────────── */
 
+function spendingTotals(
+  summary: Array<{ category: string; total_spent: string | number; count: number }>,
+): { total: number; count: number } {
+  let total = 0;
+  let count = 0;
+  for (const item of summary) {
+    const { transactionType } = classifyBackendCategory(item.category);
+    if (transactionType !== 'spending') continue;
+    total += Math.abs(Number(item.total_spent));
+    count += item.count;
+  }
+  return { total, count };
+}
+
 function currentMonthRange(now: Date): { from: string; to: string; now: Date } {
   const y = now.getFullYear();
   const m = now.getMonth();
   const first = new Date(y, m, 1);
   const last = new Date(y, m + 1, 0);
   return { from: isoDay(first), to: isoDay(last), now };
+}
+
+function priorMonthRange(now: Date): { from: string; to: string } {
+  const y = now.getFullYear();
+  const m = now.getMonth();
+  const first = new Date(y, m - 1, 1);
+  const last = new Date(y, m, 0);
+  return { from: isoDay(first), to: isoDay(last) };
 }
 
 function isoDay(d: Date): string {
@@ -446,13 +474,16 @@ function formatRelativeDate(isoDate: string): string {
   return `${m}/${d}/${String(y).slice(2)}`;
 }
 
-function weekProgressSentence(now: Date): string {
-  const dayOfMonthNum = now.getDate();
-  const weeksIn = Math.max(1, Math.floor(dayOfMonthNum / 7) + (dayOfMonthNum % 7 === 0 ? 0 : 1));
-  if (weeksIn === 1) return 'Just getting started this month.';
-  if (weeksIn === 2) return 'Two weeks in — pretty kind to you so far.';
-  if (weeksIn === 3) return 'Three weeks in — pretty kind to you so far.';
-  return 'Four weeks in — a full picture is taking shape.';
+function relativeTime(iso: string): string {
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return '—';
+  const mins = Math.max(0, Math.round((Date.now() - then) / 60000));
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins} min ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours} h ago`;
+  const days = Math.round(hours / 24);
+  return days === 1 ? 'yesterday' : `${days} d ago`;
 }
 
 function splitAmount(amount: number): { whole: number; cents: string } {
