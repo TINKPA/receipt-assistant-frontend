@@ -133,7 +133,7 @@ export default function BatchDetail({ batchId, onBack }: BatchDetailProps) {
         <div className="flex items-start justify-between flex-wrap gap-4">
           <div>
             <p className="text-xs text-on-surface-variant uppercase tracking-widest mb-2">Batch</p>
-            <p className="text-2xl font-bold text-white font-headline font-mono">
+            <p className="font-mono text-xl font-semibold">
               {batch.id.slice(0, 8)}…{batch.id.slice(-4)}
             </p>
             <p className="text-sm text-on-surface-variant mt-1">
@@ -143,7 +143,7 @@ export default function BatchDetail({ batchId, onBack }: BatchDetailProps) {
           </div>
           <div className="text-right">
             <p className="text-xs text-on-surface-variant uppercase tracking-widest mb-2">Status</p>
-            <p className="text-2xl font-bold text-white font-headline capitalize">
+            <p className="font-display text-xl font-medium capitalize">
               {batch.status.replace('_', ' ')}
             </p>
           </div>
@@ -171,7 +171,7 @@ export default function BatchDetail({ batchId, onBack }: BatchDetailProps) {
 
       <div className="glass-panel rounded-xl border border-outline-variant/10 overflow-hidden">
         <div className="px-8 py-5 border-b border-outline-variant/10">
-          <h3 className="font-headline font-bold text-white flex items-center gap-2">
+          <h3 className="font-display font-medium flex items-center gap-2">
             <FileText size={18} />
             Files ({batch.items.length})
           </h3>
@@ -195,7 +195,7 @@ export default function BatchDetail({ batchId, onBack }: BatchDetailProps) {
 
       <div className="glass-panel rounded-xl border border-outline-variant/10 overflow-hidden">
         <div className="px-8 py-5 border-b border-outline-variant/10 flex items-center justify-between">
-          <h3 className="font-headline font-bold text-white flex items-center gap-2">
+          <h3 className="font-display font-medium flex items-center gap-2">
             <Zap size={18} />
             Live events
           </h3>
@@ -251,7 +251,7 @@ function StatCard({
             ? 'text-error'
             : tone === 'muted'
               ? 'text-on-surface-variant'
-              : 'text-white';
+              : 'text-[var(--color-ink)]';
   return (
     <div>
       <p className="text-xs text-on-surface-variant uppercase tracking-widest">{label}</p>
@@ -267,7 +267,7 @@ function IngestRow({ ingest }: { ingest: BackendIngest }) {
   return (
     <tr className="hover:bg-surface-container-high/30 transition-colors">
       <td className="px-8 py-4">
-        <p className="text-sm font-medium text-white">{ingest.filename}</p>
+        <p className="font-mono text-[11px] font-medium">{ingest.filename}</p>
         {ingest.mime_type && (
           <p className="text-[11px] text-on-surface-variant/70 mt-0.5 font-mono">{ingest.mime_type}</p>
         )}
