@@ -1381,13 +1381,17 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List owned physical-instance items */
+        /**
+         * List owned physical-instance items
+         * @description With `expand=product`, rows are OwnedItemExpanded — catalog name/class plus paid amount, payee, and brand from the linked transaction item.
+         */
         get: {
             parameters: {
                 query?: {
                     product_id?: string;
                     location?: string;
                     include_retired?: boolean | null;
+                    expand?: "product";
                     cursor?: string;
                     limit?: number;
                 };
@@ -1404,7 +1408,7 @@ export interface paths {
                     };
                     content: {
                         "application/json": {
-                            items: components["schemas"]["OwnedItem"][];
+                            items: components["schemas"]["OwnedItemExpanded"][];
                             next_cursor: string | null;
                         };
                     };
@@ -1549,6 +1553,195 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["OwnedItem"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/v1/wish-items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List wishlist items */
+        get: {
+            parameters: {
+                query?: {
+                    status?: "active" | "converted" | "declined";
+                    urgency?: "now" | "soon" | "someday";
+                    cursor?: string;
+                    limit?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            items: components["schemas"]["WishItem"][];
+                            next_cursor: string | null;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        /** Add a wish */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["CreateWishItemRequest"];
+                };
+            };
+            responses: {
+                /** @description Created */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["WishItem"];
+                    };
+                };
+                /** @description Validation failed */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/wish-items/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Fetch one wish */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["WishItem"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        /** Hard-delete a wish */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Deleted */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        /** Patch a wish (fields, urgency, snooze, convert / decline) */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/merge-patch+json": components["schemas"]["UpdateWishItemRequest"];
+                    "application/json": components["schemas"]["UpdateWishItemRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["WishItem"];
                     };
                 };
                 /** @description Not Found */
@@ -4373,6 +4566,7 @@ export interface components {
             condition: string | null;
             /** Format: date-time */
             retired_at: string | null;
+            target_days: number | null;
             notes: string | null;
             /**
              * @description User-defined JSON object; not schema-validated.
@@ -4385,6 +4579,13 @@ export interface components {
             created_at: string;
             /** Format: date-time */
             updated_at: string;
+        };
+        OwnedItemExpanded: components["schemas"]["OwnedItem"] & {
+            product_name?: string | null;
+            item_class?: string | null;
+            paid_minor?: number | null;
+            payee?: string | null;
+            merchant_brand_id?: string | null;
         };
         CreateOwnedItemRequest: {
             /**
@@ -4412,11 +4613,7 @@ export interface components {
             warranty_until?: string;
             condition?: string;
             notes?: string;
-            /**
-             * @description User-defined JSON object; not schema-validated.
-             * @default {}
-             */
-            metadata: {
+            metadata?: {
                 [key: string]: unknown;
             };
         };
@@ -4437,11 +4634,105 @@ export interface components {
             notes?: string | null;
             /** Format: date-time */
             retired_at?: string | null;
+            target_days?: number | null;
+            metadata?: {
+                [key: string]: unknown;
+            };
+        };
+        WishItem: {
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            id: string;
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            workspace_id: string;
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            product_id: string | null;
+            title: string;
+            notes: string | null;
+            target_price_minor: number | null;
+            currency: string;
+            planned_days: number | null;
+            /** @enum {string} */
+            urgency: "now" | "soon" | "someday";
+            /**
+             * Format: date
+             * @example 2026-04-19
+             */
+            snoozed_until: string | null;
+            /** @enum {string} */
+            status: "active" | "converted" | "declined";
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            converted_transaction_id: string | null;
             /**
              * @description User-defined JSON object; not schema-validated.
              * @default {}
              */
             metadata: {
+                [key: string]: unknown;
+            };
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        CreateWishItemRequest: {
+            title: string;
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            product_id?: string;
+            notes?: string;
+            target_price_minor?: number;
+            currency?: string;
+            planned_days?: number;
+            /** @enum {string} */
+            urgency?: "now" | "soon" | "someday";
+            /**
+             * Format: date
+             * @example 2026-04-19
+             */
+            snoozed_until?: string;
+            metadata?: {
+                [key: string]: unknown;
+            };
+        };
+        UpdateWishItemRequest: {
+            title?: string;
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            product_id?: string | null;
+            notes?: string | null;
+            target_price_minor?: number | null;
+            planned_days?: number | null;
+            /** @enum {string} */
+            urgency?: "now" | "soon" | "someday";
+            /**
+             * Format: date
+             * @example 2026-04-19
+             */
+            snoozed_until?: string | null;
+            /** @enum {string} */
+            status?: "active" | "converted" | "declined";
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            converted_transaction_id?: string | null;
+            metadata?: {
                 [key: string]: unknown;
             };
         };
