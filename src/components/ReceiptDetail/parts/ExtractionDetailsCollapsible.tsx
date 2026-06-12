@@ -22,7 +22,7 @@ export function ExtractionDetailsCollapsible({
         onClick={() => setOpen((s) => !s)}
         className="w-full px-5 py-4 flex items-center justify-between text-left hover:bg-[var(--color-paper-deep)]/30 transition-colors"
       >
-        <span className="font-display italic font-medium text-lg leading-none">
+        <span className="font-display font-medium text-lg leading-none">
           Extraction details
         </span>
         <span className="flex items-center gap-2">

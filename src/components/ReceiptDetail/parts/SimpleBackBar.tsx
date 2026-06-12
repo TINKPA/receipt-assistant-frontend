@@ -6,7 +6,7 @@ export function SimpleBackBar({ onBack }: { onBack: () => void }) {
         onClick={onBack}
         className="flex items-center gap-2 hover:text-[var(--color-ink)] transition-colors"
       >
-        <span className="font-display italic text-lg leading-none text-[var(--color-terracotta)]">←</span>
+        <span className="font-display text-lg leading-none text-[var(--color-accent)]">←</span>
         Back
       </button>
     </div>

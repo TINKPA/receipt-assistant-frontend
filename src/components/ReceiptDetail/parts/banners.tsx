@@ -47,7 +47,7 @@ export function ReExtractBanner({
           'border border-[var(--color-stamp)]/40 bg-[var(--color-stamp)]/5 text-[var(--color-stamp)]',
       )}
     >
-      <p className="font-hand text-base leading-snug">{children}</p>
+      <p className="font-display italic text-[13.5px] leading-snug">{children}</p>
       <button
         type="button"
         onClick={onDismiss}

@@ -15,7 +15,7 @@ export function NoteCard({ text }: { text: string }) {
       >
         your note
       </span>
-      <p className="font-hand text-lg text-[var(--color-ink)]">{text}</p>
+      <p className="font-display italic text-[15px] text-[var(--color-ink)]">{text}</p>
     </div>
   );
 }

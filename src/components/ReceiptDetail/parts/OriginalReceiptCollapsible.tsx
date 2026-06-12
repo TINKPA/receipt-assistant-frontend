@@ -26,7 +26,7 @@ function EmailHeaderStrip({
   return (
     <div className="rounded-[10px] border border-[var(--color-rule)] bg-[var(--color-surface)] px-4 py-3">
       {subject && (
-        <p className="font-display italic font-medium text-[15px] leading-snug text-[var(--color-ink)]">
+        <p className="font-display font-medium text-[15px] leading-snug text-[var(--color-ink)]">
           {subject}
         </p>
       )}
@@ -61,7 +61,7 @@ export function OriginalReceiptCollapsible({
         onClick={() => setOpen((s) => !s)}
         className="w-full px-5 py-4 flex items-center justify-between text-left hover:bg-[var(--color-paper-deep)]/30 transition-colors"
       >
-        <span className="font-display italic font-medium text-lg leading-none">
+        <span className="font-display font-medium text-lg leading-none">
           {isEmail ? 'Original email' : 'Original receipt'}
         </span>
         {open ? <ChevronDown size={18} className="text-[var(--color-ink-muted)]" /> : <ChevronRight size={18} className="text-[var(--color-ink-muted)]" />}

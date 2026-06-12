@@ -181,7 +181,7 @@ export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: Re
       <div className="space-y-4">
         <SimpleBackBar onBack={onBack} />
         <div className="py-16 text-center">
-          <p className="font-hand text-xl text-[var(--color-ink-muted)]">loading…</p>
+          <p className="font-display italic text-lg text-[var(--color-ink-muted)]">loading…</p>
         </div>
       </div>
     );
@@ -355,7 +355,7 @@ export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: Re
               )}
               title="Re-run OCR with the current model and prompt"
             >
-              <span className="font-display italic text-base leading-none text-[var(--color-terracotta)] group-hover:translate-x-px transition-transform">
+              <span className="font-display text-base leading-none text-[var(--color-accent)] group-hover:translate-x-px transition-transform">
                 ↺
               </span>
               {reExtractState.kind === 'pending'
