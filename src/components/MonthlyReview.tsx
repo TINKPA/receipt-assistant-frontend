@@ -1,37 +1,27 @@
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
-import { ChevronLeft, ChevronRight, TrendingDown, TrendingUp, Loader2, PieChart as PieIcon, Receipt } from 'lucide-react';
-import {
-  Bar,
-  BarChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts';
 import {
   classifyBackendCategory,
   extractProblemMessage,
   fetchTransactions,
   getCashflowReport,
   getSummaryReport,
-  getTrendsReport,
 } from '../lib/api';
-import type { Category, Transaction } from '../types';
+import type { Category } from '../types';
 import { cn } from '../lib/utils';
 import { qk } from '../lib/queryKeys';
-import { CategoryIcon } from './CategoryIcon';
 import { MerchantIcon } from './MerchantIcon';
-import { categoryLedgerLink, receiptLink } from '../lib/navLinks';
+import { categoryLedgerLink, dateRangeLedgerLink, receiptLink } from '../lib/navLinks';
 
-function formatMoney(minor: number, currency = 'USD'): string {
-  return (minor / 100).toLocaleString(undefined, {
-    style: 'currency',
-    currency,
-    maximumFractionDigits: 0,
-  });
-}
+/**
+ * Monthly review — board screen 22 (Insights lane, tracking
+ * receipt-assistant#149): mo-nav month stepper, the big SPENT figure with a
+ * vs-last-month delta, dual compare bars per category (this month = cardinal,
+ * last month = paper-fold), largest rows, and a "open these N in Ledger"
+ * exit. Replaces the legacy dark-Material "Monthly Financial Performance"
+ * page that was never migrated off the old theme.
+ */
 
 function startOfMonth(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
@@ -42,14 +32,10 @@ function endOfMonth(d: Date): string {
   return `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}-${String(next.getDate()).padStart(2, '0')}`;
 }
 
-function sixMonthsAgo(d: Date): Date {
-  return new Date(d.getFullYear(), d.getMonth() - 5, 1);
-}
-
-// Backend `/v1/reports/cashflow` and `/v1/reports/trends` bucket keys are
-// 'YYYY-MM' (TO_CHAR), so frontend keys + parsing must match that shape —
-// not 'YYYY-MM-DD', and never `new Date('YYYY-MM')` which is UTC-midnight
-// and shifts back a day in negative timezones.
+// Backend `/v1/reports/cashflow` bucket keys are 'YYYY-MM' (TO_CHAR), so
+// frontend keys + parsing must match that shape — not 'YYYY-MM-DD', and never
+// `new Date('YYYY-MM')` which is UTC-midnight and shifts back a day in
+// negative timezones.
 function yearMonthKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
@@ -66,15 +52,10 @@ interface CategoryRow {
 }
 
 export default function MonthlyReview({ month }: { month?: string }) {
-  // FE#23: month picker — `now` is the FIRST of the selected month so
-  // arithmetic against it is timezone-safe. Defaults to the current
-  // calendar month; user navigates via chevrons. Capped at the current
-  // month so we don't render "review" for the future.
-  //
   // The selected month is the source of truth in the URL search param
   // `?m=YYYY-MM` (validated/parsed by the route). When absent or invalid
   // we fall back to the current calendar month; chevrons navigate the URL
-  // rather than mutating local state.
+  // rather than mutating local state. Capped at the current month.
   const navigate = useNavigate({ from: '/review/monthly' });
   const today = useMemo(() => new Date(), []);
   const currentMonth = useMemo(
@@ -99,21 +80,14 @@ export default function MonthlyReview({ month }: { month?: string }) {
     });
   };
 
-  // FE#23: the this-month receipt list (sorted by amount desc) seeds both the
-  // "Notable transactions" section (top-3 spending) and the Receipts count KPI.
-  // ~200-cap on the API call covers all but the most active months.
-  // All five reports fetch together in one query keyed by the month pair.
+  // One query per month pair: cashflow (this+prev in one range), the two
+  // category summaries, and the month's receipts (client-sorted by amount
+  // for "largest rows"; the 200-cap covers all but the most active months).
   const { data, isLoading: loading, error: queryError } = useQuery({
     queryKey: qk.monthlyReview(yearMonthKey(now), yearMonthKey(prevMonth)),
     queryFn: async () => {
-      const [cf, tr, thisM, lastM, top] = await Promise.all([
-        getCashflowReport({ from: startOfMonth(sixMonthsAgo(now)), to: endOfMonth(now) }),
-        getTrendsReport({
-          from: startOfMonth(sixMonthsAgo(now)),
-          to: endOfMonth(now),
-          period: 'month',
-          groupBy: 'total',
-        }),
+      const [cf, thisM, lastM, top] = await Promise.all([
+        getCashflowReport({ from: startOfMonth(prevMonth), to: endOfMonth(now) }),
         getSummaryReport({ from: startOfMonth(now), to: endOfMonth(now), groupBy: 'category' }),
         getSummaryReport({
           from: startOfMonth(prevMonth),
@@ -123,387 +97,244 @@ export default function MonthlyReview({ month }: { month?: string }) {
         fetchTransactions({
           from: startOfMonth(now),
           to: endOfMonth(now),
-          // Backend only supports sort=occurred_on / sort=created_at —
-          // sort=amount needs a JOIN over postings and isn't wired yet.
-          // Pull the full month and sort by amount client-side; 200-cap
-          // covers all but the most active months.
           sort: 'occurred_on',
           order: 'desc',
           limit: 200,
         }),
       ]);
-      // Client-side sort by amount desc so Notable picks largest;
-      // KPI count is independent of sort order.
-      const allReceipts = [...top].sort((a, b) => b.amount - a.amount);
-      return { cashflow: cf, trends: tr, thisMonth: thisM, lastMonth: lastM, allReceipts };
+      // Spending amounts arrive negative — rank by magnitude, not raw value,
+      // or "largest rows" would surface the three SMALLEST purchases.
+      const allReceipts = [...top].sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
+      return { cashflow: cf, thisMonth: thisM, lastMonth: lastM, allReceipts };
     },
   });
   const error = queryError ? extractProblemMessage(queryError) : null;
-  const cashflow = data?.cashflow ?? null;
-  const trends = data?.trends ?? null;
-  const thisMonth = data?.thisMonth ?? null;
-  const lastMonth = data?.lastMonth ?? null;
-  const allReceipts = data?.allReceipts ?? null;
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-[60vh] gap-3">
-        <Loader2 className="animate-spin text-primary" size={32} />
-        <span className="text-on-surface-variant">Loading monthly report...</span>
+      <div className="flex h-[60vh] items-center justify-center">
+        <p className="font-display italic text-lg text-[var(--color-ink-muted)]">
+          closing the books…
+        </p>
       </div>
     );
   }
-
   if (error) {
-    return <div className="text-center py-20 text-error">{error}</div>;
+    return <p className="py-20 text-center text-[var(--color-stamp)]">{error}</p>;
   }
 
+  const cashflow = data?.cashflow ?? null;
   const thisBucket = cashflow?.buckets.find((b) => b.month === yearMonthKey(now));
   const lastBucket = cashflow?.buckets.find((b) => b.month === yearMonthKey(prevMonth));
   const thisExpenseMinor = thisBucket?.expense_minor ?? 0;
   const lastExpenseMinor = lastBucket?.expense_minor ?? 0;
-  const delta = thisExpenseMinor - lastExpenseMinor;
+  const incomeMinor = thisBucket?.income_minor ?? 0;
   const pctDelta =
-    lastExpenseMinor > 0 ? Math.round((delta / lastExpenseMinor) * 100) : null;
-  const spendingDown = delta < 0;
+    lastExpenseMinor > 0
+      ? Math.round(((thisExpenseMinor - lastExpenseMinor) / lastExpenseMinor) * 100)
+      : null;
 
   // Merge this-month + last-month category summaries into rows, aggregated
-  // by the new 7-category model. Non-spending buckets (income/investment)
-  // are dropped — they belong on a separate flow view, not this one.
+  // by the 7-category model. Non-spending buckets (income/investment) are
+  // dropped — they belong on a flow view, not this one.
   const categoryRows: CategoryRow[] = (() => {
     const map = new Map<Category, CategoryRow>();
-    const addBucket = (key: string | undefined, minor: number, field: 'currentMinor' | 'previousMinor') => {
+    const addBucket = (
+      key: string | undefined,
+      minor: number,
+      field: 'currentMinor' | 'previousMinor',
+    ) => {
       const { category, transactionType } = classifyBackendCategory(key);
       if (transactionType !== 'spending' || !category) return;
       const row = map.get(category) ?? { category, currentMinor: 0, previousMinor: 0 };
       row[field] += minor;
       map.set(category, row);
     };
-    for (const it of thisMonth?.items ?? []) addBucket(it.key, it.total_minor, 'currentMinor');
-    for (const it of lastMonth?.items ?? []) addBucket(it.key, it.total_minor, 'previousMinor');
+    for (const it of data?.thisMonth?.items ?? []) addBucket(it.key, it.total_minor, 'currentMinor');
+    for (const it of data?.lastMonth?.items ?? []) addBucket(it.key, it.total_minor, 'previousMinor');
     return [...map.values()].sort((a, b) => b.currentMinor - a.currentMinor);
   })();
+  const maxMinor = Math.max(
+    1,
+    ...categoryRows.flatMap((r) => [Math.abs(r.currentMinor), Math.abs(r.previousMinor)]),
+  );
 
-  const trendData = (trends?.buckets ?? []).map((b) => ({
-    bucket: b.bucket,
-    label: parseYearMonth(b.bucket).toLocaleDateString(undefined, { month: 'short' }),
-    spendMinor: Math.abs(b.total_minor),
-  }));
-
-  const currency = cashflow?.currency ?? 'USD';
+  const receipts = data?.allReceipts ?? [];
+  const largest = receipts.slice(0, 3);
+  const monthLabel = now.toLocaleString('en-US', { month: 'long' });
+  const monthRange = { from: startOfMonth(now), to: endOfMonth(now) };
+  const { whole, cents } = splitMinor(thisExpenseMinor);
 
   return (
-    <div className="space-y-12 animate-in fade-in duration-700">
-      <header>
-        <h2 className="text-4xl font-extrabold font-headline text-white tracking-tight">
-          Monthly Financial Performance
-        </h2>
-        <div className="flex items-center gap-3 mt-2 flex-wrap">
-          {/* FE#23: month picker — prev/next chevrons. Next disables
-              when viewing the current month (can't review the future). */}
-          <button
-            type="button"
-            onClick={stepBack}
-            className="p-1.5 rounded-md text-on-surface-variant hover:text-white hover:bg-surface-container-low transition-colors"
-            aria-label="Previous month"
-            title="Previous month"
-          >
-            <ChevronLeft size={18} />
-          </button>
-          <span className="text-on-surface-variant font-medium min-w-[8rem] text-center">
-            {now.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}
-          </span>
-          <button
-            type="button"
-            onClick={stepForward}
-            disabled={!canStepForward}
-            className={cn(
-              'p-1.5 rounded-md transition-colors',
-              canStepForward
-                ? 'text-on-surface-variant hover:text-white hover:bg-surface-container-low'
-                : 'text-on-surface-variant/30 cursor-not-allowed',
-            )}
-            aria-label="Next month"
-            title={canStepForward ? 'Next month' : 'Already on the current month'}
-          >
-            <ChevronRight size={18} />
-          </button>
-          {pctDelta != null && (
-            <span
+    <div className="space-y-5">
+      {/* mo-nav */}
+      <div className="flex items-center justify-between pt-1">
+        <Chev onClick={stepBack} label="Previous month">‹</Chev>
+        <div className="text-center">
+          <p className="font-display text-[22px] leading-tight tracking-tight">
+            {monthLabel} <em className="italic text-[var(--color-accent)]">{now.getFullYear()}</em>
+          </p>
+          <p className="mt-0.5 font-mono text-[8.5px] uppercase tracking-[0.16em] text-[var(--color-ink-muted)]">
+            monthly review {canStepForward ? '' : '· in progress'}
+          </p>
+        </div>
+        <Chev onClick={stepForward} label="Next month" disabled={!canStepForward}>›</Chev>
+      </div>
+
+      {/* rv-fig */}
+      <div>
+        <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-[var(--color-ink-muted)]">
+          SPENT · {monthLabel.toUpperCase()}
+        </p>
+        <p className="mt-1.5 font-display text-[2.9rem] font-light leading-none tracking-tight tnum">
+          ${whole.toLocaleString()}
+          <span className="text-[0.5em] text-[var(--color-ink-soft)]">.{cents}</span>
+        </p>
+        <p className="mt-2 text-[12px] text-[var(--color-ink-soft)]">
+          {pctDelta !== null && (
+            <strong
               className={cn(
-                'px-2.5 py-0.5 rounded-full text-xs font-bold flex items-center gap-1',
-                spendingDown ? 'bg-primary/10 text-primary' : 'bg-error/10 text-error',
+                'font-mono text-[11px] font-semibold',
+                pctDelta <= 0 ? 'text-[var(--color-olive)]' : 'text-[var(--color-accent)]',
               )}
             >
-              {spendingDown ? <TrendingDown size={14} /> : <TrendingUp size={14} />}
-              {pctDelta > 0 ? '+' : ''}{pctDelta}% spending
+              {pctDelta <= 0 ? '↓' : '↑'} {Math.abs(pctDelta)}%
+            </strong>
+          )}
+          {pctDelta !== null && ' vs last month · '}
+          <strong className="font-medium">{receipts.length}</strong> transactions
+          {incomeMinor > 0 && (
+            <span className="text-[var(--color-ink-muted)]">
+              {' '}· income ${Math.round(incomeMinor / 100).toLocaleString()}
             </span>
           )}
-        </div>
-      </header>
+        </p>
+      </div>
 
-      <div className="grid grid-cols-12 gap-6">
-        {/* Hero — outflow vs previous month */}
-        <div className="col-span-12 lg:col-span-8 bg-surface-container-low rounded-xl p-8 border border-outline-variant/5">
-          <div className="flex justify-between items-start mb-8 flex-wrap gap-4">
-            <div>
-              <h3 className="text-on-surface-variant text-sm font-medium uppercase tracking-widest">
-                Total Monthly Outflow
-              </h3>
-              <div className="flex items-baseline gap-3 mt-2">
-                <span className="text-5xl font-bold font-headline text-white">
-                  {formatMoney(thisExpenseMinor, currency)}
-                </span>
-                <span className="text-on-surface-variant text-sm font-medium">
-                  vs {formatMoney(lastExpenseMinor, currency)} last month
+      {/* cmp-bars */}
+      {categoryRows.length > 0 && (
+        <section className="rounded-[var(--radius-card)] border-[0.5px] border-[var(--color-rule-soft)] bg-[var(--color-surface)] px-4 pb-2 pt-3.5">
+          <div className="mb-3 flex items-baseline justify-between">
+            <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[var(--color-ink-muted)]">
+              By category
+            </p>
+            <p className="font-mono text-[8.5px] text-[var(--color-ink-faint)]">
+              <span className="text-[var(--color-accent)]">▮</span> {monthLabel} · ▯{' '}
+              {prevMonth.toLocaleString('en-US', { month: 'short' })}
+            </p>
+          </div>
+          {categoryRows.map((row) => (
+            <Link
+              key={row.category}
+              {...categoryLedgerLink(row.category, monthRange)}
+              className="mb-3 block last:mb-2"
+            >
+              <div className="mb-1 flex items-baseline justify-between">
+                <span className="text-[11.5px] text-[var(--color-ink-soft)]">{row.category}</span>
+                <span className="font-mono text-[10px] font-medium tnum">
+                  ${(row.currentMinor / 100).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                 </span>
               </div>
-            </div>
-            <div className="glass-panel p-4 rounded-xl border border-outline-variant/10">
-              {spendingDown ? (
-                <TrendingDown className="text-primary" size={32} />
-              ) : (
-                <TrendingUp className="text-error" size={32} />
-              )}
-            </div>
-          </div>
-
-          <div className="h-40 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={trendData} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
-                <XAxis dataKey="label" stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} />
-                <YAxis
-                  stroke="#64748b"
-                  fontSize={11}
-                  tickLine={false}
-                  axisLine={false}
-                  tickFormatter={(v) => `$${(v / 100).toFixed(0)}`}
+              <div className="mb-[3px] h-[5px] overflow-hidden rounded-[3px] bg-[var(--color-rule-soft)]">
+                <div
+                  className="h-full rounded-[3px] bg-[var(--color-accent)]"
+                  style={{ width: `${(Math.abs(row.currentMinor) / maxMinor) * 100}%` }}
                 />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: '#0f172a',
-                    border: '1px solid #334155',
-                    borderRadius: 8,
-                    fontSize: 12,
-                  }}
-                  formatter={(v: number) => formatMoney(v, currency)}
+              </div>
+              <div className="h-[3px] overflow-hidden rounded-[2px] bg-transparent">
+                <div
+                  className="h-full rounded-[2px] bg-[var(--color-paper-fold)]"
+                  style={{ width: `${(Math.abs(row.previousMinor) / maxMinor) * 100}%` }}
                 />
-                <Bar dataKey="spendMinor" fill="#4edea3" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* Side stats */}
-        <div className="col-span-12 lg:col-span-4 flex flex-col gap-6">
-          <StatCard
-            label="Income"
-            value={formatMoney(thisBucket?.income_minor ?? 0, currency)}
-            tone="primary"
-          />
-          <StatCard
-            label="Net"
-            value={formatMoney(thisBucket?.net_minor ?? 0, currency)}
-            tone={((thisBucket?.net_minor ?? 0) >= 0) ? 'primary' : 'error'}
-          />
-          {/* FE#23: "Receipts" replaces the not-very-useful "Categories: N"
-              card — knowing how many receipts you processed this month is
-              concrete; category count was just a metadata size signal. */}
-          <StatCard
-            label="Receipts"
-            value={String(allReceipts?.length ?? 0)}
-            tone="muted"
-          />
-        </div>
-
-        {/* FE#23: Notable transactions — the page no longer feels like a
-            pure metric dump. Top-3 largest spending receipts for the
-            selected month, with brand icon + payee + amount. */}
-        <NotableTransactions
-          receipts={allReceipts}
-          currency={currency}
-        />
-
-        {/* Category comparison */}
-        <div className="col-span-12 bg-surface-container-low rounded-xl p-8 border border-outline-variant/5">
-          <div className="flex justify-between items-end mb-10 flex-wrap gap-4">
-            <div>
-              <h3 className="text-xl font-bold text-white mb-1 flex items-center gap-2">
-                <PieIcon size={18} /> Where your money went this month
-              </h3>
-              <p className="text-on-surface-variant text-sm">
-                Category breakdown vs. previous month
-              </p>
-            </div>
-            <div className="flex gap-4">
-              <LegendDot color="bg-primary" label="This month" />
-              <LegendDot color="bg-surface-container-highest" label="Last month" />
-            </div>
-          </div>
-
-          {categoryRows.length === 0 ? (
-            <p className="text-center py-10 text-on-surface-variant">
-              No transactions this month yet.
-            </p>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-16 gap-y-8">
-              {categoryRows.map((cat) => {
-                const max = Math.max(cat.currentMinor, cat.previousMinor, 1);
-                const deltaPct =
-                  cat.previousMinor > 0
-                    ? Math.round(
-                        ((cat.currentMinor - cat.previousMinor) / cat.previousMinor) * 100,
-                      )
-                    : null;
-                const isOver = deltaPct != null && deltaPct > 0;
-                return (
-                  <Link
-                    key={cat.category}
-                    {...categoryLedgerLink(cat.category, { from: startOfMonth(now), to: endOfMonth(now) })}
-                    className="block space-y-3 rounded-lg -m-2 p-2 transition-colors hover:bg-surface-container-high/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                  >
-                    <div className="flex justify-between items-center mb-1">
-                      <span className="text-sm font-bold text-white flex items-center gap-2">
-                        <CategoryIcon category={cat.category} size={20} />
-                        {cat.category}
-                      </span>
-                      <div className="text-right">
-                        <span className="text-sm font-bold text-white">
-                          {formatMoney(cat.currentMinor, currency)}
-                        </span>
-                        <span className="text-xs text-on-surface-variant ml-2">
-                          vs {formatMoney(cat.previousMinor, currency)}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="relative h-2 w-full bg-surface-container-highest rounded-full overflow-hidden">
-                      <div
-                        className="absolute h-full bg-white/10 rounded-full"
-                        style={{ width: `${(cat.previousMinor / max) * 100}%` }}
-                      />
-                      <div
-                        className="absolute h-full bg-primary rounded-full z-10"
-                        style={{ width: `${(cat.currentMinor / max) * 100}%` }}
-                      />
-                    </div>
-                    {deltaPct != null && (
-                      <div className="flex justify-end">
-                        <span className={cn('text-[10px] font-bold', isOver ? 'text-error' : 'text-primary')}>
-                          {deltaPct > 0 ? '+' : ''}{deltaPct}%
-                        </span>
-                      </div>
-                    )}
-                  </Link>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function StatCard({
-  label,
-  value,
-  tone = 'default',
-}: {
-  label: string;
-  value: string;
-  tone?: 'default' | 'muted' | 'primary' | 'error';
-}) {
-  const valueClass =
-    tone === 'primary'
-      ? 'text-primary'
-      : tone === 'error'
-        ? 'text-error'
-        : tone === 'muted'
-          ? 'text-on-surface-variant'
-          : 'text-white';
-  return (
-    <div className="bg-surface-container-high rounded-xl p-6 border border-outline-variant/5">
-      <p className="text-xs text-on-surface-variant uppercase tracking-widest mb-2">{label}</p>
-      <p className={cn('text-3xl font-bold font-headline', valueClass)}>{value}</p>
-    </div>
-  );
-}
-
-function LegendDot({ color, label }: { color: string; label: string }) {
-  return (
-    <div className="flex items-center gap-2">
-      <div className={cn('w-2.5 h-2.5 rounded-full', color)} />
-      <span className="text-xs text-on-surface-variant font-medium">{label}</span>
-    </div>
-  );
-}
-
-function NotableTransactions({
-  receipts,
-  currency,
-}: {
-  receipts: Transaction[] | null;
-  currency: string;
-}) {
-  // Top-3 spending receipts only (skip income/refunds/transfers). The
-  // `Receipts` KPI in the side stats already shows the total count.
-  // `mapTransaction` stores spending as NEGATIVE amount (see api.ts
-  // mapTransaction: amount = transactionType==='income' ? rv.total : -rv.total),
-  // so filter+sort by |amount| descending.
-  const top = (receipts ?? [])
-    .filter((r) => r.transactionType === 'spending' && r.amount !== 0)
-    .map((r) => ({ ...r, _abs: Math.abs(r.amount) }))
-    .sort((a, b) => b._abs - a._abs)
-    .slice(0, 3);
-
-  return (
-    <div className="col-span-12 bg-surface-container-low rounded-xl p-8 border border-outline-variant/5">
-      <h3 className="text-xl font-bold text-white mb-1 flex items-center gap-2">
-        <Receipt size={18} /> Notable this month
-      </h3>
-      <p className="text-on-surface-variant text-sm mb-6">
-        Largest spending receipts — quick gut-check on what moved the
-        needle.
-      </p>
-      {top.length === 0 ? (
-        <p className="text-on-surface-variant text-sm py-4">
-          No spending receipts in this month yet.
-        </p>
-      ) : (
-        <ol className="space-y-3">
-          {top.map((r, idx) => (
-            <li key={r.id}>
-              <Link
-                {...receiptLink(r.id)}
-                className="flex items-center gap-4 p-3 rounded-lg bg-surface-container-high/40 border border-outline-variant/10 transition-colors hover:bg-surface-container-high/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-              >
-                <span className="text-on-surface-variant font-bold w-6 text-center">
-                  {idx + 1}
-                </span>
-                <MerchantIcon
-                  brandId={r.merchantBrandId}
-                  category={r.category}
-                  transactionType={r.transactionType}
-                  size={40}
-                />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-white truncate">
-                    {r.description}
-                  </p>
-                  {r.placeCity && (
-                    <p className="text-xs text-on-surface-variant truncate">
-                      {r.placeCity}
-                    </p>
-                  )}
-                </div>
-                <span className="text-base font-bold font-headline text-white tnum">
-                  {formatMoney(Math.round(r._abs * 100), currency)}
-                </span>
-              </Link>
-            </li>
+              </div>
+            </Link>
           ))}
-        </ol>
+        </section>
       )}
+
+      {/* largest rows */}
+      {largest.length > 0 && (
+        <section>
+          <div className="mb-2 flex items-baseline justify-between">
+            <h2 className="font-display italic text-[1.2rem] font-medium leading-none tracking-tight">
+              largest rows
+            </h2>
+            <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-[var(--color-ink-faint)]">
+              {receipts.length} total
+            </span>
+          </div>
+          <ul className="rounded-[16px] border-[0.5px] border-[var(--color-rule-soft)] bg-[var(--color-surface)] px-4">
+            {largest.map((tx, idx) => (
+              <li key={tx.id} className={cn(idx > 0 && 'border-t border-[var(--color-rule-soft)]')}>
+                <Link
+                  {...receiptLink(tx.id)}
+                  className="grid grid-cols-[36px_1fr_auto] items-center gap-3 py-2.5"
+                >
+                  <MerchantIcon
+                    brandId={tx.merchantBrandId}
+                    category={tx.category}
+                    transactionType={tx.transactionType}
+                    size={36}
+                  />
+                  <span className="min-w-0">
+                    <span className="block truncate font-display text-[13.5px] font-medium leading-tight">
+                      {tx.description}
+                    </span>
+                    <span className="mt-0.5 block truncate font-mono text-[9px] uppercase tracking-[0.04em] text-[var(--color-ink-muted)]">
+                      {tx.date.slice(5)}{tx.category ? ` · ${tx.category}` : ''}
+                    </span>
+                  </span>
+                  <span className="font-mono text-[13px] font-semibold tracking-tight tnum">
+                    ${Math.abs(tx.amount).toFixed(2)}
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {/* exit to Ledger */}
+      <Link
+        {...dateRangeLedgerLink(monthRange)}
+        className="block rounded-[var(--radius-pill)] border-[0.5px] border-[var(--color-rule)] py-2.5 text-center font-display text-[13.5px] font-medium text-[var(--color-ink-soft)] transition-colors hover:border-[var(--color-ink-muted)]"
+      >
+        Open these {receipts.length} in Ledger →
+      </Link>
     </div>
   );
+}
+
+function Chev({
+  children,
+  onClick,
+  label,
+  disabled,
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  label: string;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      disabled={disabled}
+      onClick={onClick}
+      className={cn(
+        'flex h-8 w-8 items-center justify-center rounded-full',
+        'border-[0.5px] border-[var(--color-rule-soft)] bg-[var(--color-surface)]',
+        'text-[14px] text-[var(--color-ink-soft)] transition-colors hover:text-[var(--color-ink)]',
+        disabled && 'opacity-30 hover:text-[var(--color-ink-soft)]',
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+function splitMinor(minor: number): { whole: number; cents: string } {
+  const abs = Math.abs(minor) / 100;
+  return { whole: Math.floor(abs), cents: abs.toFixed(2).split('.')[1] ?? '00' };
 }
