@@ -1,16 +1,6 @@
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
-import { ChevronLeft, ChevronRight, TrendingUp, TrendingDown, Loader2, Landmark, PiggyBank, Wallet } from 'lucide-react';
-import {
-  Bar,
-  BarChart,
-  Cell,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts';
 import {
   classifyBackendCategory,
   extractProblemMessage,
@@ -22,16 +12,16 @@ import {
 import { qk } from '../lib/queryKeys';
 import type { Category } from '../types';
 import { cn } from '../lib/utils';
-import { CategoryIcon } from './CategoryIcon';
 import { categoryLedgerLink, dateRangeLedgerLink } from '../lib/navLinks';
 
-function formatMoney(minor: number, currency = 'USD'): string {
-  return (minor / 100).toLocaleString(undefined, {
-    style: 'currency',
-    currency,
-    maximumFractionDigits: 0,
-  });
-}
+/**
+ * Yearly review — board screen 23 (Insights lane, tracking
+ * receipt-assistant#149): year stepper, the ink-dark net-worth hero
+ * (as-of snapshot: today for the current year, Dec 31 for past years),
+ * Q1–Q4 grid, 12-month spend bars with the current month hot and future
+ * months ghosted, and the YTD category table. Replaces the legacy
+ * dark-Material "Year in Review" page.
+ */
 
 function startOfYear(d: Date): string {
   return `${d.getFullYear()}-01-01`;
@@ -41,13 +31,23 @@ function endOfYear(d: Date): string {
   return `${d.getFullYear()}-12-31`;
 }
 
-function quarterOf(monthIso: string): 'Q1' | 'Q2' | 'Q3' | 'Q4' {
+function quarterOf(monthIso: string): 0 | 1 | 2 | 3 {
   const m = Number(monthIso.slice(5, 7));
-  if (m <= 3) return 'Q1';
-  if (m <= 6) return 'Q2';
-  if (m <= 9) return 'Q3';
-  return 'Q4';
+  if (m <= 3) return 0;
+  if (m <= 6) return 1;
+  if (m <= 9) return 2;
+  return 3;
 }
+
+const QUARTER_SPAN = ['jan – mar', 'apr – jun', 'jul – sep', 'oct – dec'] as const;
+const CATEGORY_SWATCHES = [
+  'var(--color-accent)',
+  'var(--color-amber)',
+  'var(--color-slate)',
+  'var(--color-olive)',
+  'var(--color-plum)',
+  'var(--color-ink-faint)',
+] as const;
 
 export default function YearlyReview({ year }: { year?: number }) {
   // The displayed year is the source of truth in the URL search param
@@ -59,16 +59,14 @@ export default function YearlyReview({ year }: { year?: number }) {
   const currentYear = today.getFullYear();
   const displayYear = year ?? currentYear;
   const canStepForward = displayYear < currentYear;
+  const isCurrentYear = displayYear === currentYear;
 
   // `now` anchors the year's date range + the net-worth `asOf` snapshot.
   // For the current year that snapshot is "today"; for a past year it's
   // Dec 31 of that year so the as-of net worth reflects year-end.
   const now = useMemo(
-    () =>
-      displayYear === currentYear
-        ? today
-        : new Date(displayYear, 11, 31),
-    [displayYear, currentYear, today],
+    () => (isCurrentYear ? today : new Date(displayYear, 11, 31)),
+    [displayYear, isCurrentYear, today],
   );
   const lastYear = useMemo(
     () => new Date(now.getFullYear() - 1, now.getMonth(), now.getDate()),
@@ -103,335 +101,239 @@ export default function YearlyReview({ year }: { year?: number }) {
     },
   });
   const error = queryError ? extractProblemMessage(queryError) : null;
-  const netWorth = data?.netWorth ?? null;
-  const netWorthPrev = data?.netWorthPrev ?? null;
-  const cashflow = data?.cashflow ?? null;
-  const trends = data?.trends ?? null;
-  const summary = data?.summary ?? null;
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-[60vh] gap-3">
-        <Loader2 className="animate-spin text-primary" size={32} />
-        <span className="text-on-surface-variant">Loading yearly report...</span>
+      <div className="flex h-[60vh] items-center justify-center">
+        <p className="font-display italic text-lg text-[var(--color-ink-muted)]">
+          the long arc, loading…
+        </p>
       </div>
     );
   }
-
   if (error) {
-    return <div className="text-center py-20 text-error">{error}</div>;
+    return <p className="py-20 text-center text-[var(--color-stamp)]">{error}</p>;
   }
 
-  const currency = cashflow?.currency ?? 'USD';
+  const netWorthMinor = data?.netWorth?.net_worth_minor ?? 0;
+  const prevNetWorthMinor = data?.netWorthPrev?.net_worth_minor ?? 0;
+  const ytdDeltaMinor = netWorthMinor - prevNetWorthMinor;
 
-  const netWorthDelta = (netWorth?.net_worth_minor ?? 0) - (netWorthPrev?.net_worth_minor ?? 0);
-  const netWorthPct =
-    (netWorthPrev?.net_worth_minor ?? 0) !== 0
-      ? Math.round((netWorthDelta / Math.abs(netWorthPrev!.net_worth_minor)) * 100)
-      : null;
+  // Quarter totals from the cashflow month buckets.
+  const quarterMinor: number[] = [0, 0, 0, 0];
+  for (const b of data?.cashflow?.buckets ?? []) {
+    quarterMinor[quarterOf(b.month)] += b.expense_minor ?? 0;
+  }
+  const nowQuarter = isCurrentYear ? quarterOf(today.toISOString().slice(0, 10)) : 3;
 
-  const ytdIncome = cashflow?.income_minor ?? 0;
-  const ytdExpense = cashflow?.expense_minor ?? 0;
-  const ytdNet = cashflow?.net_minor ?? 0;
+  // 12 month bars; trends buckets are sparse (only months with data).
+  const monthMinor = new Array<number>(12).fill(0);
+  for (const b of data?.trends?.buckets ?? []) {
+    const m = Number(b.bucket.slice(5, 7));
+    if (m >= 1 && m <= 12) monthMinor[m - 1] = Math.abs(b.total_minor);
+  }
+  const maxMonth = Math.max(1, ...monthMinor);
+  const currentMonthIdx = isCurrentYear ? today.getMonth() : -1;
 
-  const trendData = (trends?.buckets ?? []).map((b) => ({
-    bucket: b.bucket,
-    // Parse 'YYYY-MM' as local — `new Date('YYYY-MM')` is UTC-midnight
-    // and silently shifts back a day in negative timezones.
-    label: (() => {
-      const [y, m] = b.bucket.split('-').map(Number);
-      return new Date(y, m - 1, 1).toLocaleDateString(undefined, { month: 'short' });
-    })(),
-    spendMinor: Math.abs(b.total_minor),
-  }));
-
-  // Aggregate the year's category summary into the new 7-category model,
-  // dropping non-spending buckets (income/investment) so the "Category
-  // Breakdown" panel only shows actual outflows.
-  const spendingCategoryRows = (() => {
-    const buckets = new Map<Category, number>();
-    for (const it of summary?.items ?? []) {
+  // YTD category table (spending only), aggregated to the 7-category model.
+  const categoryRows = (() => {
+    const map = new Map<Category, number>();
+    for (const it of data?.summary?.items ?? []) {
       const { category, transactionType } = classifyBackendCategory(it.key);
       if (transactionType !== 'spending' || !category) continue;
-      buckets.set(category, (buckets.get(category) ?? 0) + it.total_minor);
+      map.set(category, (map.get(category) ?? 0) + Math.abs(it.total_minor));
     }
-    return Array.from(buckets, ([category, total_minor]) => ({ category, total_minor }))
-      .sort((a, b) => b.total_minor - a.total_minor);
+    return [...map.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6);
   })();
-  const maxCategoryMinor = spendingCategoryRows.reduce((m, it) => Math.max(m, it.total_minor), 0) || 1;
 
-  // Aggregate monthly cashflow into quarters.
-  const quarterAgg = (cashflow?.buckets ?? []).reduce<Record<string, { inflow: number; outflow: number; net: number }>>(
-    (acc, b) => {
-      const q = quarterOf(b.month);
-      const cur = acc[q] ?? { inflow: 0, outflow: 0, net: 0 };
-      cur.inflow += b.income_minor;
-      cur.outflow += b.expense_minor;
-      cur.net += b.net_minor;
-      acc[q] = cur;
-      return acc;
-    },
-    {},
-  );
-
-  // Per-quarter date ranges for the displayed year, used to drill the
-  // Quarterly Summary rows into a date-scoped Ledger.
-  const qy = now.getFullYear();
-  const quarterRange = {
-    Q1: { from: `${qy}-01-01`, to: `${qy}-03-31` },
-    Q2: { from: `${qy}-04-01`, to: `${qy}-06-30` },
-    Q3: { from: `${qy}-07-01`, to: `${qy}-09-30` },
-    Q4: { from: `${qy}-10-01`, to: `${qy}-12-31` },
-  } as const;
+  const yearRange = { from: startOfYear(now), to: endOfYear(now) };
+  const { whole, cents } = splitMinor(netWorthMinor);
 
   return (
-    <div className="space-y-12 animate-in fade-in duration-700">
-      <section className="flex flex-col md:flex-row justify-between items-end gap-6 pb-4">
-        <div>
-          <span className="text-primary font-bold tracking-widest text-xs uppercase mb-2 block">Executive Summary</span>
-          <div className="flex items-center gap-3 flex-wrap">
-            <h2 className="text-4xl font-extrabold font-headline text-white">Year in Review</h2>
-            {/* Year picker — prev/next chevrons. Next disables when viewing
-                the current year (can't review the future). */}
-            <button
-              type="button"
-              onClick={stepBack}
-              className="p-1.5 rounded-md text-on-surface-variant hover:text-white hover:bg-surface-container-low transition-colors"
-              aria-label="Previous year"
-              title="Previous year"
-            >
-              <ChevronLeft size={18} />
-            </button>
-            <span className="text-on-surface-variant font-medium min-w-[3.5rem] text-center">
-              {displayYear}
-            </span>
-            <button
-              type="button"
-              onClick={stepForward}
-              disabled={!canStepForward}
-              className={cn(
-                'p-1.5 rounded-md transition-colors',
-                canStepForward
-                  ? 'text-on-surface-variant hover:text-white hover:bg-surface-container-low'
-                  : 'text-on-surface-variant/30 cursor-not-allowed',
-              )}
-              aria-label="Next year"
-              title={canStepForward ? 'Next year' : 'Already on the current year'}
-            >
-              <ChevronRight size={18} />
-            </button>
-          </div>
-          <p className="text-on-surface-variant mt-2 text-sm">
-            Snapshot of fiscal year {now.getFullYear()}{displayYear === currentYear ? ' to date' : ''}. Net worth measured against the same date one year ago.
+    <div className="space-y-5">
+      {/* year stepper */}
+      <div className="flex items-center justify-between pt-1">
+        <Chev onClick={stepBack} label="Previous year">‹</Chev>
+        <div className="text-center">
+          <p className="font-display text-[22px] leading-tight tracking-tight">
+            <em className="italic text-[var(--color-accent)]">{displayYear}</em>
+            {isCurrentYear && ' so far'}
+          </p>
+          <p className="mt-0.5 font-mono text-[8.5px] uppercase tracking-[0.16em] text-[var(--color-ink-muted)]">
+            yearly review · as of{' '}
+            {now.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toLowerCase()}
           </p>
         </div>
-      </section>
+        <Chev onClick={stepForward} label="Next year" disabled={!canStepForward}>›</Chev>
+      </div>
 
-      <section className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <div className="md:col-span-2 glass-panel p-8 rounded-xl relative overflow-hidden flex flex-col justify-between min-h-[220px] border border-outline-variant/5">
-          <div className="z-10">
-            <p className="text-on-surface-variant text-sm font-medium mb-1">Current Net Worth</p>
-            <h3 className="text-5xl font-black font-headline text-white tracking-tighter">
-              {formatMoney(netWorth?.net_worth_minor ?? 0, currency)}
-            </h3>
-          </div>
-          <div className="z-10 flex items-center gap-3 mt-4">
-            {netWorthPct != null && (
-              <div
-                className={cn(
-                  'flex items-center px-3 py-1 rounded-full text-xs font-bold',
-                  netWorthDelta >= 0 ? 'text-primary bg-primary/10' : 'text-error bg-error/10',
-                )}
-              >
-                {netWorthDelta >= 0 ? (
-                  <TrendingUp size={14} className="mr-1" />
-                ) : (
-                  <TrendingDown size={14} className="mr-1" />
-                )}
-                {netWorthPct > 0 ? '+' : ''}{netWorthPct}%
-              </div>
+      {/* yr-hero (ink) */}
+      <section className="relative overflow-hidden rounded-[18px] bg-[var(--color-ink)] px-5 py-5 text-[var(--color-paper)]">
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute -right-8 -top-10 h-32 w-32 rounded-full"
+          style={{ background: 'radial-gradient(circle, rgba(181,52,26,0.4), transparent 70%)' }}
+        />
+        <p className="relative font-mono text-[8.5px] uppercase tracking-[0.2em] text-[var(--color-paper-fold)]">
+          NET WORTH · AS-OF SNAPSHOT
+        </p>
+        <p className="relative mt-1.5 font-display text-[2.5rem] font-light leading-none tracking-tight tnum">
+          {netWorthMinor < 0 && '−'}${whole.toLocaleString()}
+          <span className="text-[0.55em] text-[var(--color-paper-fold)]">.{cents}</span>
+        </p>
+        <p className="relative mt-2 text-[11.5px] text-[color:rgba(221,211,190,0.85)]">
+          <strong
+            className={cn(
+              'font-mono text-[10.5px] font-semibold',
+              ytdDeltaMinor >= 0 ? 'text-[#8FA468]' : 'text-[#D08770]',
             )}
-            <span className="text-on-surface-variant text-xs italic">vs same date last year</span>
-          </div>
-          <div className="absolute -right-12 -bottom-12 w-48 h-48 bg-primary/10 blur-[60px] rounded-full" />
-          <Landmark className="absolute right-8 top-8 text-primary/20" size={64} />
-        </div>
-
-        <StatBlock label="YTD Income" value={formatMoney(ytdIncome, currency)} icon={<PiggyBank size={20} className="text-primary" />} />
-        <StatBlock label="YTD Spending" value={formatMoney(ytdExpense, currency)} icon={<Wallet size={20} className="text-tertiary" />} />
+          >
+            {ytdDeltaMinor >= 0 ? '↑' : '↓'} ${Math.abs(Math.round(ytdDeltaMinor / 100)).toLocaleString()}
+          </strong>{' '}
+          vs a year ago
+        </p>
       </section>
 
-      <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 glass-panel p-8 rounded-xl border border-outline-variant/5">
-          <div className="flex justify-between items-start mb-8 flex-wrap gap-4">
-            <div>
-              <h3 className="text-lg font-bold font-headline text-white">Monthly Spending</h3>
-              <p className="text-on-surface-variant text-xs">
-                Expense totals from the trends report, grouped by month
+      {/* q-grid */}
+      <div className="grid grid-cols-4 gap-2">
+        {quarterMinor.map((minor, i) => {
+          const future = isCurrentYear && i > nowQuarter;
+          const isNow = isCurrentYear && i === nowQuarter;
+          return (
+            <div
+              key={i}
+              className={cn(
+                'rounded-[11px] border-[0.5px] bg-[var(--color-surface)] px-1 py-2.5 text-center',
+                isNow ? 'border-[var(--color-accent)]' : 'border-[var(--color-rule-soft)]',
+              )}
+            >
+              <p className="font-mono text-[8px] uppercase tracking-[0.14em] text-[var(--color-ink-muted)]">
+                Q{i + 1}
               </p>
-            </div>
-            <div className="text-right">
-              <p className="text-xs text-on-surface-variant uppercase tracking-widest">YTD Net</p>
               <p
                 className={cn(
-                  'text-xl font-bold font-headline',
-                  ytdNet >= 0 ? 'text-primary' : 'text-error',
+                  'mt-1 font-display text-[13.5px] font-normal tnum',
+                  isNow && 'text-[var(--color-accent)]',
+                  future && 'text-[var(--color-ink-faint)]',
                 )}
               >
-                {formatMoney(ytdNet, currency)}
+                {future ? '—' : `$${Math.round(minor / 100).toLocaleString()}`}
+              </p>
+              <p className="mt-0.5 font-mono text-[7px] text-[var(--color-ink-faint)]">
+                {future ? 'ahead' : isNow ? 'in progress' : QUARTER_SPAN[i]}
               </p>
             </div>
-          </div>
-          <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={trendData} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
-                <XAxis dataKey="label" stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} />
-                <YAxis
-                  stroke="#64748b"
-                  fontSize={11}
-                  tickLine={false}
-                  axisLine={false}
-                  tickFormatter={(v) => `$${(v / 100).toFixed(0)}`}
-                />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: '#0f172a',
-                    border: '1px solid #334155',
-                    borderRadius: 8,
-                    fontSize: 12,
-                  }}
-                  formatter={(v: number) => formatMoney(v, currency)}
-                />
-                <Bar dataKey="spendMinor" radius={[4, 4, 0, 0]}>
-                  {trendData.map((d, i) => (
-                    <Cell
-                      key={d.bucket}
-                      fill="#4edea3"
-                      fillOpacity={i === trendData.length - 1 ? 1 : 0.4}
-                    />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
+          );
+        })}
+      </div>
 
-        <div className="glass-panel p-8 rounded-xl flex flex-col border border-outline-variant/5">
-          <h3 className="text-lg font-bold font-headline text-white mb-1">Category Breakdown</h3>
-          <p className="text-on-surface-variant text-xs mb-8">
-            Top spending categories YTD
+      {/* 12-month bars */}
+      <section className="rounded-[var(--radius-card)] border-[0.5px] border-[var(--color-rule-soft)] bg-[var(--color-surface)] px-4 pb-3 pt-3.5">
+        <p className="mb-3 font-mono text-[9px] uppercase tracking-[0.16em] text-[var(--color-ink-muted)]">
+          Spend by month · {displayYear}
+        </p>
+        <div className="flex h-[58px] items-end gap-[4px]">
+          {monthMinor.map((minor, i) => {
+            const future = isCurrentYear && i > today.getMonth();
+            const hot = i === currentMonthIdx;
+            const h = Math.max(6, (minor / maxMonth) * 100);
+            return (
+              <div
+                key={i}
+                className={cn(
+                  'flex-1 rounded-t-[2.5px]',
+                  hot
+                    ? 'bg-[var(--color-accent)]'
+                    : future
+                      ? 'bg-[repeating-linear-gradient(45deg,var(--color-rule-soft)_0_3px,transparent_3px_6px)]'
+                      : 'bg-[var(--color-paper-fold)]',
+                )}
+                style={{ height: `${future ? 28 : h}%` }}
+                title={`${displayYear}-${String(i + 1).padStart(2, '0')}: $${Math.round(minor / 100)}`}
+              />
+            );
+          })}
+        </div>
+        <div className="mt-1.5 flex justify-between font-mono text-[7px] tracking-[0.06em] text-[var(--color-ink-faint)]">
+          {['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'].map((l, i) => (
+            <span
+              key={i}
+              className={cn('flex-1 text-center', i === currentMonthIdx && 'font-semibold text-[var(--color-accent)]')}
+            >
+              {l}
+            </span>
+          ))}
+        </div>
+      </section>
+
+      {/* YTD category table */}
+      {categoryRows.length > 0 && (
+        <section>
+          <p className="mb-1.5 font-mono text-[9px] uppercase tracking-[0.16em] text-[var(--color-ink-muted)]">
+            By category · YTD
           </p>
-          {spendingCategoryRows.length === 0 ? (
-            <p className="text-sm text-on-surface-variant">No spending data for this year yet.</p>
-          ) : (
-            <div className="space-y-5 flex-1">
-              {spendingCategoryRows.slice(0, 7).map((it) => (
-                <Link
-                  key={it.category}
-                  {...categoryLedgerLink(it.category, { from: startOfYear(now), to: endOfYear(now) })}
-                  className="block space-y-2 rounded-lg -m-2 p-2 transition-colors hover:bg-surface-container-high/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                >
-                  <div className="flex justify-between text-sm">
-                    <span className="text-on-surface font-medium flex items-center gap-2">
-                      <CategoryIcon category={it.category} size={20} />
-                      {it.category}
-                    </span>
-                    <span className="text-white font-bold">{formatMoney(it.total_minor, currency)}</span>
-                  </div>
-                  <div className="h-2 w-full bg-surface-container-low rounded-full">
-                    <div
-                      className="h-full bg-primary rounded-full"
-                      style={{ width: `${(it.total_minor / maxCategoryMinor) * 100}%` }}
-                    />
-                  </div>
-                </Link>
-              ))}
-            </div>
-          )}
-        </div>
-      </section>
+          <div className="px-0.5">
+            {categoryRows.map(([category, minor], i) => (
+              <Link
+                key={category}
+                {...categoryLedgerLink(category, yearRange)}
+                className="flex items-center gap-2.5 border-b border-[var(--color-rule-soft)] py-2 text-[11.5px] last:border-b-0"
+              >
+                <span
+                  aria-hidden="true"
+                  className="h-2 w-2 flex-shrink-0 rounded-[2px]"
+                  style={{ background: CATEGORY_SWATCHES[i % CATEGORY_SWATCHES.length] }}
+                />
+                <span className="flex-1 font-medium text-[var(--color-ink)]">{category}</span>
+                <span className="font-mono text-[10.5px] font-medium tnum">
+                  ${Math.round(minor / 100).toLocaleString()}
+                </span>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
 
-      <section className="glass-panel rounded-xl overflow-hidden border border-outline-variant/5">
-        <div className="px-8 py-6 border-b border-outline-variant/10">
-          <h3 className="text-lg font-bold font-headline text-white">Quarterly Summary</h3>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead>
-              <tr className="text-[11px] uppercase tracking-[0.2em] text-on-surface-variant font-black bg-surface-container-high/30">
-                <th className="px-8 py-4">Quarter</th>
-                <th className="px-8 py-4 text-right">Inflow</th>
-                <th className="px-8 py-4 text-right">Outflow</th>
-                <th className="px-8 py-4 text-right">Net</th>
-                <th className="px-8 py-4 text-right">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-outline-variant/5">
-              {(['Q1', 'Q2', 'Q3', 'Q4'] as const).map((q) => {
-                const data = quarterAgg[q] ?? { inflow: 0, outflow: 0, net: 0 };
-                const surplus = data.net >= 0;
-                return (
-                  <tr
-                    key={q}
-                    onClick={() => navigate(dateRangeLedgerLink(quarterRange[q]))}
-                    className="hover:bg-surface-container-high/20 transition-colors cursor-pointer"
-                  >
-                    <td className="px-8 py-5 text-sm font-bold text-white">{q} {now.getFullYear()}</td>
-                    <td className="px-8 py-5 text-sm text-right text-primary font-medium">
-                      {formatMoney(data.inflow, currency)}
-                    </td>
-                    <td className="px-8 py-5 text-sm text-right text-on-surface-variant">
-                      {formatMoney(data.outflow, currency)}
-                    </td>
-                    <td
-                      className={cn(
-                        'px-8 py-5 text-sm text-right font-bold',
-                        surplus ? 'text-white' : 'text-error',
-                      )}
-                    >
-                      {formatMoney(data.net, currency)}
-                    </td>
-                    <td className="px-8 py-5 text-right">
-                      <span
-                        className={cn(
-                          'px-2 py-1 text-[10px] font-bold rounded-full uppercase',
-                          data.inflow === 0 && data.outflow === 0
-                            ? 'bg-surface-container-highest text-on-surface-variant'
-                            : surplus
-                              ? 'bg-primary/10 text-primary'
-                              : 'bg-error/10 text-error',
-                        )}
-                      >
-                        {data.inflow === 0 && data.outflow === 0 ? '—' : surplus ? 'Surplus' : 'Deficit'}
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </section>
+      <Link
+        {...dateRangeLedgerLink(yearRange)}
+        className="block rounded-[var(--radius-pill)] border-[0.5px] border-[var(--color-rule)] py-2.5 text-center font-display text-[13.5px] font-medium text-[var(--color-ink-soft)] transition-colors hover:border-[var(--color-ink-muted)]"
+      >
+        Full year in Ledger →
+      </Link>
     </div>
   );
 }
 
-function StatBlock({
+function Chev({
+  children,
+  onClick,
   label,
-  value,
-  icon,
+  disabled,
 }: {
+  children: React.ReactNode;
+  onClick: () => void;
   label: string;
-  value: string;
-  icon: React.ReactNode;
+  disabled?: boolean;
 }) {
   return (
-    <div className="glass-panel p-6 rounded-xl flex flex-col justify-between border border-outline-variant/5">
-      <div className="flex items-center justify-between">
-        <p className="text-on-surface-variant text-xs uppercase tracking-wider font-bold">{label}</p>
-        {icon}
-      </div>
-      <h4 className="text-2xl font-bold font-headline text-white mt-6">{value}</h4>
-    </div>
+    <button
+      type="button"
+      aria-label={label}
+      disabled={disabled}
+      onClick={onClick}
+      className={cn(
+        'flex h-8 w-8 items-center justify-center rounded-full',
+        'border-[0.5px] border-[var(--color-rule-soft)] bg-[var(--color-surface)]',
+        'text-[14px] text-[var(--color-ink-soft)] transition-colors hover:text-[var(--color-ink)]',
+        disabled && 'opacity-30 hover:text-[var(--color-ink-soft)]',
+      )}
+    >
+      {children}
+    </button>
   );
+}
+
+function splitMinor(minor: number): { whole: number; cents: string } {
+  const abs = Math.abs(minor) / 100;
+  return { whole: Math.floor(abs), cents: abs.toFixed(2).split('.')[1] ?? '00' };
 }
