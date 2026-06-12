@@ -51,7 +51,7 @@ export default function Batches({ onSelectBatch }: BatchesProps) {
   return (
     <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-700">
       <div>
-        <h2 className="text-4xl font-extrabold text-white font-headline tracking-tight">Upload Batches</h2>
+        <h2 className="font-display text-3xl font-medium tracking-tight">Upload Batches</h2>
         <p className="text-on-surface-variant mt-2 font-inter">
           Every receipt you upload is ingested as a batch. Open one to watch extraction + reconciliation progress in real time.
         </p>
@@ -98,7 +98,7 @@ export default function Batches({ onSelectBatch }: BatchesProps) {
                   >
                     <td className="px-8 py-6">
                       <div className="flex flex-col">
-                        <span className="text-sm font-bold text-white group-hover:text-primary transition-colors">
+                        <span className="font-display text-sm font-medium group-hover:text-[var(--color-accent)] transition-colors">
                           {formatDate(b.created_at)}
                         </span>
                         <span className="text-[11px] text-on-surface-variant/70 mt-0.5 font-mono">
@@ -198,7 +198,7 @@ function NeedsReviewSection() {
               <div className="min-w-0 flex-1">
                 <Link
                   {...receiptLink(t.id)}
-                  className="text-sm font-bold text-white hover:text-primary transition-colors"
+                  className="font-display text-sm font-medium hover:text-[var(--color-accent)] transition-colors"
                 >
                   {t.payee ?? 'Unknown payee'}
                 </Link>
@@ -218,7 +218,7 @@ function NeedsReviewSection() {
               <button
                 onClick={() => dismiss.mutate(t.id)}
                 disabled={dismiss.isPending}
-                className="shrink-0 flex items-center gap-1.5 text-xs font-bold text-on-surface-variant hover:text-white border border-outline-variant/20 hover:border-outline-variant/50 rounded-full px-3 py-1.5 transition-colors disabled:opacity-50"
+                className="shrink-0 flex items-center gap-1.5 text-xs font-bold text-on-surface-variant hover:text-[var(--color-ink)] border border-outline-variant/20 hover:border-outline-variant/50 rounded-full px-3 py-1.5 transition-colors disabled:opacity-50"
               >
                 <X size={12} />
                 Not a duplicate
