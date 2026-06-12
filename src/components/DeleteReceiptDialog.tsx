@@ -1,6 +1,6 @@
 import React from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { X, Loader2, AlertCircle, AlertTriangle, Trash2, FileMinus, Flame, ArrowLeft } from 'lucide-react';
+import { X, Loader2, AlertCircle, AlertTriangle, ArrowLeft } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import {
@@ -47,27 +47,52 @@ interface ResultState {
   linkCount?: number;
 }
 
-const OPTION_DESCRIPTIONS: Record<Mode, { icon: React.ReactNode; title: string; help: string }> = {
+/** Board screen 20's three delete tiers: olive = safe (doc only), amber =
+ *  cascade (doc + transaction, reversible), cardinal = hard (permanent). */
+const OPTION_DESCRIPTIONS: Record<
+  Mode,
+  { glyph: string; tier: 'safe' | 'cascade' | 'hard'; tag: string; title: string; help: string }
+> = {
   soft: {
-    icon: <FileMinus size={20} />,
-    title: 'Soft delete the receipt',
-    help: 'Hides the receipt from the main list. The transaction stays untouched. You can restore it later from the "Recently Deleted" panel.',
+    glyph: '▤',
+    tier: 'safe',
+    tag: 'reversible',
+    title: 'Remove document only',
+    help: 'Soft-delete the file · the transaction stays posted. Restore any time via "Show deleted".',
   },
   'cascade-soft': {
-    icon: <Trash2 size={20} />,
-    title: 'Delete receipt and reverse the transaction',
-    help: 'Soft-deletes the receipt and voids the linked transaction (creates a reversing mirror entry in the ledger). Drafts are hard-deleted instead. Reconciled transactions block this — unreconcile first.',
+    glyph: '⛓',
+    tier: 'cascade',
+    tag: 'reversible',
+    title: 'Document + transaction',
+    help: 'Cascade soft-delete · voids the linked transaction with a reversing mirror entry (drafts are hard-deleted). A tombstone shows in the Ledger.',
   },
   'cascade-hard': {
-    icon: <Flame size={20} />,
-    title: 'Permanently delete everything',
-    help: 'Removes the receipt file, the receipt row, every linked transaction, and all their postings. Cannot be undone. Reconciled transactions block this — unreconcile first.',
+    glyph: '✕',
+    tier: 'hard',
+    tag: 'permanent',
+    title: 'Hard delete everything',
+    help: 'File, document row, every linked transaction and their postings · gone from the books.',
   },
   'hard-txn': {
-    icon: <Flame size={20} />,
-    title: 'Permanently delete the transaction',
-    help: 'Removes the transaction and its postings. This receipt has no linked image, so there is nothing to soft-delete.',
+    glyph: '✕',
+    tier: 'hard',
+    tag: 'permanent',
+    title: 'Hard delete the transaction',
+    help: 'Removes the transaction and its postings. No linked file to soft-delete.',
   },
+};
+
+const TIER_ICON_BG: Record<'safe' | 'cascade' | 'hard', string> = {
+  safe: 'bg-[var(--color-olive)]',
+  cascade: 'bg-[var(--color-amber)]',
+  hard: 'bg-[var(--color-accent)]',
+};
+
+const TIER_TAG_CLASS: Record<'safe' | 'cascade' | 'hard', string> = {
+  safe: 'bg-[color:rgba(92,107,61,0.16)] text-[var(--color-olive)]',
+  cascade: 'bg-[color:rgba(188,134,36,0.18)] text-[var(--color-amber)]',
+  hard: 'bg-[color:rgba(181,52,26,0.15)] text-[var(--color-accent)]',
 };
 
 export default function DeleteReceiptDialog({
@@ -226,7 +251,7 @@ export default function DeleteReceiptDialog({
       <div className="flex items-start gap-3 p-4 rounded-xl bg-error/10">
         <AlertTriangle className="text-error flex-shrink-0 mt-0.5" size={20} />
         <div>
-          <p className="text-sm font-bold text-white">Reconciled transactions block this delete</p>
+          <p className="text-sm font-semibold text-[var(--color-ink)]">Reconciled transactions block this delete</p>
           <p className="text-xs text-on-surface-variant mt-1">
             {state.message ??
               'One or more linked transactions are reconciled. Unreconcile each one before retrying.'}
@@ -282,7 +307,7 @@ export default function DeleteReceiptDialog({
       <div className="flex items-start gap-3 p-4 rounded-xl bg-error/10">
         <AlertTriangle className="text-error flex-shrink-0 mt-0.5" size={20} />
         <div>
-          <p className="text-sm font-bold text-white">This transaction is reconciled</p>
+          <p className="text-sm font-semibold text-[var(--color-ink)]">This transaction is reconciled</p>
           <p className="text-xs text-on-surface-variant mt-1">
             {state.message ?? 'Unreconcile this transaction before deleting it.'}
           </p>
@@ -311,7 +336,7 @@ export default function DeleteReceiptDialog({
       <div className="flex items-start gap-3 p-4 rounded-xl bg-error/10">
         <AlertTriangle className="text-error flex-shrink-0 mt-0.5" size={20} />
         <div>
-          <p className="text-sm font-bold text-white">Receipt has linked transactions</p>
+          <p className="text-sm font-semibold text-[var(--color-ink)]">Receipt has linked transactions</p>
           <p className="text-xs text-on-surface-variant mt-1">
             {state.linkCount != null
               ? `This receipt is still linked to ${state.linkCount} transaction${state.linkCount === 1 ? '' : 's'}.`
@@ -360,38 +385,47 @@ export default function DeleteReceiptDialog({
     <>
       <AnimatePresence>
         {isOpen && (
-          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-[110] flex items-end justify-center">
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={state.kind === 'working' ? undefined : onClose}
-              className="absolute inset-0 bg-background/40 backdrop-blur-sm"
+              className="absolute inset-0 bg-[color:rgba(26,22,18,0.38)]"
             />
 
+            {/* Board screen 20: a bottom sheet, not a centered dialog. */}
             <motion.div
-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="glass-panel w-full max-w-lg rounded-[2rem] overflow-hidden flex flex-col relative border border-outline-variant/20 shadow-2xl"
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'tween', ease: [0.16, 1, 0.3, 1], duration: 0.32 }}
+              className="relative flex w-full max-w-lg flex-col overflow-hidden rounded-t-[20px] bg-[var(--color-paper)] pb-[env(safe-area-inset-bottom,0px)] shadow-[0_-12px_40px_rgba(26,22,18,0.28)]"
             >
-              <div className="px-8 pt-8 pb-4 flex justify-between items-start gap-4">
-                <div className="flex items-start gap-3">
-                  <AlertTriangle className="text-error flex-shrink-0 mt-1" size={24} />
-                  <h2 className="text-xl font-bold tracking-tight text-white font-headline">
-                    Delete this receipt?
+              <div
+                aria-hidden="true"
+                className="mx-auto mb-2 mt-2.5 h-1 w-9 rounded-full bg-[var(--color-rule)]"
+              />
+              <div className="flex items-start gap-4 px-5 pb-1">
+                <div className="min-w-0">
+                  <h2 className="font-display text-[19px] font-medium tracking-tight">
+                    Delete this receipt<em className="italic text-[var(--color-accent)]">?</em>
                   </h2>
+                  <p className="mt-0.5 truncate font-mono text-[9px] tracking-[0.04em] text-[var(--color-ink-muted)]">
+                    {documentId ? `doc_${documentId.slice(0, 8)} · ` : ''}tx_{transactionId.slice(0, 8)} · double-entry
+                  </p>
                 </div>
                 <button
                   onClick={onClose}
                   disabled={state.kind === 'working'}
-                  className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-on-surface-variant hover:text-white transition-colors disabled:opacity-40"
+                  aria-label="Close"
+                  className="ml-auto flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-[var(--color-ink-muted)] transition-colors hover:text-[var(--color-ink)] disabled:opacity-40"
                 >
-                  <X size={20} />
+                  <X size={17} />
                 </button>
               </div>
 
-              <div className="px-8 pb-8 space-y-5 max-h-[70vh] overflow-y-auto">
+              <div className="max-h-[70vh] space-y-4 overflow-y-auto px-5 pb-6 pt-3">
                 {state.kind === 'block-cascade-reconciled' && renderBlockCascadeReconciled()}
                 {state.kind === 'block-cannot-delete-reconciled' && renderBlockCannotDeleteReconciled()}
                 {state.kind === 'block-document-has-links' && renderBlockDocumentHasLinks()}
@@ -399,7 +433,7 @@ export default function DeleteReceiptDialog({
                 {(state.kind === 'idle' || state.kind === 'working' || state.kind === 'error') && (
                   <>
                     <p className="text-sm text-on-surface-variant">
-                      Choose how aggressively to remove this receipt.
+                      Three tiers — pick how far this goes.
                     </p>
 
                     {renderOptions()}
@@ -408,7 +442,7 @@ export default function DeleteReceiptDialog({
                       <div className="flex items-start gap-3 p-4 rounded-xl bg-surface-container-lowest">
                         <AlertCircle className="text-error flex-shrink-0 mt-0.5" size={20} />
                         <div className="flex-1">
-                          <p className="text-sm font-bold text-white">Couldn't complete</p>
+                          <p className="text-sm font-semibold text-[var(--color-ink)]">Couldn't complete</p>
                           <p className="text-xs text-error mt-1">{state.message}</p>
                         </div>
                       </div>
@@ -418,7 +452,7 @@ export default function DeleteReceiptDialog({
                       <button
                         onClick={onClose}
                         disabled={state.kind === 'working'}
-                        className="flex-1 py-3 rounded-xl bg-surface-container-high text-on-surface-variant font-bold hover:text-white transition-colors disabled:opacity-40"
+                        className="flex-1 rounded-[var(--radius-pill)] border-[0.5px] border-[var(--color-rule)] bg-[var(--color-paper-deep)] py-3 font-display text-[13.5px] font-medium text-[var(--color-ink-soft)] transition-colors hover:text-[var(--color-ink)] disabled:opacity-40"
                       >
                         Cancel
                       </button>
@@ -473,7 +507,7 @@ interface OptionRowProps {
 }
 
 function OptionRow({ mode, selected, onSelect, disabledReason }: OptionRowProps) {
-  const { icon, title, help } = OPTION_DESCRIPTIONS[mode];
+  const { glyph, tier, tag, title, help } = OPTION_DESCRIPTIONS[mode];
   const disabled = disabledReason !== undefined;
   return (
     <button
@@ -481,21 +515,47 @@ function OptionRow({ mode, selected, onSelect, disabledReason }: OptionRowProps)
       onClick={disabled ? undefined : onSelect}
       disabled={disabled}
       className={cn(
-        'w-full text-left p-4 rounded-xl border transition-colors flex items-start gap-3',
+        'flex w-full items-start gap-3 rounded-[13px] border-[0.5px] bg-[var(--color-surface)] px-3 py-3 text-left transition-colors',
         selected
-          ? 'border-error/40 bg-error/10'
-          : 'border-outline-variant/10 bg-surface-container-lowest hover:border-outline-variant/30',
-        disabled && 'opacity-40 cursor-not-allowed',
+          ? tier === 'hard'
+            ? 'border-[color:rgba(181,52,26,0.6)]'
+            : 'border-[var(--color-ink-muted)]'
+          : tier === 'hard'
+            ? 'border-[color:rgba(181,52,26,0.35)] hover:border-[color:rgba(181,52,26,0.6)]'
+            : 'border-[var(--color-rule-soft)] hover:border-[var(--color-rule)]',
+        disabled && 'cursor-not-allowed opacity-40',
       )}
     >
-      <div className={cn('mt-0.5 flex-shrink-0', selected ? 'text-error' : 'text-on-surface-variant')}>{icon}</div>
-      <div className="flex-1 min-w-0">
-        <p className={cn('text-sm font-bold', selected ? 'text-white' : 'text-on-surface')}>{title}</p>
-        <p className="text-xs text-on-surface-variant mt-1">{help}</p>
-        {disabled && disabledReason && (
-          <p className="text-xs text-error mt-2 font-medium">{disabledReason}</p>
+      <span
+        aria-hidden="true"
+        className={cn(
+          'flex h-[34px] w-[34px] flex-shrink-0 items-center justify-center rounded-[9px] text-[14px] text-[var(--color-paper)]',
+          TIER_ICON_BG[tier],
         )}
-      </div>
+      >
+        {glyph}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center gap-2">
+          <span className="font-display text-[13.5px] font-medium leading-tight">{title}</span>
+          <span
+            className={cn(
+              'ml-auto flex-shrink-0 rounded-full px-2 py-[2px] font-mono text-[7.5px] uppercase tracking-[0.1em]',
+              TIER_TAG_CLASS[tier],
+            )}
+          >
+            {tag}
+          </span>
+        </span>
+        <span className="mt-1 block text-[10.5px] leading-snug text-[var(--color-ink-muted)]">
+          {help}
+        </span>
+        {disabled && disabledReason && (
+          <span className="mt-1.5 block font-mono text-[9px] text-[var(--color-accent)]">
+            ⚿ {disabledReason}
+          </span>
+        )}
+      </span>
     </button>
   );
 }

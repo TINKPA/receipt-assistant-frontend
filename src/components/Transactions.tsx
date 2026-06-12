@@ -814,6 +814,10 @@ function TombstonePanel({
             <li
               key={t.id}
               className="px-5 py-4 flex items-center gap-3"
+              style={{
+                background:
+                  'repeating-linear-gradient(45deg, transparent 0 7px, rgba(140,130,115,0.07) 7px 9px)',
+              }}
               data-testid={`tombstone-${t.id}`}
             >
               <div
@@ -844,12 +848,12 @@ function TombstonePanel({
                 data-testid={`tombstone-restore-${t.id}`}
                 onClick={() => onRestore(t.id)}
                 className={cn(
-                  'rounded-[10px] px-3 py-2 text-xs font-medium',
-                  'bg-[var(--color-terracotta)] text-white hover:bg-[var(--color-terracotta-deep)]',
-                  'transition-colors flex-shrink-0',
+                  'inline-flex items-center gap-1.5 rounded-full px-3.5 py-2',
+                  'bg-[var(--color-ink)] font-mono text-[9px] font-medium uppercase tracking-[0.08em] text-[var(--color-paper)]',
+                  'transition-opacity hover:opacity-85 flex-shrink-0',
                 )}
               >
-                Restore
+                ↺ Restore
               </button>
             </li>
           ))}
