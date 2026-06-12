@@ -60,13 +60,13 @@ interface TombstoneRow {
 }
 
 /**
- * Ledger — the transactions browser in Variant B (Soft / Organic).
- * Visual language follows docs/2026-05-10_Mockup_frontend_redesign-B-soft.html
- * (fig.02): handwritten section labels, week-grouped entries, rounded cards.
+ * Ledger — the transactions browser in the v2 editorial language (board
+ * screen 02, tracking receipt-assistant#149): mono `day-h` banners with
+ * daily totals, Fraunces merchant names, mono numerics.
  *
- * Backend wiring is unchanged from the previous Material-3 version: server-
- * side filters (date / status / payee / amount / q) re-fetch on debounced
- * change; category filtering stays client-side.
+ * Backend wiring is unchanged: server-side filters (date / status / payee /
+ * amount / q) re-fetch on debounced change; category filtering stays
+ * client-side.
  */
 export default function Transactions({
   onSelectReceipt,
@@ -372,7 +372,7 @@ export default function Transactions({
 
       {loading ? (
         <EmptyState>
-          <p className="font-hand text-xl text-[var(--color-ink-muted)]">loading…</p>
+          <p className="font-display italic text-lg text-[var(--color-ink-muted)]">loading…</p>
         </EmptyState>
       ) : error ? (
         <EmptyState>
@@ -420,7 +420,7 @@ export default function Transactions({
         <div ref={sentinelRef} aria-hidden="true" className="h-1" />
       )}
       {loadingMore && (
-        <p className="py-3 text-center font-hand text-lg text-[var(--color-ink-muted)]">
+        <p className="py-3 text-center font-display italic text-base text-[var(--color-ink-muted)]">
           loading more…
         </p>
       )}
@@ -475,7 +475,7 @@ function Header({
   return (
     <div className="flex items-start justify-between gap-4">
       <div className="min-w-0">
-        <h1 className="font-display italic font-medium text-4xl leading-none tracking-tight">
+        <h1 className="font-display font-medium text-4xl leading-none tracking-tight">
           Ledger
         </h1>
         {filters.datePreset === 'month' ? (
@@ -484,7 +484,7 @@ function Header({
             onChange={onMonthChange}
           />
         ) : (
-          <p className="mt-2 font-hand text-2xl text-[var(--color-terracotta)] leading-none">
+          <p className="mt-2 font-display italic text-xl text-[var(--color-accent)] leading-none">
             {filters.datePreset === 'custom'
               ? 'custom range'
               : DATE_PRESET_LABEL[filters.datePreset].toLowerCase()}
@@ -492,13 +492,13 @@ function Header({
         )}
       </div>
       <div className="text-right flex-shrink-0">
-        <p className="text-[11px] font-medium tracking-[0.18em] uppercase text-[var(--color-ink-muted)]">
+        <p className="font-mono text-[9px] font-medium tracking-[0.18em] uppercase text-[var(--color-ink-muted)]">
           TOTAL
         </p>
-        <p className="mt-1 font-display italic font-medium text-2xl tnum">
+        <p className="mt-1 font-mono text-xl font-semibold tracking-tight tnum">
           ${Math.round(total).toLocaleString()}
         </p>
-        <p className="text-xs text-[var(--color-ink-muted)]">
+        <p className="font-mono text-[10px] text-[var(--color-ink-muted)]">
           {count} {count === 1 ? 'entry' : 'entries'}
         </p>
       </div>
@@ -533,7 +533,7 @@ function MonthSwitcher({
       >
         ‹
       </button>
-      <span className="font-hand text-2xl text-[var(--color-terracotta)] leading-none min-w-[7.5rem] text-center">
+      <span className="font-display italic text-xl text-[var(--color-accent)] leading-none min-w-[7.5rem] text-center">
         {monthLabelLong(ym)}
       </span>
       <button
@@ -580,11 +580,11 @@ function SearchSoft({
         type="search"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        placeholder="Search merchants, notes…"
+        placeholder="Find rows, merchants, notes…"
         className={cn(
           'flex-1 bg-transparent outline-none border-none',
           'text-[15px] text-[var(--color-ink)]',
-          'placeholder:font-display placeholder:italic placeholder:text-[var(--color-ink-muted)]',
+          'placeholder:font-mono placeholder:text-[12px] placeholder:text-[var(--color-ink-faint)]',
         )}
       />
       {value && (
@@ -624,14 +624,15 @@ function PeriodGroup({
       {/* Sticky band: while a group is in view its label + running total
           pin to the top so a long month never loses context. The paper
           background lets rows scroll cleanly underneath. */}
-      <div className="sticky top-0 z-10 flex items-baseline gap-3 mb-3 bg-[var(--color-paper)] pt-2 pb-2">
-        <span className="font-hand text-xl text-[var(--color-terracotta)] leading-none">
+      {/* Board `day-h`: mono uppercase day banner with the day's total. */}
+      <div className="sticky top-0 z-10 flex items-baseline gap-3 mb-2 bg-[var(--color-paper)] pt-2 pb-1.5">
+        <span className="font-mono text-[9.5px] uppercase tracking-[0.14em] text-[var(--color-ink-muted)]">
           {group.label}
         </span>
-        <span className="text-[11px] tracking-[0.12em] uppercase text-[var(--color-ink-muted)]">
+        <span className="font-mono text-[8.5px] uppercase tracking-[0.1em] text-[var(--color-ink-faint)]">
           {group.txs.length} {group.txs.length === 1 ? 'entry' : 'entries'}
         </span>
-        <span className="ml-auto font-display italic text-base font-medium tnum">
+        <span className="ml-auto font-mono text-[11px] font-medium tnum text-[var(--color-ink-soft)]">
           ${Math.round(Math.abs(group.total)).toLocaleString()}
         </span>
       </div>
@@ -717,10 +718,10 @@ function LedgerRow({
       {(() => {
         const body = (
           <>
-            <p className="font-display italic font-medium text-[17px] leading-tight tracking-tight truncate">
+            <p className="font-display font-medium text-[15.5px] leading-tight tracking-tight truncate">
               {tx.description}
             </p>
-            <p className="mt-0.5 text-[11px] tracking-[0.04em] uppercase text-[var(--color-ink-muted)] truncate">
+            <p className="mt-0.5 font-mono text-[9.5px] tracking-[0.04em] uppercase text-[var(--color-ink-muted)] truncate">
               {rowLabelPrefix(tx)}{formatDay(tx.date)}
               {badge && (
                 <span
@@ -759,7 +760,7 @@ function LedgerRow({
       {/* Amount */}
       <span
         className={cn(
-          'font-display italic font-medium text-[18px] tnum px-1',
+          'font-mono text-[14.5px] font-semibold tracking-tight tnum px-1',
           badge?.strikethrough && 'line-through opacity-60',
         )}
       >
@@ -801,7 +802,7 @@ function TombstonePanel({
       </div>
       {loading ? (
         <div className="py-10 text-center">
-          <p className="font-hand text-lg text-[var(--color-ink-muted)]">loading…</p>
+          <p className="font-display italic text-base text-[var(--color-ink-muted)]">loading…</p>
         </div>
       ) : rows.length === 0 ? (
         <div className="py-10 text-center text-sm text-[var(--color-ink-muted)]">
@@ -872,28 +873,27 @@ function EmptyState({ children }: { children: React.ReactNode }) {
 
 /**
  * Pick the grouping that fits the visible range. A single calendar month
- * (the default month-scoped browse, or any one-month filter) groups by ISO
- * week — there are at most ~5 banners, so weekly granularity reads well.
- * Anything spanning multiple months (all-time, a wide custom range) groups
- * by month instead, so sparse history stays calm instead of emitting one
- * "week of … · 1 entry" banner per receipt.
+ * (the default month-scoped browse, or any one-month filter) groups by DAY —
+ * the board's ledger (screen 02) reads as a daily journal with a `day-h`
+ * banner per day. Anything spanning multiple months (all-time, a wide
+ * custom range) groups by month instead, so sparse history stays calm
+ * instead of emitting one banner per receipt.
  */
 function groupTransactions(txs: Transaction[]): PeriodBucket[] {
   const months = new Set(txs.map((tx) => tx.date.slice(0, 7)));
-  return months.size <= 1 ? groupByWeek(txs) : groupByMonth(txs);
+  return months.size <= 1 ? groupByDay(txs) : groupByMonth(txs);
 }
 
-/** Week buckets with relative labels ("this week" / "last week" / "week of
- *  May 5"). Used when the view is a single month. */
-function groupByWeek(txs: Transaction[]): PeriodBucket[] {
+/** Day buckets with board-style labels ("Today" / "Yesterday" / "Thursday ·
+ *  Jun 11"). Used when the view is a single month. */
+function groupByDay(txs: Transaction[]): PeriodBucket[] {
   const buckets = new Map<string, PeriodBucket>();
   for (const tx of txs) {
-    const start = isoWeekStart(tx.date);
-    if (!start) continue;
-    let bucket = buckets.get(start);
+    const key = tx.date;
+    let bucket = buckets.get(key);
     if (!bucket) {
-      bucket = { startIso: start, label: weekLabel(start), total: 0, txs: [] };
-      buckets.set(start, bucket);
+      bucket = { startIso: key, label: dayLabel(key), total: 0, txs: [] };
+      buckets.set(key, bucket);
     }
     bucket.txs.push(tx);
     bucket.total += tx.amount;
@@ -901,17 +901,17 @@ function groupByWeek(txs: Transaction[]): PeriodBucket[] {
   return [...buckets.values()].sort((a, b) => (a.startIso < b.startIso ? 1 : -1));
 }
 
-/** Relative week label from a Monday ISO date. Falls back to "week of May 5"
- *  for weeks that aren't the current or previous one. */
-function weekLabel(startIso: string): string {
-  const today = new Date();
-  if (isoWeekStart(toIso(today)) === startIso) return 'this week';
-  const lastWeek = new Date(today);
-  lastWeek.setDate(lastWeek.getDate() - 7);
-  if (isoWeekStart(toIso(lastWeek)) === startIso) return 'last week';
-  const [y, m, d] = startIso.split('-').map(Number);
-  const dt = new Date(y, m - 1, d);
-  return `week of ${dt.toLocaleString('en-US', { month: 'short' })} ${dt.getDate()}`;
+/** "Today" / "Yesterday" / "Thursday · Jun 11" from a YYYY-MM-DD date. */
+function dayLabel(isoDate: string): string {
+  const today = toIso(new Date());
+  if (isoDate === today) return 'Today';
+  const y = new Date();
+  y.setDate(y.getDate() - 1);
+  if (isoDate === toIso(y)) return 'Yesterday';
+  const [yy, mm, dd] = isoDate.split('-').map(Number);
+  if (!yy || !mm || !dd) return isoDate;
+  const dt = new Date(yy, mm - 1, dd);
+  return `${dt.toLocaleString('en-US', { weekday: 'long' })} · ${dt.toLocaleString('en-US', { month: 'short' })} ${dd}`;
 }
 
 /**
