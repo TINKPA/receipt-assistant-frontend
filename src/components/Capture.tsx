@@ -99,14 +99,57 @@ export default function Capture({ onCancel, onComplete }: CaptureProps) {
     };
   }, []);
 
-  const sendFile = async (file: File) => {
-    setUpload({ kind: 'uploading', filename: file.name });
+  // Board screens 14-15: the shutter no longer uploads immediately. Each
+  // shot (or picked file) lands in `pending` and the confirm stage offers
+  // Retake / + Add another / Process — multi-shot batches ride the same
+  // ingestBatch call the single-shot path always used.
+  const [pending, setPending] = useState<Array<{ file: File; url: string }>>([]);
+  // `reviewing` flips to the confirm stage after each shot; "+ Add another"
+  // drops back to the camera with the batch intact (count badge on shutter).
+  const [reviewing, setReviewing] = useState(false);
+
+  const addPending = (file: File) => {
+    setPending((p) => [...p, { file, url: URL.createObjectURL(file) }]);
+    setReviewing(true);
+  };
+  const dropLastPending = () => {
+    setPending((p) => {
+      const last = p[p.length - 1];
+      if (last) URL.revokeObjectURL(last.url);
+      return p.slice(0, -1);
+    });
+    setReviewing(false);
+  };
+  useEffect(
+    () => () => {
+      // Revoke preview URLs on unmount.
+      setPending((p) => {
+        p.forEach((x) => URL.revokeObjectURL(x.url));
+        return [];
+      });
+    },
+    [],
+  );
+  // The confirm stage unmounts the <video>; re-attach the live stream when
+  // the user returns to the camera ("+ Add another" / "Retake").
+  useEffect(() => {
+    if (!reviewing && streamRef.current && videoRef.current) {
+      videoRef.current.srcObject = streamRef.current;
+    }
+  }, [reviewing]);
+
+  const sendPending = async () => {
+    const files = pending.map((p) => p.file);
+    if (files.length === 0) return;
+    setUpload({ kind: 'uploading', filename: files[0].name });
     try {
-      const result = await ingestBatch([file]);
+      const result = await ingestBatch(files);
       const first = result.items[0];
       if (!first) {
         throw new Error('Upload accepted but server returned no ingest items.');
       }
+      pending.forEach((p) => URL.revokeObjectURL(p.url));
+      setPending([]);
       onComplete({
         batchId: result.batchId,
         ingestId: first.ingestId,
@@ -147,7 +190,7 @@ export default function Capture({ onCancel, onComplete }: CaptureProps) {
         return;
       }
       const file = new File([blob], `capture-${Date.now()}.jpg`, { type: 'image/jpeg' });
-      await sendFile(file);
+      addPending(file);
       return;
     }
 
@@ -157,12 +200,85 @@ export default function Capture({ onCancel, onComplete }: CaptureProps) {
 
   const handlePicked = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
-    if (f) void sendFile(f);
+    if (f) addPending(f);
     e.target.value = '';
   };
 
   const isStreaming = camera.kind === 'streaming';
   const showCameraFallbackHint = camera.kind === 'denied' || camera.kind === 'unsupported';
+
+  // ── Confirm stage (board screen 15) ───────────────────────────
+  if (reviewing && pending.length > 0) {
+    const last = pending[pending.length - 1];
+    const totalKB = Math.round(pending.reduce((s, p) => s + p.file.size, 0) / 1024);
+    const uploading = upload.kind === 'uploading';
+    return (
+      <div className="-mx-4 -mt-4 flex min-h-[100dvh] flex-col bg-[var(--color-paper)] px-4 pt-4 sm:-mx-6 sm:-mt-6 sm:px-6 lg:-mx-10 lg:-mt-10">
+        <div className="mx-auto flex w-full max-w-[480px] flex-1 flex-col">
+          <div className="flex items-center justify-between pt-2">
+            <button
+              type="button"
+              onClick={dropLastPending}
+              aria-label="Retake"
+              className="flex h-9 w-9 items-center justify-center rounded-full border-[0.5px] border-[var(--color-rule-soft)] bg-[var(--color-surface)] text-[15px]"
+            >
+              ←
+            </button>
+            <div className="text-center">
+              <p className="font-display text-[17px] font-medium leading-tight">Captured</p>
+              <p className="font-mono text-[8.5px] uppercase tracking-[0.14em] text-[var(--color-ink-muted)]">
+                {pending.length} of {pending.length} · ready to extract
+              </p>
+            </div>
+            <span aria-hidden="true" className="w-9" />
+          </div>
+
+          <div className="relative mt-4 flex-1 overflow-hidden rounded-[20px] border-[0.5px] border-[var(--color-rule-soft)] bg-[var(--color-ink)]">
+            <img src={last.url} alt="Captured receipt" className="absolute inset-0 h-full w-full object-contain" />
+            <span className="absolute bottom-3 left-3 rounded-full bg-[color:rgba(251,247,238,0.92)] px-2.5 py-1 font-mono text-[8.5px] tracking-[0.04em] text-[var(--color-ink-soft)]">
+              {totalKB} KB{pending.length > 1 ? ` · ${pending.length} shots` : ''}
+            </span>
+          </div>
+
+          {upload.kind === 'error' && (
+            <p className="mt-2 text-center text-xs text-[var(--color-stamp)]">{upload.message}</p>
+          )}
+
+          <div className="space-y-2 pb-6 pt-4">
+            <button
+              type="button"
+              disabled={uploading}
+              onClick={() => void sendPending()}
+              className="block w-full rounded-[14px] bg-[var(--color-ink)] py-3.5 text-center font-display text-[15px] font-medium text-[var(--color-paper)] transition-opacity hover:opacity-90 disabled:opacity-60"
+            >
+              {uploading ? 'Uploading…' : pending.length > 1 ? `Process ${pending.length} now` : 'Use this · Process now'}
+              <span className="block font-mono text-[8.5px] uppercase tracking-[0.12em] text-[var(--color-paper-fold)]">
+                extraction starts immediately · live trace follows
+              </span>
+            </button>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                disabled={uploading}
+                onClick={() => setReviewing(false)}
+                className="rounded-[14px] border-[0.5px] border-[var(--color-rule)] bg-[var(--color-surface)] py-2.5 font-display text-[13px] font-medium text-[var(--color-ink-soft)] disabled:opacity-60"
+              >
+                + Add another
+              </button>
+              <button
+                type="button"
+                disabled={uploading}
+                onClick={dropLastPending}
+                className="rounded-[14px] border-[0.5px] border-[var(--color-rule)] bg-[var(--color-surface)] py-2.5 font-display text-[13px] font-medium text-[var(--color-ink-soft)] disabled:opacity-60"
+              >
+                Retake
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -203,18 +319,18 @@ export default function Capture({ onCancel, onComplete }: CaptureProps) {
         >
           ×
         </button>
-        <span className="font-hand text-xl text-[var(--color-terracotta)] leading-none">
-          say hi to a new entry
+        <span className="font-mono text-[9px] uppercase tracking-[0.16em] text-[var(--color-ink-muted)] leading-none">
+          new entry
         </span>
         <span aria-hidden="true" className="w-10" />
       </div>
 
       {/* Title */}
       <div className="px-4 sm:px-6 pt-6 pb-4 text-center">
-        <p className="font-hand text-xl text-[var(--color-terracotta)] leading-none">
-          point and let go
+        <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[var(--color-accent)] leading-none">
+          point · hold steady · let go
         </p>
-        <h1 className="mt-2 font-display italic font-medium text-3xl sm:text-4xl leading-none tracking-tight">
+        <h1 className="mt-2 font-display font-medium text-3xl sm:text-4xl leading-none tracking-tight">
           Snap a receipt
         </h1>
       </div>
@@ -275,7 +391,7 @@ export default function Capture({ onCancel, onComplete }: CaptureProps) {
           <p
             className={cn(
               'absolute bottom-4 left-1/2 -translate-x-1/2 whitespace-nowrap',
-              'font-hand text-lg px-3 py-1 rounded-full',
+              'font-mono text-[10px] tracking-[0.04em] px-3 py-1.5 rounded-full',
               upload.kind === 'error' ? 'text-[var(--color-stamp)]' :
                 isStreaming ? 'text-[var(--color-paper)] bg-[var(--color-ink)]/55' :
                   'text-[var(--color-terracotta)]',
@@ -319,7 +435,15 @@ export default function Capture({ onCancel, onComplete }: CaptureProps) {
             streaming={isStreaming}
             onClick={handleShutter}
           />
-          <OptButton label="Type it in" disabled hint="soon" />
+          {pending.length > 0 ? (
+            <OptButton
+              label={`Batch · ${pending.length}`}
+              hint="review →"
+              onClick={() => setReviewing(true)}
+            />
+          ) : (
+            <OptButton label="Type it in" disabled hint="soon" />
+          )}
         </div>
         <p className="mt-4 text-[10px] tracking-[0.18em] uppercase text-center text-[var(--color-ink-muted)]">
           Processed via Claude AI · Monitored by Langfuse
@@ -420,7 +544,7 @@ function OptButton({
     >
       {label}
       {hint && (
-        <span className="block font-hand text-[var(--color-terracotta)] text-base tracking-normal normal-case mt-0.5">
+        <span className="block font-mono text-[var(--color-accent)] text-[9px] tracking-[0.06em] normal-case mt-0.5">
           {hint}
         </span>
       )}
