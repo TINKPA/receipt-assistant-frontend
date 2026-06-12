@@ -15,7 +15,8 @@ export const qk = {
   transactions: {
     all: ['transactions'] as const,
     list: (args: unknown) => ['transactions', 'list', args] as const,
-    recent: (args: { limit: number }) => ['transactions', 'recent', args] as const,
+    recent: (args: { limit: number; status?: string }) =>
+      ['transactions', 'recent', args] as const,
   },
   tombstones: ['tombstones'] as const,
   summary: {
