@@ -38,6 +38,8 @@ export interface ListTransactionsFilters {
   trip_id?: string;
   has_document?: boolean;
   source_ingest_id?: string;
+  /** flagged=near_dup → only #134 branch-4 flagged transactions. */
+  flagged?: 'near_dup';
   sort?: 'occurred_on' | 'amount' | 'created_at';
   order?: 'asc' | 'desc';
   cursor?: string;
@@ -249,4 +251,16 @@ export async function unreconcileTransaction(
     },
   );
   return unwrap('unreconcileTransaction', data, error, response.status);
+}
+
+/** Resolve a #134 branch-4 near-dup review flag (v1: dismiss only). */
+export async function dismissNearDupFlag(id: string): Promise<void> {
+  const { data, error, response } = await client.POST(
+    '/v1/transactions/{id}/near-dup-review',
+    {
+      params: { path: { id } },
+      body: { action: 'dismiss' },
+    },
+  );
+  unwrap('dismissNearDupFlag', data, error, response.status);
 }

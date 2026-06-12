@@ -460,6 +460,7 @@ export interface paths {
                     trip_id?: string;
                     has_document?: boolean | null;
                     source_ingest_id?: string;
+                    flagged?: "near_dup";
                     sort?: "occurred_on" | "amount" | "created_at";
                     order?: "asc" | "desc";
                     cursor?: string;
@@ -716,6 +717,57 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["Transaction"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/transactions/{id}/near-dup-review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resolve a near-duplicate review flag (#134 branch 4); v1 action: dismiss */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["NearDupReviewRequest"];
+                };
+            };
+            responses: {
+                /** @description Flag cleared */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NearDupReviewResponse"];
+                    };
+                };
+                /** @description Not found or not flagged */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
                     };
                 };
             };
@@ -5090,6 +5142,20 @@ export interface components {
         };
         VoidTransactionRequest: {
             reason?: string;
+        };
+        NearDupReviewResponse: {
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            id: string;
+            flagged_for_review: boolean;
+            /** Format: date-time */
+            reviewed_at: string;
+        };
+        NearDupReviewRequest: {
+            /** @enum {string} */
+            action: "dismiss";
         };
         UnreconcileTransactionRequest: {
             reason?: string;

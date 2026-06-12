@@ -1,13 +1,17 @@
 import React from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { Loader2, FileStack, CheckCircle2, AlertCircle, Clock, Cog } from 'lucide-react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Loader2, FileStack, CheckCircle2, AlertCircle, Clock, Cog, ShieldAlert, X } from 'lucide-react';
+import { Link } from '@tanstack/react-router';
 import {
   listBatches,
+  listTransactions,
+  dismissNearDupFlag,
   extractProblemMessage,
   type BatchStatus,
 } from '../lib/api';
 import { cn } from '../lib/utils';
 import { qk } from '../lib/queryKeys';
+import { receiptLink } from '../lib/navLinks';
 
 interface BatchesProps {
   onSelectBatch: (batchId: string) => void;
@@ -52,6 +56,8 @@ export default function Batches({ onSelectBatch }: BatchesProps) {
           Every receipt you upload is ingested as a batch. Open one to watch extraction + reconciliation progress in real time.
         </p>
       </div>
+
+      <NeedsReviewSection />
 
       <div className="glass-panel border border-outline-variant/10 rounded-xl overflow-hidden shadow-2xl">
         {loading ? (
@@ -144,6 +150,83 @@ export default function Batches({ onSelectBatch }: BatchesProps) {
           </table>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * #134 branch-4 review queue: transactions the extraction agent
+ * inserted but flagged (a same-amount/date candidate existed and
+ * neither side carried a strong tiebreaker). Hidden entirely when
+ * empty — most sessions never see it. Dismiss = "I checked; they are
+ * distinct purchases"; merging instead is the reconcile-apply flow.
+ */
+function NeedsReviewSection() {
+  const queryClient = useQueryClient();
+  const flaggedKey = ['transactions', 'flagged', 'near_dup'] as const;
+  const { data } = useQuery({
+    queryKey: flaggedKey,
+    queryFn: () => listTransactions({ flagged: 'near_dup', limit: 50 }),
+  });
+  const dismiss = useMutation({
+    mutationFn: (id: string) => dismissNearDupFlag(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: flaggedKey }),
+  });
+  const flagged = data?.items ?? [];
+  if (flagged.length === 0) return null;
+  return (
+    <div className="glass-panel border border-amber-400/20 rounded-xl overflow-hidden">
+      <div className="px-8 py-4 flex items-center gap-3 border-b border-amber-400/10 bg-amber-400/5">
+        <ShieldAlert size={18} className="text-amber-300" />
+        <div>
+          <p className="font-headline font-bold text-amber-200">
+            Needs review · {flagged.length} possible duplicate{flagged.length === 1 ? '' : 's'}
+          </p>
+          <p className="text-xs text-on-surface-variant mt-0.5">
+            Each was saved alongside a same-amount, same-day transaction without a
+            receipt/order number to tell them apart. Open both, then dismiss if they are
+            genuinely separate purchases.
+          </p>
+        </div>
+      </div>
+      <ul className="divide-y divide-outline-variant/5">
+        {flagged.map((t) => {
+          const check = (t.metadata as Record<string, any> | null)?.near_dup_check ?? {};
+          const candidate: string | undefined = check.candidate_transaction_id;
+          return (
+            <li key={t.id} className="px-8 py-4 flex items-center gap-4">
+              <div className="min-w-0 flex-1">
+                <Link
+                  {...receiptLink(t.id)}
+                  className="text-sm font-bold text-white hover:text-primary transition-colors"
+                >
+                  {t.payee ?? 'Unknown payee'}
+                </Link>
+                <p className="text-xs text-on-surface-variant mt-0.5">
+                  {t.occurred_on}
+                  {check.reason ? ` · ${String(check.reason).slice(0, 90)}` : ''}
+                </p>
+              </div>
+              {candidate && (
+                <Link
+                  {...receiptLink(candidate)}
+                  className="text-xs text-amber-300 hover:text-amber-200 underline underline-offset-2 shrink-0"
+                >
+                  view candidate
+                </Link>
+              )}
+              <button
+                onClick={() => dismiss.mutate(t.id)}
+                disabled={dismiss.isPending}
+                className="shrink-0 flex items-center gap-1.5 text-xs font-bold text-on-surface-variant hover:text-white border border-outline-variant/20 hover:border-outline-variant/50 rounded-full px-3 py-1.5 transition-colors disabled:opacity-50"
+              >
+                <X size={12} />
+                Not a duplicate
+              </button>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }
