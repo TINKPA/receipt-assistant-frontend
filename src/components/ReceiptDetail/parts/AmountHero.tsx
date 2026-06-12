@@ -27,7 +27,7 @@ export function AmountHero({
    *  plain <h1> (no link) — e.g. while processing or with no brand. */
   brandTo?: ReturnType<typeof brandLink>;
 }) {
-  const merchantClass = 'font-display italic font-medium text-2xl sm:text-3xl leading-tight';
+  const merchantClass = 'font-display font-medium text-2xl sm:text-3xl leading-tight';
   // FE#48: small square icon next to the merchant name. Skipped while
   // processing (the row says "Processing…", not a real merchant yet).
   const showIcon = !isProcessing;
@@ -35,14 +35,14 @@ export function AmountHero({
     <div className="text-center pt-2">
       <p
         className={cn(
-          'font-display italic font-medium tracking-tight tnum',
+          'font-display font-light tracking-tight tnum',
           'text-[3.25rem] sm:text-[4rem] leading-none',
           voided && 'line-through text-[var(--color-ink-muted)]',
         )}
       >
         {isProcessing ? '—' : `$${amount.toFixed(2)}`}
       </p>
-      <p className="mt-1 text-[11px] tracking-[0.14em] uppercase text-[var(--color-ink-muted)]">
+      <p className="mt-1 font-mono text-[9px] tracking-[0.16em] uppercase text-[var(--color-ink-muted)]">
         {currency}
       </p>
       {brandTo ? (
@@ -58,7 +58,7 @@ export function AmountHero({
           )}
           <span className="inline-flex items-baseline gap-1">
             {merchant}
-            <span className="font-display italic text-base leading-none text-[var(--color-terracotta)]">→</span>
+            <span className="font-display text-base leading-none text-[var(--color-accent)]">→</span>
           </span>
         </Link>
       ) : (

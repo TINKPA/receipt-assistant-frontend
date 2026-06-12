@@ -50,7 +50,7 @@ function SmallFieldCard({
       <p
         className={cn(
           'mt-1 text-[15px] font-medium',
-          numeric && 'font-display italic font-medium text-lg tnum',
+          numeric && 'font-mono font-semibold text-[15px] tracking-tight tnum',
         )}
       >
         {value}

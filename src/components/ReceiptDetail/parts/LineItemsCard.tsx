@@ -35,7 +35,7 @@ export function LineItemsCard({
   return (
     <div className="rounded-[18px] border border-[var(--color-rule)] bg-[var(--color-surface)] overflow-hidden">
       <div className="px-5 py-4 border-b border-[var(--color-rule)] flex items-baseline justify-between">
-        <h3 className="font-display italic font-medium text-lg leading-none">
+        <h3 className="font-display font-medium text-lg leading-none">
           Items <span className="text-[var(--color-ink-muted)]">({items.length})</span>
         </h3>
         <span className="text-[10px] tracking-[0.16em] uppercase text-[var(--color-ink-muted)]">
@@ -73,7 +73,7 @@ export function LineItemsCard({
                   </div>
                 )}
               </div>
-              <span className="font-display italic font-medium text-base tnum">
+              <span className="font-mono font-semibold text-[13.5px] tracking-tight tnum">
                 {formatMinor(item.line_total_minor, item.currency || currency)}
               </span>
             </li>
