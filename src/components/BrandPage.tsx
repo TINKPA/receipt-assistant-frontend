@@ -9,6 +9,7 @@ import {
 } from '../lib/api';
 import { cn } from '../lib/utils';
 import { qk } from '../lib/queryKeys';
+import { getBrandPartySummary } from '../lib/api/parties';
 import { brandLink, merchantLink, receiptLink } from '../lib/navLinks';
 import { MerchantIcon } from './MerchantIcon';
 import { statusBadge } from '../lib/transactionStatus';
@@ -97,6 +98,8 @@ export default function BrandPage({
         currency={stats.currency}
       />
 
+      <PartySummarySection brandId={brand.brand_id} />
+
       <LocationsCard
         locations={locations}
         onSelectMerchant={onSelectMerchant}
@@ -113,6 +116,77 @@ export default function BrandPage({
           onSelectBrand={onSelectBrand}
         />
       )}
+    </div>
+  );
+}
+
+/**
+ * Party-graph roles (board screens 05-07, v2 P4): how this brand shows
+ * up in transactions — channel orders, seller lines, maker lines — and
+ * the marketplace-seller share behind it as a channel. Quiet when the
+ * graph only has the backfilled channel row.
+ */
+function PartySummarySection({ brandId }: { brandId: string }) {
+  const { data: summary } = useQuery({
+    queryKey: ['brand-party-summary', brandId],
+    queryFn: () => getBrandPartySummary(brandId),
+  });
+  if (!summary) return null;
+  const { as_channel_tx_count, as_seller_line_count, as_maker_line_count, top_sellers } = summary;
+  const hasRoles = as_channel_tx_count + as_seller_line_count + as_maker_line_count > 0;
+  if (!hasRoles) return null;
+  const sellersTotal = top_sellers.reduce((s, x) => s + x.line_count, 0);
+
+  return (
+    <section className="rounded-[var(--radius-card)] border-[0.5px] border-[var(--color-rule-soft)] bg-[var(--color-surface)] px-4 py-3.5">
+      <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[var(--color-ink-muted)]">
+        In the party graph
+      </p>
+      <div className="mt-2.5 grid grid-cols-3 divide-x divide-[var(--color-rule-soft)] text-center">
+        <RoleStat label="channel" value={as_channel_tx_count} unit="orders" color="var(--color-slate)" />
+        <RoleStat label="seller" value={as_seller_line_count} unit="lines" color="var(--color-amber)" />
+        <RoleStat label="maker" value={as_maker_line_count} unit="lines" color="var(--color-olive)" />
+      </div>
+      {sellersTotal > 0 && (
+        <div className="mt-3 border-t border-[var(--color-rule-soft)] pt-2.5">
+          <p className="mb-1.5 font-mono text-[8px] uppercase tracking-[0.14em] text-[var(--color-ink-faint)]">
+            Sellers seen through this channel
+          </p>
+          {top_sellers.map((s) => (
+            <div key={s.display_name} className="flex items-baseline gap-2 py-0.5">
+              <span className="h-[6px] w-[6px] flex-shrink-0 self-center rounded-full bg-[var(--color-amber)]" />
+              <span className="min-w-0 flex-1 truncate text-[11.5px] text-[var(--color-ink-soft)]">
+                {s.display_name}
+              </span>
+              <span className="font-mono text-[9.5px] tnum text-[var(--color-ink-muted)]">
+                {Math.round((s.line_count / sellersTotal) * 100)}%
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function RoleStat({
+  label,
+  value,
+  unit,
+  color,
+}: {
+  label: string;
+  value: number;
+  unit: string;
+  color: string;
+}) {
+  return (
+    <div className="px-2">
+      <p className="font-mono text-[7.5px] uppercase tracking-[0.14em]" style={{ color }}>
+        {label}
+      </p>
+      <p className="mt-0.5 font-display text-[17px] tnum">{value}</p>
+      <p className="font-mono text-[7px] text-[var(--color-ink-faint)]">{unit}</p>
     </div>
   );
 }
