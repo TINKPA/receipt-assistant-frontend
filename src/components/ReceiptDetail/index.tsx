@@ -24,6 +24,7 @@ import { removeTombstone } from '../../lib/tombstones';
 import { SimpleBackBar } from './parts/SimpleBackBar';
 import { TopBar } from './parts/TopBar';
 import { AmountHero } from './parts/AmountHero';
+import { PartyChips } from './parts/PartyChips';
 import { StatusRow } from './parts/StatusRow';
 import { OriginalReceiptCollapsible } from './parts/OriginalReceiptCollapsible';
 import { NoteCard } from './parts/NoteCard';
@@ -293,6 +294,9 @@ export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: Re
         paymentMethod={receipt.paymentMethod ?? null}
         source={primaryDoc?.kind ?? null}
       />
+
+      {/* Party graph dot-chips (board screens 02-03, v2 P4). */}
+      {!isProcessing && <PartyChips transactionId={receipt.id} />}
 
       {isProcessing && <ProcessingNote />}
 

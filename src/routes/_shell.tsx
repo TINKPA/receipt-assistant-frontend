@@ -19,6 +19,7 @@ function tabDestinationFor(pathname: string): TabDestination {
   if (pathname.startsWith('/receipt')) return 'ledger';
   if (pathname.startsWith('/merchant')) return 'ledger';
   if (pathname.startsWith('/brand')) return 'ledger';
+  if (pathname.startsWith('/product')) return 'ledger';
   if (pathname.startsWith('/insights')) return 'insights';
   if (pathname.startsWith('/review')) return 'insights';
   if (pathname.startsWith('/owned')) return 'things';

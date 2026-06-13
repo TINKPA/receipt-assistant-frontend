@@ -1930,6 +1930,84 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/transactions/{id}/parties": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Party graph rows for one transaction (channel/seller/maker/acquirer) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            items: components["schemas"]["TransactionParty"][];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/brands/{brandId}/party-summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Role counts + marketplace-seller share for a brand */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    brandId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["BrandPartySummary"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/brands": {
         parameters: {
             query?: never;
@@ -4949,6 +5027,52 @@ export interface components {
         };
         RefreshInsightsResponse: {
             generated: number;
+        };
+        TransactionParty: {
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            id: string;
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            workspace_id: string;
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            transaction_id: string;
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            transaction_item_id: string | null;
+            /** @enum {string} */
+            role: "channel" | "seller" | "maker" | "acquirer";
+            display_name: string;
+            brand_id: string | null;
+            /**
+             * @description User-defined JSON object; not schema-validated.
+             * @default {}
+             */
+            metadata: {
+                [key: string]: unknown;
+            };
+            /** Format: date-time */
+            created_at: string;
+        };
+        BrandPartySummary: {
+            brand_id: string;
+            as_channel_tx_count: number;
+            as_seller_line_count: number;
+            as_maker_line_count: number;
+            top_sellers: {
+                display_name: string;
+                brand_id: string | null;
+                line_count: number;
+            }[];
         };
         Brand: {
             brand_id: string;
