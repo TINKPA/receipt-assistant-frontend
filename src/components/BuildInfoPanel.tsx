@@ -1,4 +1,3 @@
-import React from 'react';
 import { buildInfo as frontendBuildInfo } from '@/generated/buildInfo';
 
 export interface BuildInfoShape {
@@ -10,43 +9,49 @@ export interface BuildInfoShape {
   builtAt: string;
 }
 
-function InfoRow({ label, value }: { label: string; value: string }) {
+function fmtDate(iso: string): string {
+  try {
+    return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  } catch {
+    return iso;
+  }
+}
+
+/**
+ * Build & Deploy receipt (board screen 24 build-card): an ink-dark
+ * status line — the exact frontend + backend commit currently live,
+ * plus the host and extractor health rows that frame Settings as the
+ * engine room rather than a preferences page.
+ */
+export default function BuildInfoPanel({ backendBuildInfo }: { backendBuildInfo: BuildInfoShape | null }) {
+  const fe = frontendBuildInfo as BuildInfoShape;
+  const backendUp = backendBuildInfo != null;
+
   return (
-    <div className="flex items-start justify-between gap-4 py-2 border-b border-outline-variant/10 last:border-b-0">
-      <span className="text-sm text-on-surface-variant">{label}</span>
-      <code className="text-sm text-white text-right break-all">{value}</code>
+    <div className="rounded-[14px] bg-[var(--color-ink)] px-4 py-3.5 text-[var(--color-paper)]">
+      <p className="mb-2.5 flex items-center gap-1.5 font-mono text-[7.5px] uppercase tracking-[0.18em] text-[var(--color-paper-fold)]">
+        <span
+          className="h-1.5 w-1.5 rounded-full animate-pulse"
+          style={{ background: backendUp ? '#8FA468' : 'var(--color-accent)' }}
+        />
+        Build &amp; Deploy · live on mini
+      </p>
+      <BuildRow label="frontend" value={`${fe.gitShortSha} · ${fmtDate(fe.builtAt)}`} />
+      <BuildRow
+        label="backend"
+        value={backendBuildInfo ? `${backendBuildInfo.gitShortSha} · ${fmtDate(backendBuildInfo.builtAt)}` : '—'}
+      />
+      <BuildRow label="host" value="mini · orbstack · tailscale" />
+      <BuildRow label="extractor" value={backendUp ? 'claude worker · healthy' : 'unreachable'} />
     </div>
   );
 }
 
-export default function BuildInfoPanel({ backendBuildInfo }: { backendBuildInfo: BuildInfoShape | null }) {
-  const cards = [
-    { title: 'Frontend', info: frontendBuildInfo },
-    { title: 'Backend', info: backendBuildInfo },
-  ];
-
+function BuildRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="grid gap-4 lg:grid-cols-2 w-full max-w-5xl">
-      {cards.map((card) => (
-        <section key={card.title} className="rounded-2xl border border-outline-variant/20 bg-surface-container-low p-5 text-left">
-          <div className="flex items-center justify-between gap-3 mb-4">
-            <h3 className="text-lg font-bold text-white">{card.title}</h3>
-            <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-surface-container-high text-primary border border-primary/20">
-              {card.info ? `${card.info.version} (${card.info.gitShortSha})` : 'Unavailable'}
-            </span>
-          </div>
-          {card.info ? (
-            <div>
-              <InfoRow label="Service" value={card.info.service} />
-              <InfoRow label="Branch" value={card.info.gitBranch} />
-              <InfoRow label="Commit" value={card.info.gitSha} />
-              <InfoRow label="Built at" value={new Date(card.info.builtAt).toLocaleString()} />
-            </div>
-          ) : (
-            <p className="text-sm text-on-surface-variant">Backend build info unavailable.</p>
-          )}
-        </section>
-      ))}
+    <div className="flex justify-between py-1 font-mono text-[9px] tracking-[0.03em] text-[var(--color-ink-faint)]">
+      <span>{label}</span>
+      <span className="text-[var(--color-paper)]">{value}</span>
     </div>
   );
 }
