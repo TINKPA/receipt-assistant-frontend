@@ -23,6 +23,7 @@ import { Route as ShellReviewYearlyRouteImport } from './routes/_shell/review/ye
 import { Route as ShellReviewMonthlyRouteImport } from './routes/_shell/review/monthly'
 import { Route as ShellReceiptReceiptIdRouteImport } from './routes/_shell/receipt/$receiptId'
 import { Route as ShellProductProductIdRouteImport } from './routes/_shell/product/$productId'
+import { Route as ShellOwnedStatsRouteImport } from './routes/_shell/owned/stats'
 import { Route as ShellOwnedOwnedItemIdRouteImport } from './routes/_shell/owned/$ownedItemId'
 import { Route as ShellMerchantMerchantIdRouteImport } from './routes/_shell/merchant/$merchantId'
 import { Route as ShellBrandBrandIdRouteImport } from './routes/_shell/brand/$brandId'
@@ -99,6 +100,11 @@ const ShellProductProductIdRoute = ShellProductProductIdRouteImport.update({
   path: '/product/$productId',
   getParentRoute: () => ShellRoute,
 } as any)
+const ShellOwnedStatsRoute = ShellOwnedStatsRouteImport.update({
+  id: '/owned/stats',
+  path: '/owned/stats',
+  getParentRoute: () => ShellRoute,
+} as any)
 const ShellOwnedOwnedItemIdRoute = ShellOwnedOwnedItemIdRouteImport.update({
   id: '/owned/$ownedItemId',
   path: '/owned/$ownedItemId',
@@ -140,6 +146,7 @@ export interface FileRoutesByFullPath {
   '/brand/$brandId': typeof ShellBrandBrandIdRoute
   '/merchant/$merchantId': typeof ShellMerchantMerchantIdRoute
   '/owned/$ownedItemId': typeof ShellOwnedOwnedItemIdRoute
+  '/owned/stats': typeof ShellOwnedStatsRoute
   '/product/$productId': typeof ShellProductProductIdRoute
   '/receipt/$receiptId': typeof ShellReceiptReceiptIdRoute
   '/review/monthly': typeof ShellReviewMonthlyRoute
@@ -161,6 +168,7 @@ export interface FileRoutesByTo {
   '/brand/$brandId': typeof ShellBrandBrandIdRoute
   '/merchant/$merchantId': typeof ShellMerchantMerchantIdRoute
   '/owned/$ownedItemId': typeof ShellOwnedOwnedItemIdRoute
+  '/owned/stats': typeof ShellOwnedStatsRoute
   '/product/$productId': typeof ShellProductProductIdRoute
   '/receipt/$receiptId': typeof ShellReceiptReceiptIdRoute
   '/review/monthly': typeof ShellReviewMonthlyRoute
@@ -184,6 +192,7 @@ export interface FileRoutesById {
   '/_shell/brand/$brandId': typeof ShellBrandBrandIdRoute
   '/_shell/merchant/$merchantId': typeof ShellMerchantMerchantIdRoute
   '/_shell/owned/$ownedItemId': typeof ShellOwnedOwnedItemIdRoute
+  '/_shell/owned/stats': typeof ShellOwnedStatsRoute
   '/_shell/product/$productId': typeof ShellProductProductIdRoute
   '/_shell/receipt/$receiptId': typeof ShellReceiptReceiptIdRoute
   '/_shell/review/monthly': typeof ShellReviewMonthlyRoute
@@ -207,6 +216,7 @@ export interface FileRouteTypes {
     | '/brand/$brandId'
     | '/merchant/$merchantId'
     | '/owned/$ownedItemId'
+    | '/owned/stats'
     | '/product/$productId'
     | '/receipt/$receiptId'
     | '/review/monthly'
@@ -228,6 +238,7 @@ export interface FileRouteTypes {
     | '/brand/$brandId'
     | '/merchant/$merchantId'
     | '/owned/$ownedItemId'
+    | '/owned/stats'
     | '/product/$productId'
     | '/receipt/$receiptId'
     | '/review/monthly'
@@ -250,6 +261,7 @@ export interface FileRouteTypes {
     | '/_shell/brand/$brandId'
     | '/_shell/merchant/$merchantId'
     | '/_shell/owned/$ownedItemId'
+    | '/_shell/owned/stats'
     | '/_shell/product/$productId'
     | '/_shell/receipt/$receiptId'
     | '/_shell/review/monthly'
@@ -369,6 +381,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShellProductProductIdRouteImport
       parentRoute: typeof ShellRoute
     }
+    '/_shell/owned/stats': {
+      id: '/_shell/owned/stats'
+      path: '/owned/stats'
+      fullPath: '/owned/stats'
+      preLoaderRoute: typeof ShellOwnedStatsRouteImport
+      parentRoute: typeof ShellRoute
+    }
     '/_shell/owned/$ownedItemId': {
       id: '/_shell/owned/$ownedItemId'
       path: '/owned/$ownedItemId'
@@ -421,6 +440,7 @@ interface ShellRouteChildren {
   ShellBrandBrandIdRoute: typeof ShellBrandBrandIdRoute
   ShellMerchantMerchantIdRoute: typeof ShellMerchantMerchantIdRoute
   ShellOwnedOwnedItemIdRoute: typeof ShellOwnedOwnedItemIdRoute
+  ShellOwnedStatsRoute: typeof ShellOwnedStatsRoute
   ShellProductProductIdRoute: typeof ShellProductProductIdRoute
   ShellReceiptReceiptIdRoute: typeof ShellReceiptReceiptIdRoute
   ShellReviewMonthlyRoute: typeof ShellReviewMonthlyRoute
@@ -442,6 +462,7 @@ const ShellRouteChildren: ShellRouteChildren = {
   ShellBrandBrandIdRoute: ShellBrandBrandIdRoute,
   ShellMerchantMerchantIdRoute: ShellMerchantMerchantIdRoute,
   ShellOwnedOwnedItemIdRoute: ShellOwnedOwnedItemIdRoute,
+  ShellOwnedStatsRoute: ShellOwnedStatsRoute,
   ShellProductProductIdRoute: ShellProductProductIdRoute,
   ShellReceiptReceiptIdRoute: ShellReceiptReceiptIdRoute,
   ShellReviewMonthlyRoute: ShellReviewMonthlyRoute,

@@ -60,12 +60,21 @@ function OwnedRoute() {
             derived from owned_items
           </p>
         </div>
-        <Link
-          to="/wish"
-          className="rounded-full border-[0.5px] border-[var(--color-rule)] px-3.5 py-1.5 font-mono text-[9px] uppercase tracking-[0.1em] text-[var(--color-ink-soft)] transition-colors hover:text-[var(--color-ink)]"
-        >
-          Wishes →
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link
+            to="/owned/stats"
+            aria-label="Asset dashboard"
+            className="rounded-full border-[0.5px] border-[var(--color-rule)] px-3 py-1.5 font-mono text-[11px] leading-none text-[var(--color-ink-soft)] transition-colors hover:text-[var(--color-ink)]"
+          >
+            ◷
+          </Link>
+          <Link
+            to="/wish"
+            className="rounded-full border-[0.5px] border-[var(--color-rule)] px-3.5 py-1.5 font-mono text-[9px] uppercase tracking-[0.1em] text-[var(--color-ink-soft)] transition-colors hover:text-[var(--color-ink)]"
+          >
+            Wishes →
+          </Link>
+        </div>
       </header>
 
       {/* segmented control */}
