@@ -11,6 +11,7 @@ import {
   pickCjk,
   postRefreshPlace,
   type MerchantTransactionRow,
+  type PlaceFull,
 } from '../lib/api';
 import { qk } from '../lib/queryKeys';
 import { CATEGORY_META } from '../categoryMeta';
@@ -281,6 +282,11 @@ export default function MerchantDetail({ merchantId, onBack, onSelectReceipt, on
         )}
       </div>
 
+      {/* Place facet (board screen 08): the fifth facet — where you were
+          standing. A stylized map with the google place_id tag +
+          business status, rendered when the linked place has coordinates. */}
+      {place && <PlaceFacetBlock place={place} address={m.address ?? null} />}
+
       {/* Stats strip */}
       <StatsStrip
         currentMonthMinor={detail.stats.current_month_spend_minor}
@@ -289,8 +295,8 @@ export default function MerchantDetail({ merchantId, onBack, onSelectReceipt, on
         currency={detail.stats.currency}
       />
 
-      {/* Address (when enriched) */}
-      {m.address && (
+      {/* Address (when enriched and no place block already shows it) */}
+      {m.address && !place && (
         <a
           href={`https://maps.google.com/?q=${encodeURIComponent(m.address)}`}
           target="_blank"
@@ -394,6 +400,98 @@ export default function MerchantDetail({ merchantId, onBack, onSelectReceipt, on
           </ul>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Place facet block (board screen 08): the merchant's location as a
+ * first-class "place" — a stylized map with the google place_id tag and
+ * business status. The map is decorative (a CSS street grid, not a real
+ * tile) but the pin offset is derived from the real lat/lng fraction so
+ * distinct locations look distinct; tapping opens Google Maps.
+ */
+function PlaceFacetBlock({ place, address }: { place: NonNullable<PlaceFull>; address: string | null }) {
+  const frac = (n: number) => {
+    const f = Math.abs(n) % 1;
+    return Math.min(0.82, Math.max(0.18, f)); // keep the pin off the edges
+  };
+  const left = `${(frac(place.lng) * 100).toFixed(0)}%`;
+  const top = `${(frac(place.lat) * 100).toFixed(0)}%`;
+  const mapsHref =
+    place.google_maps_uri ??
+    (address ? `https://maps.google.com/?q=${encodeURIComponent(address)}` : undefined);
+  const statusLabel = place.business_status
+    ? place.business_status.toLowerCase().replace(/_/g, ' ')
+    : null;
+  const isOpen = place.business_status === 'OPERATIONAL';
+  const placeIdShort = place.google_place_id
+    ? `${place.google_place_id.slice(0, 6)}…${place.google_place_id.slice(-3)}`
+    : null;
+
+  return (
+    <section className="space-y-2.5">
+      <a
+        href={mapsHref}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="relative block h-[132px] overflow-hidden rounded-[14px] border-[0.5px] border-[var(--color-rule-soft)]"
+        style={{
+          background: [
+            'linear-gradient(0deg, transparent 47%, var(--color-rule-soft) 47%, var(--color-rule-soft) 53%, transparent 53%)',
+            'linear-gradient(90deg, transparent 30%, var(--color-rule-soft) 30%, var(--color-rule-soft) 34%, transparent 34%)',
+            'linear-gradient(90deg, transparent 68%, var(--color-rule-soft) 68%, var(--color-rule-soft) 71%, transparent 71%)',
+            'linear-gradient(24deg, transparent 58%, var(--color-rule-soft) 58%, var(--color-rule-soft) 62%, transparent 62%)',
+            'var(--color-paper-deep)',
+          ].join(','),
+        }}
+      >
+        <span
+          aria-hidden="true"
+          className="absolute h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-[var(--color-paper-warm)]"
+          style={{ left, top, background: 'var(--color-plum)', boxShadow: '0 0 0 1px var(--color-plum), 0 4px 10px rgba(110,63,95,0.45)' }}
+        />
+        {placeIdShort && (
+          <span className="absolute bottom-2.5 left-2.5 rounded-full border-[0.5px] border-[var(--color-rule-soft)] bg-[color:rgba(251,247,238,0.92)] px-2 py-[3px] font-mono text-[8.5px] tracking-[0.04em] text-[var(--color-ink-soft)]">
+            place_id · {placeIdShort}
+          </span>
+        )}
+      </a>
+
+      <div className="rounded-[12px] border-[0.5px] border-[var(--color-rule-soft)] bg-[var(--color-surface)] px-4 py-1">
+        {statusLabel && (
+          <Row
+            label="status"
+            value={
+              <span className={isOpen ? 'text-[var(--color-olive)]' : 'text-[var(--color-ink-soft)]'}>
+                ● {statusLabel}
+              </span>
+            }
+          />
+        )}
+        {(place.formatted_address_en ?? place.formatted_address ?? address) && (
+          <Row
+            label="address"
+            value={
+              <span className="text-right">
+                {place.formatted_address_en ?? place.formatted_address ?? address}
+              </span>
+            }
+          />
+        )}
+        {place.primary_type && <Row label="type" value={place.primary_type.replace(/_/g, ' ')} />}
+      </div>
+    </section>
+  );
+}
+
+function Row({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-3 border-b border-[var(--color-rule-soft)] py-2 last:border-b-0">
+      <span className="flex-shrink-0 font-mono text-[8.5px] uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">
+        {label}
+      </span>
+      <span className="min-w-0 truncate text-[11px] font-medium text-[var(--color-ink)]">{value}</span>
     </div>
   );
 }
