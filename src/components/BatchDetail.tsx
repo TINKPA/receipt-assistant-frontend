@@ -1,15 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  ArrowLeft,
-  CheckCircle2,
-  AlertCircle,
-  Clock,
-  Cog,
-  FileText,
-  Layers,
-  Zap,
-} from 'lucide-react';
 import { Link } from '@tanstack/react-router';
 import {
   getBatch,
@@ -27,20 +17,24 @@ interface BatchDetailProps {
   onBack: () => void;
 }
 
-const INGEST_STATUS_META: Record<
-  IngestStatus,
-  { label: string; badge: string; icon: React.ComponentType<{ size?: number; className?: string }> }
-> = {
-  queued: { label: 'Queued', badge: 'bg-surface-container-highest text-on-surface-variant', icon: Clock },
-  processing: { label: 'Processing', badge: 'bg-tertiary/10 text-tertiary', icon: Cog },
-  done: { label: 'Done', badge: 'bg-primary/10 text-primary', icon: CheckCircle2 },
-  dedup: { label: 'Duplicate', badge: 'bg-sky-400/10 text-sky-300', icon: Layers },
-  // #134: probabilistic attach — the agent judged this a copy of an
-  // existing transaction and linked the document to it. Amber (not sky)
-  // because, unlike byte-certain `dedup`, this one is reviewable.
-  near_dup: { label: 'Matched existing', badge: 'bg-amber-400/10 text-amber-300', icon: Layers },
-  error: { label: 'Error', badge: 'bg-error/10 text-error', icon: AlertCircle },
-  unsupported: { label: 'Unsupported', badge: 'bg-error/10 text-error', icon: AlertCircle },
+/** Ingest status → editorial dot-badge (board screen 28). */
+const INGEST_META: Record<IngestStatus, { label: string; tone: string }> = {
+  queued: { label: 'queued', tone: 'queued' },
+  processing: { label: 'extracting', tone: 'proc' },
+  done: { label: 'done', tone: 'done' },
+  dedup: { label: 'dedup', tone: 'dedup' },
+  near_dup: { label: 'near-dup', tone: 'neardup' },
+  error: { label: 'error', tone: 'err' },
+  unsupported: { label: 'unsupported', tone: 'err' },
+};
+
+const TONE: Record<string, { box: string; dot: string; pulse?: boolean }> = {
+  queued: { box: 'bg-[var(--color-paper-deep)] text-[var(--color-ink-muted)]', dot: 'bg-[var(--color-ink-faint)]' },
+  proc: { box: 'bg-[color:rgba(188,134,36,0.16)] text-[var(--color-amber)]', dot: 'bg-[var(--color-amber)]', pulse: true },
+  done: { box: 'bg-[color:rgba(92,107,61,0.15)] text-[var(--color-olive)]', dot: 'bg-[var(--color-olive)]' },
+  dedup: { box: 'bg-[color:rgba(63,85,99,0.13)] text-[var(--color-slate)]', dot: 'bg-[var(--color-slate)]' },
+  neardup: { box: 'bg-[color:rgba(188,134,36,0.16)] text-[var(--color-amber)]', dot: 'bg-[var(--color-amber)]' },
+  err: { box: 'bg-[color:rgba(181,52,26,0.13)] text-[var(--color-accent)]', dot: 'bg-[var(--color-accent)]' },
 };
 
 interface LiveEvent {
@@ -50,46 +44,39 @@ interface LiveEvent {
   payload: unknown;
 }
 
+function fmtElapsed(batch: { created_at: string; completed_at?: string | null }): string {
+  const start = new Date(batch.created_at).getTime();
+  const end = batch.completed_at ? new Date(batch.completed_at).getTime() : Date.now();
+  const s = Math.max(0, Math.round((end - start) / 1000));
+  if (s < 90) return `${s}s`;
+  const m = Math.round(s / 60);
+  return m < 90 ? `${m}m` : `${Math.round(m / 60)}h`;
+}
+
 export default function BatchDetail({ batchId, onBack }: BatchDetailProps) {
   const queryClient = useQueryClient();
   const [events, setEvents] = useState<LiveEvent[]>([]);
+  const [connected, setConnected] = useState(false);
   const eventCounter = useRef(0);
 
-  // Snapshot of the batch. SSE (below) is the freshness driver — each
-  // meaningful event invalidates this query rather than the screen polling.
-  const {
-    data: batch = null,
-    isLoading: loading,
-    error: queryError,
-  } = useQuery({
+  const { data: batch = null, isLoading: loading, error: queryError } = useQuery({
     queryKey: qk.batch(batchId),
     queryFn: () => getBatch(batchId),
   });
   const error = queryError ? extractProblemMessage(queryError) : null;
 
-  // Subscribe to the live stream. Each recognized event refetches the
-  // batch so status/counts stay in sync; we also accumulate a running log.
   useEffect(() => {
     const controller = subscribeToBatch(
       batchId,
       (name, payload) => {
+        setConnected(true);
         eventCounter.current += 1;
-        const evt: LiveEvent = {
-          id: eventCounter.current,
-          at: new Date(),
-          name,
-          payload,
-        };
+        const evt: LiveEvent = { id: eventCounter.current, at: new Date(), name, payload };
         setEvents((prev) => [evt, ...prev].slice(0, 50));
-        // Any meaningful state change → invalidate the batch snapshot so the
-        // useQuery refetches (coalesced across bursts, unlike the old N×refetch).
         if (name !== 'hello' && name !== 'message')
           queryClient.invalidateQueries({ queryKey: qk.batch(batchId) });
       },
-      () => {
-        // EventSource errors are common when the server closes after a
-        // terminal frame. Leave the snapshot as-is.
-      },
+      () => setConnected(false),
     );
     return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -97,215 +84,152 @@ export default function BatchDetail({ batchId, onBack }: BatchDetailProps) {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-[60vh] gap-3">
-        <Cog className="animate-spin text-primary" size={32} />
-        <span className="text-on-surface-variant">Loading batch...</span>
-      </div>
+      <p className="py-16 text-center font-display italic text-[var(--color-ink-muted)]">loading…</p>
     );
   }
-
   if (error || !batch) {
     return (
-      <div className="space-y-6 animate-in fade-in duration-500">
-        <button onClick={onBack} className="flex items-center gap-2 text-primary font-bold hover:opacity-80 transition-opacity">
-          <ArrowLeft size={20} />
-          Back
+      <div className="space-y-4">
+        <button
+          type="button"
+          onClick={onBack}
+          className="font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--color-accent)]"
+        >
+          ← Back to batches
         </button>
-        <div className="text-center py-20 text-error">{error || 'Batch not found'}</div>
+        <p className="py-16 text-center text-[var(--color-stamp)]">{error || 'Batch not found'}</p>
       </div>
     );
   }
 
   const { counts } = batch;
-  // dedup + unsupported are terminal too, so they count toward completion.
-  const terminalDone =
-    counts.done + counts.dedup + counts.near_dup + counts.error + counts.unsupported;
-  const pct = counts.total > 0 ? Math.round((terminalDone / counts.total) * 100) : 0;
+  const done = counts.done + counts.dedup + counts.near_dup;
 
   return (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700 max-w-5xl">
-      <button onClick={onBack} className="flex items-center gap-2 text-primary font-bold hover:opacity-80 transition-opacity">
-        <ArrowLeft size={20} />
-        Back to batches
-      </button>
-
-      <div className="glass-panel rounded-xl p-8 border border-outline-variant/10">
-        <div className="flex items-start justify-between flex-wrap gap-4">
-          <div>
-            <p className="text-xs text-on-surface-variant uppercase tracking-widest mb-2">Batch</p>
-            <p className="font-mono text-xl font-semibold">
-              {batch.id.slice(0, 8)}…{batch.id.slice(-4)}
-            </p>
-            <p className="text-sm text-on-surface-variant mt-1">
-              Uploaded {new Date(batch.created_at).toLocaleString()} ·{' '}
-              {batch.auto_reconcile ? 'auto-reconcile on' : 'manual reconcile'}
-            </p>
-          </div>
-          <div className="text-right">
-            <p className="text-xs text-on-surface-variant uppercase tracking-widest mb-2">Status</p>
-            <p className="font-display text-xl font-medium capitalize">
-              {batch.status.replace('_', ' ')}
-            </p>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-3 md:grid-cols-6 gap-4 mt-6 pt-6 border-t border-outline-variant/10">
-          <StatCard label="Total" value={counts.total} />
-          <StatCard label="Queued" value={counts.queued} tone="muted" />
-          <StatCard label="Processing" value={counts.processing} tone="tertiary" />
-          <StatCard label="Done" value={counts.done} tone="primary" />
-          <StatCard label="Duplicate" value={counts.dedup + counts.near_dup} tone="info" />
-          <StatCard label="Error" value={counts.error + counts.unsupported} tone="error" />
-        </div>
-
-        <div className="mt-6 flex items-center gap-3">
-          <div className="flex-1 h-2 bg-surface-container-highest rounded-full overflow-hidden">
-            <div
-              className={cn('h-full transition-all duration-500', counts.error > 0 ? 'bg-error' : 'bg-primary')}
-              style={{ width: `${pct}%` }}
-            />
-          </div>
-          <span className="text-sm text-on-surface-variant font-mono">{pct}%</span>
-        </div>
+    <div className="space-y-4">
+      <div className="flex items-center justify-between pt-2">
+        <button
+          type="button"
+          onClick={onBack}
+          className="font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--color-accent)]"
+        >
+          ← Back to batches
+        </button>
+        <span className="font-mono text-[8.5px] uppercase tracking-[0.14em] text-[var(--color-ink-muted)]">
+          {batch.id.slice(0, 8)} · {batch.auto_reconcile ? 'auto-reconcile' : 'manual'}
+        </span>
       </div>
 
-      <div className="glass-panel rounded-xl border border-outline-variant/10 overflow-hidden">
-        <div className="px-8 py-5 border-b border-outline-variant/10">
-          <h3 className="font-display font-medium flex items-center gap-2">
-            <FileText size={18} />
-            Files ({batch.items.length})
-          </h3>
-        </div>
-        <table className="w-full text-left">
-          <thead>
-            <tr className="bg-surface-container-low/50">
-              <th className="px-8 py-3 text-xs font-bold text-on-surface-variant uppercase tracking-widest">File</th>
-              <th className="px-8 py-3 text-xs font-bold text-on-surface-variant uppercase tracking-widest">Classification</th>
-              <th className="px-8 py-3 text-xs font-bold text-on-surface-variant uppercase tracking-widest">Status</th>
-              <th className="px-8 py-3 text-xs font-bold text-on-surface-variant uppercase tracking-widest">Produced</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-outline-variant/5">
-            {batch.items.map((ing) => (
-              <IngestRow key={ing.id} ingest={ing} />
-            ))}
-          </tbody>
-        </table>
+      {/* b-meta */}
+      <div className="grid grid-cols-3 divide-x divide-[var(--color-rule-soft)] rounded-[12px] border-[0.5px] border-[var(--color-rule-soft)] bg-[var(--color-surface)] py-3">
+        <Meta label="Files" value={String(counts.total)} />
+        <Meta label="Done" value={String(done)} />
+        <Meta label="Elapsed" value={fmtElapsed(batch)} />
       </div>
 
-      <div className="glass-panel rounded-xl border border-outline-variant/10 overflow-hidden">
-        <div className="px-8 py-5 border-b border-outline-variant/10 flex items-center justify-between">
-          <h3 className="font-display font-medium flex items-center gap-2">
-            <Zap size={18} />
-            Live events
-          </h3>
-          <span className="text-xs text-on-surface-variant">
-            {events.length === 0 ? 'Waiting for server...' : `${events.length} event(s)`}
+      {/* Ingests */}
+      <section>
+        <h2 className="mb-1.5 font-mono text-[9px] uppercase tracking-[0.16em] text-[var(--color-ink-muted)]">
+          Ingests
+        </h2>
+        <div className="overflow-hidden rounded-[14px] border-[0.5px] border-[var(--color-rule-soft)] bg-[var(--color-surface)]">
+          {batch.items.map((ing, idx) => (
+            <IngestRow key={ing.id} ingest={ing} first={idx === 0} />
+          ))}
+        </div>
+      </section>
+
+      {/* LIVE TRACE */}
+      <section className="rounded-[13px] bg-[var(--color-ink)] px-4 py-3">
+        <div className="mb-2.5 flex items-center gap-1.5 font-mono text-[7.5px] uppercase tracking-[0.18em] text-[var(--color-paper-fold)]">
+          <span
+            className={cn('h-1.5 w-1.5 rounded-full', connected ? 'animate-pulse' : '')}
+            style={{ background: connected ? '#8FA468' : 'var(--color-ink-faint)' }}
+          />
+          Live trace
+          <span className="ml-auto normal-case tracking-[0.06em] text-[var(--color-ink-faint)]">
+            sse · /api/v1/batches/{batch.id.slice(0, 6)}/stream
           </span>
         </div>
-        <div className="max-h-64 overflow-y-auto">
+        <div className="max-h-64 space-y-0.5 overflow-y-auto">
           {events.length === 0 ? (
-            <p className="px-8 py-6 text-sm text-on-surface-variant/60">
-              Stream is open. Upload activity will appear here.
+            <p className="font-mono text-[8.5px] text-[var(--color-ink-faint)]">
+              stream open · activity will appear here
             </p>
           ) : (
-            <ul className="divide-y divide-outline-variant/5">
-              {events.map((e) => (
-                <li key={e.id} className="px-8 py-3 flex items-center gap-4 text-xs font-mono">
-                  <span className="text-on-surface-variant/60 w-20">
-                    {e.at.toLocaleTimeString([], { hour12: false })}
-                  </span>
-                  <span className="text-primary font-bold w-44 truncate">{e.name}</span>
-                  <span className="text-on-surface-variant truncate flex-1">
-                    {typeof e.payload === 'object' && e.payload !== null
-                      ? JSON.stringify(e.payload)
-                      : String(e.payload)}
-                  </span>
-                </li>
-              ))}
-            </ul>
+            events.map((e) => (
+              <div key={e.id} className="flex gap-2.5 font-mono text-[8.5px] leading-[1.7]">
+                <span className="flex-shrink-0 text-[var(--color-ink-faint)]">
+                  {e.at.toLocaleTimeString([], { hour12: false })}
+                </span>
+                <span className="text-[#8FA468]">{e.name}</span>
+                <span className="min-w-0 flex-1 truncate text-[var(--color-paper-fold)]">
+                  {typeof e.payload === 'object' && e.payload !== null
+                    ? JSON.stringify(e.payload)
+                    : String(e.payload)}
+                </span>
+              </div>
+            ))
           )}
         </div>
-      </div>
+      </section>
+
+      <p className="px-1 font-display italic text-[12.5px] leading-snug text-[var(--color-ink-soft)]">
+        The same trace Langfuse keeps, retold at phone width. Nothing the extractor does is off the record.
+      </p>
     </div>
   );
 }
 
-function StatCard({
-  label,
-  value,
-  tone = 'default',
-}: {
-  label: string;
-  value: number;
-  tone?: 'default' | 'muted' | 'primary' | 'tertiary' | 'info' | 'error';
-}) {
-  const valueClass =
-    tone === 'primary'
-      ? 'text-primary'
-      : tone === 'tertiary'
-        ? 'text-tertiary'
-        : tone === 'info'
-          ? 'text-sky-300'
-          : tone === 'error'
-            ? 'text-error'
-            : tone === 'muted'
-              ? 'text-on-surface-variant'
-              : 'text-[var(--color-ink)]';
+function Meta({ label, value }: { label: string; value: string }) {
   return (
-    <div>
-      <p className="text-xs text-on-surface-variant uppercase tracking-widest">{label}</p>
-      <p className={cn('text-2xl font-bold font-headline mt-1', valueClass)}>{value}</p>
+    <div className="px-2 text-center">
+      <p className="font-mono text-[8px] uppercase tracking-[0.14em] text-[var(--color-ink-muted)]">
+        {label}
+      </p>
+      <p className="mt-0.5 font-display text-[16px] tnum">{value}</p>
     </div>
   );
 }
 
-function IngestRow({ ingest }: { ingest: BackendIngest }) {
-  const meta = INGEST_STATUS_META[ingest.status];
-  const Icon = meta.icon;
+function IngestRow({ ingest, first }: { ingest: BackendIngest; first: boolean }) {
+  const meta = INGEST_META[ingest.status];
+  const tone = TONE[meta.tone];
   const txnIds = ingest.produced?.transaction_ids ?? [];
   return (
-    <tr className="hover:bg-surface-container-high/30 transition-colors">
-      <td className="px-8 py-4">
-        <p className="font-mono text-[11px] font-medium">{ingest.filename}</p>
-        {ingest.mime_type && (
-          <p className="text-[11px] text-on-surface-variant/70 mt-0.5 font-mono">{ingest.mime_type}</p>
-        )}
-        {ingest.error && (
-          <p className="text-[11px] text-error mt-1 truncate max-w-md">{ingest.error}</p>
-        )}
-      </td>
-      <td className="px-8 py-4 text-sm text-on-surface-variant">
-        {ingest.classification ? ingest.classification.replace('_', ' ') : '—'}
-      </td>
-      <td className="px-8 py-4">
-        <span
-          className={cn(
-            'inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider',
-            meta.badge,
+    <div
+      className={cn(
+        'flex items-center gap-3 px-4 py-2.5',
+        !first && 'border-t border-[var(--color-rule-soft)]',
+      )}
+    >
+      <span className="min-w-0 flex-1">
+        <span className="block truncate font-mono text-[9.5px]">{ingest.filename}</span>
+        <span className="mt-0.5 block truncate font-mono text-[7.5px] tracking-[0.04em] text-[var(--color-ink-faint)]">
+          {ingest.error ? (
+            <span className="text-[var(--color-accent)]">{ingest.error.slice(0, 60)}</span>
+          ) : txnIds.length > 0 ? (
+            <>
+              → {txnIds.map((id) => (
+                <Link key={id} {...receiptLink(id)} className="text-[var(--color-accent)]">
+                  {id.slice(0, 8)}
+                </Link>
+              ))}
+            </>
+          ) : (
+            ingest.classification?.replace('_', ' ') ?? '—'
           )}
-        >
-          <Icon size={12} />
-          {meta.label}
         </span>
-      </td>
-      <td className="px-8 py-4 text-sm">
-        {txnIds.length === 0 ? (
-          <span className="text-on-surface-variant/60">—</span>
-        ) : (
-          <div className="flex flex-wrap gap-2">
-            {txnIds.map((id) => (
-              <Link
-                key={id}
-                {...receiptLink(id)}
-                className="text-primary font-mono text-[11px] hover:underline"
-              >
-                {id.slice(0, 8)}…
-              </Link>
-            ))}
-          </div>
+      </span>
+      <span
+        className={cn(
+          'inline-flex flex-shrink-0 items-center gap-1.5 rounded-full px-2.5 py-[3px] font-mono text-[7.5px] uppercase tracking-[0.1em]',
+          tone.box,
         )}
-      </td>
-    </tr>
+      >
+        <span className={cn('h-[5px] w-[5px] rounded-full', tone.dot, tone.pulse && 'animate-pulse')} />
+        {meta.label}
+      </span>
+    </div>
   );
 }
