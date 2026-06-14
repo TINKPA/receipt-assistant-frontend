@@ -14,12 +14,39 @@ export const Route = createFileRoute('/_shell/insights/')({
   component: InsightsRoute,
 });
 
-const KIND_STYLE: Record<string, { border: string; tag: string; glyph: string }> = {
-  anomaly: { border: 'border-l-[var(--color-amber)]', tag: 'text-[var(--color-amber)]', glyph: '⚠' },
-  trend: { border: 'border-l-[var(--color-accent)]', tag: 'text-[var(--color-accent)]', glyph: '↯' },
-  milestone: { border: 'border-l-[var(--color-olive)]', tag: 'text-[var(--color-olive)]', glyph: '★' },
-  opportunity: { border: 'border-l-[var(--color-slate)]', tag: 'text-[var(--color-slate)]', glyph: '◇' },
+const KIND_STYLE: Record<string, { border: string; tag: string; glyph: string; bar: string }> = {
+  anomaly: { border: 'border-l-[var(--color-amber)]', tag: 'text-[var(--color-amber)]', glyph: '⚠', bar: 'var(--color-amber)' },
+  trend: { border: 'border-l-[var(--color-accent)]', tag: 'text-[var(--color-accent)]', glyph: '↯', bar: 'var(--color-accent)' },
+  milestone: { border: 'border-l-[var(--color-olive)]', tag: 'text-[var(--color-olive)]', glyph: '★', bar: 'var(--color-olive)' },
+  opportunity: { border: 'border-l-[var(--color-slate)]', tag: 'text-[var(--color-slate)]', glyph: '◇', bar: 'var(--color-slate)' },
 };
+
+/** Numeric figures the rule engine attaches per kind (`payload.figures`). */
+interface Figures {
+  current?: number;
+  previous?: number;
+  pct?: number;
+  days?: number;
+  mark?: number;
+}
+
+function readFigures(payload: Insight['payload']): Figures | null {
+  if (typeof payload !== 'object' || payload === null) return null;
+  const f = (payload as Record<string, unknown>).figures;
+  if (typeof f !== 'object' || f === null) return null;
+  const out: Figures = {};
+  for (const k of ['current', 'previous', 'pct', 'days', 'mark'] as const) {
+    const v = (f as Record<string, unknown>)[k];
+    if (typeof v === 'number' && Number.isFinite(v)) out[k] = v;
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
+
+/** anomaly figures are dollar amounts; trend figures are visit counts. */
+function fmtFigure(kind: string, n: number): string {
+  if (kind === 'anomaly') return `$${Math.round(n).toLocaleString()}`;
+  return n.toLocaleString();
+}
 
 /**
  * /insights — board screens 18-19: the ask bar, the discovered-cards
@@ -220,6 +247,7 @@ function InsightCard({
         {card.title}
       </h3>
       <p className="mt-1 text-[11.5px] leading-snug text-[var(--color-ink-muted)]">{card.body}</p>
+      <CardFigures kind={card.kind} figures={readFigures(card.payload)} bar={style.bar} />
       {deepLink && (
         <button
           type="button"
@@ -230,6 +258,105 @@ function InsightCard({
         </button>
       )}
     </article>
+  );
+}
+
+/**
+ * Board screens 18.4/18.5 — the emphatic figure + mini bar-viz on each
+ * card. `compare` kinds (anomaly/trend) get two stacked bars (this vs
+ * prior, the active one kind-colored); `milestone` gets a day-count
+ * figure with a thin progress line crossing its mark. Pure CSS, no chart
+ * lib — the data is one or two numbers.
+ */
+function CardFigures({
+  kind,
+  figures,
+  bar,
+}: {
+  kind: string;
+  figures: Figures | null;
+  bar: string;
+}) {
+  if (!figures) return null;
+
+  // milestone: days held past a round mark
+  if (figures.days != null) {
+    const mark = figures.mark ?? figures.days;
+    const frac = mark > 0 ? Math.min(1, mark / figures.days) : 1;
+    return (
+      <div className="mt-3 flex items-end gap-3">
+        <div className="leading-none">
+          <span className="font-mono text-[22px] font-semibold tnum text-[var(--color-ink)]">
+            {figures.days.toLocaleString()}
+          </span>
+          <span className="ml-1 font-mono text-[8.5px] uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">
+            days
+          </span>
+        </div>
+        <div className="mb-1 min-w-0 flex-1">
+          <div className="relative h-1.5 overflow-hidden rounded-full bg-[var(--color-paper-fold)]">
+            <span className="absolute inset-y-0 left-0 rounded-full" style={{ width: '100%', background: bar, opacity: 0.85 }} />
+            {/* the round-number mark, as a tick along the filled bar */}
+            <span className="absolute inset-y-0 w-px bg-[var(--color-paper)]" style={{ left: `${frac * 100}%` }} />
+          </div>
+          <p className="mt-1 font-mono text-[8px] uppercase tracking-[0.1em] text-[var(--color-ink-faint)]">
+            past {mark.toLocaleString()} mark
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // anomaly / trend: this month vs prior, two mini bars
+  if (figures.current != null && figures.previous != null) {
+    const max = Math.max(figures.current, figures.previous, 1);
+    return (
+      <div className="mt-3 flex items-center gap-3.5">
+        {figures.pct != null && (
+          <div className="flex-shrink-0 leading-none">
+            <span className="font-mono text-[20px] font-semibold tnum" style={{ color: bar }}>
+              {figures.pct > 0 ? '+' : ''}
+              {figures.pct}%
+            </span>
+          </div>
+        )}
+        <div className="min-w-0 flex-1 space-y-1">
+          <MiniBar label="now" value={figures.current} max={max} text={fmtFigure(kind, figures.current)} color={bar} />
+          <MiniBar label="prior" value={figures.previous} max={max} text={fmtFigure(kind, figures.previous)} color="var(--color-ink-faint)" />
+        </div>
+      </div>
+    );
+  }
+
+  return null;
+}
+
+function MiniBar({
+  label,
+  value,
+  max,
+  text,
+  color,
+}: {
+  label: string;
+  value: number;
+  max: number;
+  text: string;
+  color: string;
+}) {
+  const pct = max > 0 ? (value / max) * 100 : 0;
+  return (
+    <div className="flex items-center gap-2">
+      <span className="w-7 flex-shrink-0 font-mono text-[7.5px] uppercase tracking-[0.1em] text-[var(--color-ink-faint)]">
+        {label}
+      </span>
+      <span className="relative h-2 min-w-0 flex-1 overflow-hidden rounded-[2px] bg-[var(--color-paper-fold)]">
+        <span className="absolute inset-y-0 left-0 rounded-[2px]" style={{ width: `${Math.max(pct, value > 0 ? 4 : 0)}%`, background: color }} />
+      </span>
+      <span className="w-12 flex-shrink-0 text-right font-mono text-[9px] tnum text-[var(--color-ink-soft)]">
+        {text}
+      </span>
+    </div>
   );
 }
 

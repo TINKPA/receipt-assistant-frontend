@@ -82,6 +82,10 @@ export default function Transactions({
   const [hardDeleteTarget, setHardDeleteTarget] = useState<{ id: string; etag: string } | null>(null);
   const [unreconcileTarget, setUnreconcileTarget] = useState<string | null>(null);
   const [rowError, setRowError] = useState<string | null>(null);
+  // Board screen 02.5: a lightweight brand quick-filter above the rows.
+  // Ephemeral (not URL-persisted) — the structured Category/Type/Sort
+  // filters own the URL; this is a one-tap narrowing over what's loaded.
+  const [brandFilter, setBrandFilter] = useState<string | null>(null);
 
   // All view state is derived from the URL — single source of truth.
   const { filters, sortId, q: searchQuery, showDeleted } = useMemo(
@@ -250,6 +254,26 @@ export default function Transactions({
     },
   });
 
+  // Brand pills derived from what's loaded: rank brands by frequency,
+  // keep the top few, label by prettified brand_id. Stays in sync with
+  // the visible month — no extra fetch, no stale global brand list.
+  const brandPills = useMemo(() => {
+    const count = new Map<string, number>();
+    for (const tx of transactions) {
+      if (tx.merchantBrandId) count.set(tx.merchantBrandId, (count.get(tx.merchantBrandId) ?? 0) + 1);
+    }
+    return [...count.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8)
+      .map(([id, n]) => ({ id, label: prettifyBrandId(id), count: n }));
+  }, [transactions]);
+
+  // A brand can scroll out of the visible set (month change, filter); if
+  // the active pill no longer exists, fall back to All so rows reappear.
+  useEffect(() => {
+    if (brandFilter && !brandPills.some((p) => p.id === brandFilter)) setBrandFilter(null);
+  }, [brandPills, brandFilter]);
+
   const filteredTransactions = useMemo(() => {
     let out = transactions;
     if (filters.transactionTypes.length > 0) {
@@ -260,8 +284,11 @@ export default function Transactions({
       const catSet = new Set<string>(filters.categories);
       out = out.filter((tx) => tx.category !== null && catSet.has(tx.category));
     }
+    if (brandFilter) {
+      out = out.filter((tx) => tx.merchantBrandId === brandFilter);
+    }
     return out;
-  }, [transactions, filters.categories, filters.transactionTypes]);
+  }, [transactions, filters.categories, filters.transactionTypes, brandFilter]);
 
   const totalExpenses = filteredTransactions
     .filter((tx) => tx.amount < 0)
@@ -336,12 +363,19 @@ export default function Transactions({
           // leaves sort (view config) untouched — same semantics as
           // before, now expressed as one URL write.
           setSearchInput('');
+          setBrandFilter(null);
           pushState({ filters: DEFAULT_FILTERS, q: '' });
         }}
         showDeleted={showDeleted}
         onToggleShowDeleted={toggleShowDeleted}
         sortId={sortId}
         onSortChange={setSortId}
+      />
+
+      <BrandPillBar
+        pills={brandPills}
+        active={brandFilter}
+        onSelect={setBrandFilter}
       />
 
       {rowError && (
@@ -456,6 +490,76 @@ export default function Transactions({
         }}
       />
     </div>
+  );
+}
+
+/* ── Brand pill bar (board screen 02.5) ──────────────────────────── */
+
+/** `apple-store` → `Apple Store`. Stable, no fetch; small joiner words stay low. */
+function prettifyBrandId(id: string): string {
+  const small = new Set(['and', 'or', 'of', 'the', 'a']);
+  return id
+    .split('-')
+    .map((w, i) => (i > 0 && small.has(w) ? w : w.charAt(0).toUpperCase() + w.slice(1)))
+    .join(' ');
+}
+
+function BrandPillBar({
+  pills,
+  active,
+  onSelect,
+}: {
+  pills: Array<{ id: string; label: string; count: number }>;
+  active: string | null;
+  onSelect: (id: string | null) => void;
+}) {
+  // Below two brands there's nothing to choose between — hide entirely.
+  if (pills.length < 2) return null;
+  return (
+    <div className="-mx-5 flex gap-1.5 overflow-x-auto px-5 pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <Pill label="All" active={active === null} onClick={() => onSelect(null)} />
+      {pills.map((p) => (
+        <Pill
+          key={p.id}
+          label={p.label}
+          count={p.count}
+          active={active === p.id}
+          onClick={() => onSelect(active === p.id ? null : p.id)}
+        />
+      ))}
+    </div>
+  );
+}
+
+function Pill({
+  label,
+  count,
+  active,
+  onClick,
+}: {
+  label: string;
+  count?: number;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'flex flex-shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border-[0.5px] px-3 py-1 font-mono text-[10px] uppercase tracking-[0.08em] transition-colors',
+        active
+          ? 'border-[var(--color-ink)] bg-[var(--color-ink)] text-[var(--color-paper)]'
+          : 'border-[var(--color-rule-soft)] bg-[var(--color-surface)] text-[var(--color-ink-soft)] hover:border-[var(--color-rule)]',
+      )}
+    >
+      {label}
+      {count != null && (
+        <span className={cn('tnum text-[8.5px]', active ? 'text-[var(--color-paper-fold)]' : 'text-[var(--color-ink-faint)]')}>
+          {count}
+        </span>
+      )}
+    </button>
   );
 }
 
