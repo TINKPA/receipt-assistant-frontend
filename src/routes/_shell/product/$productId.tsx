@@ -2,7 +2,8 @@ import { createFileRoute, Link } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { getProduct } from '../../../lib/api/products';
 import { listOwnedItemsExpanded } from '../../../lib/api/things';
-import { daysHeld, perDay, fmtPerDay, classGlyph } from '../../../lib/things';
+import { daysHeld, perDay, fmtPerDay } from '../../../lib/things';
+import { ProductImage } from '../../../components/ProductImage';
 import { brandLink } from '../../../lib/navLinks';
 import { useBack } from '../../../lib/useBack';
 import { cn } from '../../../lib/utils';
@@ -74,9 +75,7 @@ function ProductRoute() {
 
       {/* hero */}
       <div className="flex aspect-[5/3] items-center justify-center overflow-hidden rounded-[18px] border-[0.5px] border-[var(--color-rule-soft)] bg-[var(--color-paper-deep)]">
-        <span aria-hidden="true" className="text-[64px] text-[var(--color-ink-faint)]">
-          {classGlyph(product.item_class)}
-        </span>
+        <ProductImage productId={product.id} itemClass={product.item_class} />
       </div>
 
       <div>

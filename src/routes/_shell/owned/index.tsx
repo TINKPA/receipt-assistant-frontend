@@ -7,9 +7,9 @@ import {
   daysHeld,
   perDay,
   fmtPerDay,
-  classGlyph,
   type OwnedStatus,
 } from '../../../lib/things';
+import { ProductImage } from '../../../components/ProductImage';
 import { cn } from '../../../lib/utils';
 
 export const Route = createFileRoute('/_shell/owned/')({
@@ -130,9 +130,7 @@ function OwnedRoute() {
                 className="overflow-hidden rounded-[14px] border-[0.5px] border-[var(--color-rule-soft)] bg-[var(--color-surface)] transition-colors hover:border-[var(--color-rule)]"
               >
                 <div className="relative flex aspect-[4/3] items-center justify-center bg-[var(--color-paper-deep)]">
-                  <span aria-hidden="true" className="text-[34px] text-[var(--color-ink-faint)]">
-                    {classGlyph(it.item_class)}
-                  </span>
+                  <ProductImage productId={it.product_id} itemClass={it.item_class} />
                   <span
                     className={cn(
                       'absolute left-2 top-2 rounded-full px-2 py-[2px] font-mono text-[7px] uppercase tracking-[0.1em] text-[var(--color-paper)]',
