@@ -1248,6 +1248,209 @@ export interface paths {
         };
         trace?: never;
     };
+    "/v1/products/{id}/image": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream the product's preferred image bytes
+         * @description Resolves preferred_asset_id and streams the file. 404 when the product is missing, no asset is preferred, the asset is retired, or the file is missing on disk. Frontend falls back to a category placeholder on 404 — never to a different candidate.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Image bytes */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Product or image unavailable */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/products/{id}/assets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List candidate images for a product */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            items: components["schemas"]["ProductAsset"][];
+                            next_cursor: string | null;
+                        };
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        /**
+         * Upload a user-provided product image
+         * @description Multipart upload (field name `file`) — saves bytes to the product-assets bind-mount, inserts a product_assets row with tier=user_upload, and stamps preferred_asset_chosen_at + preferred_asset_id to the new asset (the upload IS the user's choice; Layer-3 lock). Re-uploading identical bytes returns the existing row 200 OK (UNIQUE on (product_id, content_hash)); new bytes return 201.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "multipart/form-data": components["schemas"]["UploadProductAssetForm"];
+                };
+            };
+            responses: {
+                /** @description Dedup hit — existing asset returned */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProductAsset"];
+                    };
+                };
+                /** @description New asset created */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProductAsset"];
+                    };
+                };
+                /** @description Product not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+                /** @description Validation failed */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/products/{id}/assets/{assetId}/image": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream an individual candidate asset's bytes
+         * @description Streams any candidate (not just preferred) so the UI picker can render thumbnails. Scoped by product_id to prevent cross-product asset_id enumeration. 404 if missing, retired, or the file is gone from disk.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    assetId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Asset bytes */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/products/{id}/merge_into": {
         parameters: {
             query?: never;
@@ -4731,6 +4934,12 @@ export interface components {
             /** Format: date-time */
             retired_from_catalog_at: string | null;
             /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            preferred_asset_id: string | null;
+            image_url: string | null;
+            /**
              * @description User-defined JSON object; not schema-validated.
              * @default {}
              */
@@ -4741,6 +4950,50 @@ export interface components {
             created_at: string;
             /** Format: date-time */
             updated_at: string;
+        };
+        ProductAsset: {
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            id: string;
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            product_id: string;
+            /** @enum {string} */
+            tier: "manual_seed" | "user_upload" | "agent_fetch";
+            source_url: string | null;
+            local_path: string;
+            content_hash: string;
+            content_type: string;
+            width: number | null;
+            height: number | null;
+            bytes: number | null;
+            /** Format: date-time */
+            acquired_at: string;
+            /** Format: date-time */
+            last_seen_at: string;
+            agent_relevance: number | null;
+            agent_notes: string | null;
+            extraction_version: number;
+            user_rating: number | null;
+            user_uploaded: boolean;
+            user_notes: string | null;
+            /** Format: date-time */
+            retired_at: string | null;
+            /**
+             * @description User-defined JSON object; not schema-validated.
+             * @default {}
+             */
+            metadata: {
+                [key: string]: unknown;
+            };
+        };
+        UploadProductAssetForm: {
+            /** Format: binary */
+            file?: string;
         };
         UpdateProductRequest: {
             custom_name?: string | null;
@@ -4753,6 +5006,11 @@ export interface components {
             merchant_id?: string | null;
             /** Format: date-time */
             retired_from_catalog_at?: string | null;
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            preferred_asset_id?: string | null;
         };
         MergeProductRequest: {
             /**

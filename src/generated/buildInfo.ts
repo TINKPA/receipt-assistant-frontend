@@ -1,8 +1,8 @@
 export const buildInfo = {
   "service": "receipt-assistant-frontend",
   "version": "0.0.0",
-  "gitSha": "f98f5dc9ba86a23e0de1ee3ed0faf6ef5e74c904",
-  "gitShortSha": "f98f5dc",
-  "gitBranch": "feat/near-dup-review-ui",
-  "builtAt": "2026-06-12T00:38:47.148Z"
+  "gitSha": "0917b02352d348372b92ad29317930eab639e106",
+  "gitShortSha": "0917b02",
+  "gitBranch": "feat/product-images-ui",
+  "builtAt": "2026-06-24T08:54:20.628Z"
 } as const;
