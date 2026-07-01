@@ -4788,8 +4788,12 @@ export interface components {
         } | null;
         TransactionItem: {
             line_no: number;
+            /** @default null */
+            parent_line_no: number | null;
             raw_name: string;
             normalized_name: string | null;
+            /** @default null */
+            product_variant: string | null;
             quantity: number | null;
             unit: string | null;
             unit_price_minor: number | null;
