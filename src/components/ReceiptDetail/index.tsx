@@ -217,8 +217,10 @@ export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: Re
     ? receipt.items
     : (legacyItems ?? []).map((i, idx) => ({
         line_no: idx + 1,
+        parent_line_no: null,
         raw_name: i.name,
         normalized_name: null,
+        product_variant: null,
         quantity: i.quantity ?? 1,
         unit: null,
         unit_price_minor: i.unit_price != null ? Math.round(i.unit_price * 100) : null,
