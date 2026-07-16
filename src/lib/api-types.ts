@@ -2894,7 +2894,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Decoded + sanitized HTML body of a receipt_email document, for the frontend 'Original email' fold. Served with a strict CSP; render inside a sandboxed iframe. */
+        /** Sanitized HTML rendering of a document for the frontend's 'Original receipt / email' fold: a decoded receipt_email (.eml) body or a sanitized raw text/html document (#137). Served with a strict CSP; render inside a sandboxed iframe. */
         get: {
             parameters: {
                 query?: never;
@@ -2906,7 +2906,7 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Sanitized email HTML */
+                /** @description Sanitized HTML (email body or text/html document) */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -2915,7 +2915,7 @@ export interface paths {
                         "text/html": string;
                     };
                 };
-                /** @description Not found / no file */
+                /** @description Not found / no file / empty render */
                 404: {
                     headers: {
                         [name: string]: unknown;
@@ -2924,7 +2924,7 @@ export interface paths {
                         "application/problem+json": components["schemas"]["ProblemDetails"];
                     };
                 };
-                /** @description Document is not an email (kind != receipt_email) */
+                /** @description Document has no HTML rendering (neither receipt_email nor text/html); code document-not-renderable */
                 422: {
                     headers: {
                         [name: string]: unknown;
@@ -4729,6 +4729,7 @@ export interface components {
              */
             id: string;
             kind: string;
+            mime_type?: string | null;
             source_meta?: {
                 [key: string]: unknown;
             } | null;

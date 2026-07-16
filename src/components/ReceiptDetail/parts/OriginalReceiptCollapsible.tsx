@@ -42,14 +42,24 @@ function EmailHeaderStrip({
 export function OriginalReceiptCollapsible({
   documentId,
   kind,
+  mimeType,
   sourceMeta,
 }: {
   documentId: string;
   kind?: string | null;
+  mimeType?: string | null;
   sourceMeta?: Record<string, unknown> | null;
 }) {
   const [open, setOpen] = useState(false);
   const isEmail = kind === 'receipt_email';
+  // A raw HTML document (portal invoice, saved web confirmation) renders
+  // through the same sanitized /rendered endpoint as email. Gate on the
+  // normalized base mime_type — independent of `kind` (an HTML doc
+  // classifies as receipt_pdf) — so it never falls to the non-sandboxed
+  // /content viewer. Strip the charset param and accept application/
+  // xhtml+xml so near-miss mimes still take the safe path. #137.
+  const baseMime = (mimeType ?? '').split(';')[0]?.trim().toLowerCase() ?? '';
+  const isHtml = baseMime === 'text/html' || baseMime === 'application/xhtml+xml';
   const isPdf = kind === 'receipt_pdf' || kind === 'statement_pdf';
   const sender = (sourceMeta?.sender as string | undefined) ?? null;
   const subject = (sourceMeta?.subject as string | undefined) ?? null;
@@ -97,6 +107,20 @@ export function OriginalReceiptCollapsible({
                 style={{ height: 520 }}
               />
             </div>
+          ) : isHtml ? (
+            /* Raw text/html receipt (portal invoice / saved confirmation).
+               Same containment as the email path: the backend serves the
+               sanitized markup with a strict CSP, and this iframe is
+               sandboxed (no scripts, no same-origin) as the second layer.
+               Fixed height + internal scroll since page heights vary. */
+            <iframe
+              src={documentRenderedUrl(documentId)}
+              title="Original receipt"
+              sandbox=""
+              referrerPolicy="no-referrer"
+              className="block w-full rounded-[10px] border border-[var(--color-rule)] bg-white"
+              style={{ height: 520 }}
+            />
           ) : isPdf ? (
             <div className="space-y-3">
               {/* PDFs can't render in an <img> tag — embed the browser's
