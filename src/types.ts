@@ -22,7 +22,6 @@ export type TransactionType = typeof TRANSACTION_TYPES[number];
 export type RawTransactionStatus =
   | 'draft'
   | 'posted'
-  | 'voided'
   | 'reconciled'
   | 'error';
 

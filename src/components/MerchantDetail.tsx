@@ -558,7 +558,6 @@ function MerchantTxnRow({
   onSelect?: (id: string) => void;
 }) {
   const badge = statusBadge(tx.status);
-  const isVoided = tx.status === 'voided';
   // Body — a real <Link> (renders <a href>) so right-click → Open in
   // New Tab, Cmd-click, and hover URL preview all work. When no
   // navigation handler is wired up it falls back to a plain div.
@@ -579,10 +578,7 @@ function MerchantTxnRow({
           )}
         </p>
       </div>
-      <span className={cn(
-        'font-display italic font-medium text-[17px] tnum',
-        isVoided && 'line-through opacity-60',
-      )}>
+      <span className="font-display italic font-medium text-[17px] tnum">
         {(tx.total_minor / 100).toLocaleString(undefined, {
           style: 'currency',
           currency: tx.currency,

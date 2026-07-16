@@ -12,7 +12,7 @@ export function AmountHero({
   category,
   occurredOn,
   isProcessing,
-  voided,
+  tombstoned,
   brandTo,
 }: {
   amount: number;
@@ -22,7 +22,7 @@ export function AmountHero({
   category: Category | null;
   occurredOn: string;
   isProcessing: boolean;
-  voided: boolean;
+  tombstoned: boolean;
   /** Link target for the merchant name → BrandPage. Undefined renders a
    *  plain <h1> (no link) — e.g. while processing or with no brand. */
   brandTo?: ReturnType<typeof brandLink>;
@@ -37,7 +37,7 @@ export function AmountHero({
         className={cn(
           'font-display font-light tracking-tight tnum',
           'text-[3.25rem] sm:text-[4rem] leading-none',
-          voided && 'line-through text-[var(--color-ink-muted)]',
+          tombstoned && 'line-through text-[var(--color-ink-muted)]',
         )}
       >
         {isProcessing ? '—' : `$${amount.toFixed(2)}`}

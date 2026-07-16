@@ -3,10 +3,8 @@ import { brandLink } from '../../lib/navLinks';
 import {
   fetchReceiptDetail,
   extractProblemMessage,
-  getTransaction,
   postReExtractDocument,
   toReceiptView,
-  voidTransaction,
   restoreDocument,
   type BackendTransaction,
   type BackendTransactionItem,
@@ -16,7 +14,6 @@ import { statusBadge } from '../../lib/transactionStatus';
 import { cn } from '../../lib/utils';
 import type { Category } from '../../types';
 import EditReceiptModal from '../EditReceiptModal';
-import ConfirmActionDialog from '../ConfirmActionDialog';
 import DeleteReceiptDialog from '../DeleteReceiptDialog';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { qk } from '../../lib/queryKeys';
@@ -57,8 +54,8 @@ function md<T = unknown>(meta: Metadata | undefined, key: string): T | undefined
  *
  * Functional surface is unchanged from the previous Material-3 version:
  *   - Auto-polls every 5s while status is draft/error.
- *   - Edit / Void / Delete / Restore actions kept (the mockup shows just
- *     Edit + Delete; Void and Restore are conditional flows that show up
+ *   - Edit / Delete / Restore actions kept (the mockup shows just
+ *     Edit + Delete; Restore is a conditional flow that shows up
  *     for posted/reconciled and tombstoned receipts respectively).
  *   - Renders line items, location map, raw OCR text, extraction quality
  *     when those metadata sub-objects exist.
@@ -67,7 +64,7 @@ function md<T = unknown>(meta: Metadata | undefined, key: string): T | undefined
  */
 export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: ReceiptDetailProps) {
   const queryClient = useQueryClient();
-  const [activeDialog, setActiveDialog] = useState<'edit' | 'void' | 'delete' | null>(null);
+  const [activeDialog, setActiveDialog] = useState<'edit' | 'delete' | null>(null);
   const [restoreError, setRestoreError] = useState<string | null>(null);
   // Re-extract state machine. `idle` armed; `pending` (~30-60s — the
   // agent re-OCRs the image); `success` shows `changed_keys` toast;
@@ -101,7 +98,7 @@ export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: Re
   const invalidateReceipt = () =>
     queryClient.invalidateQueries({ queryKey: qk.receipt(receiptId) });
 
-  // ETag write-back invariant: a PATCH/void response carries a FRESH ETag.
+  // ETag write-back invariant: a PATCH response carries a FRESH ETag.
   // Write the updated view straight into the cache so a subsequent edit sends
   // the current If-Match. Invalidate-and-refetch would leave a stale-etag
   // window in which a fast second edit 412s — so this is setQueryData, not
@@ -109,24 +106,6 @@ export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: Re
   const handleUpdated = (txn: BackendTransaction, etag: string | null) => {
     queryClient.setQueryData(qk.receipt(receiptId), toReceiptView(txn, etag));
   };
-
-  const voidMut = useMutation({
-    mutationFn: async (reason: string) => {
-      // Defensive: if the cached view lacks an etag, re-fetch a fresh one.
-      let etag = receipt?.etag ?? null;
-      if (!etag) {
-        const fresh = await getTransaction(receipt!.id);
-        if (!fresh.etag) throw new Error('No ETag — reload and retry.');
-        etag = fresh.etag;
-      }
-      return voidTransaction(receipt!.id, reason, etag);
-    },
-    onSuccess: () => {
-      setActiveDialog(null);
-      invalidateReceipt();
-      onAfterMutation?.();
-    },
-  });
 
   const handleDeleted = () => {
     setActiveDialog(null);
@@ -245,13 +224,12 @@ export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: Re
   );
   const merchantLabel = receipt.payee ?? receipt.narration ?? 'Unknown';
 
-  const canDelete = receipt.status !== 'voided';
-  const canVoid = receipt.status === 'posted' || receipt.status === 'reconciled';
-  const canEdit = receipt.status !== 'voided';
-
   const primaryDoc = receipt.documents.find((d) => d.id === receipt.documentId) ?? receipt.documents[0];
   const docDeletedAt = (primaryDoc as { deleted_at?: string | null } | undefined)?.deleted_at ?? null;
   const isTombstoned = docDeletedAt != null;
+
+  const canDelete = !isTombstoned;
+  const canEdit = !isTombstoned;
 
   const badge = statusBadge(receipt.status);
   const lowConfidence = confidence != null && confidence < 0.6;
@@ -264,11 +242,9 @@ export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: Re
         deletedAt={docDeletedAt}
         isProcessing={isProcessing}
         canEdit={canEdit}
-        canVoid={canVoid}
         canDelete={canDelete}
         restoring={restoreMut.isPending}
         onEdit={() => setActiveDialog('edit')}
-        onVoid={() => setActiveDialog('void')}
         onDelete={() => setActiveDialog('delete')}
         onRestore={handleRestore}
       />
@@ -281,7 +257,7 @@ export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: Re
         category={receipt.category as Category | null}
         occurredOn={receipt.occurred_on}
         isProcessing={isProcessing}
-        voided={receipt.status === 'voided'}
+        tombstoned={isTombstoned}
         brandTo={
           // Merchant name in the hero → BrandPage (brand-level rollup
           // across all locations). The per-location detail is reachable
@@ -347,12 +323,12 @@ export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: Re
         />
       )}
 
-      {/* Re-extract affordance. Only on active (non-voided) receipts
+      {/* Re-extract affordance. Only on active (non-deleted) receipts
           that have a linked document. Wall-time is ~30-60s for vision
           OCR, so we make the pending state visible. */}
       {!isProcessing &&
         receipt.documentId &&
-        receipt.status !== 'voided' && (
+        !isTombstoned && (
           <div className="space-y-2">
             <button
               type="button"
@@ -412,28 +388,6 @@ export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: Re
         receipt={receipt}
         onUpdated={handleUpdated}
         onStale={invalidateReceipt}
-      />
-
-      <ConfirmActionDialog
-        isOpen={activeDialog === 'void'}
-        onClose={() => setActiveDialog(null)}
-        title="Void this receipt?"
-        message={
-          <>
-            <p>
-              Voiding creates a reversing entry in the ledger — the original transaction stays,
-              but its balance cancels out. Use this for posted receipts you can't simply delete.
-            </p>
-            <p className="mt-2 text-xs text-[var(--color-ink-muted)]">
-              This action can be reversed only by creating a new offsetting transaction.
-            </p>
-          </>
-        }
-        confirmLabel="Void receipt"
-        destructive
-        requireReason
-        reasonPlaceholder="Why are you voiding this? (optional)"
-        onConfirm={(reason) => voidMut.mutateAsync(reason).then(() => undefined)}
       />
 
       <DeleteReceiptDialog

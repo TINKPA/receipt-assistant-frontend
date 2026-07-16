@@ -65,7 +65,7 @@ const OPTION_DESCRIPTIONS: Record<
     tier: 'cascade',
     tag: 'reversible',
     title: 'Document + transaction',
-    help: 'Cascade soft-delete · voids the linked transaction with a reversing mirror entry (drafts are hard-deleted). A tombstone shows in the Ledger.',
+    help: 'Cascade soft-delete · soft-deletes the linked transaction (drafts are hard-deleted). A tombstone shows in the Ledger, restorable anytime.',
   },
   'cascade-hard': {
     glyph: '✕',

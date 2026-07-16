@@ -182,19 +182,18 @@ export async function patchTransaction(
   };
 }
 
-export async function voidTransaction(
+/** Restore a soft-deleted transaction (clears deleted_at). #171 */
+export async function restoreTransaction(
   id: string,
-  reason: string,
   etag: string,
 ): Promise<BackendTransaction> {
-  const { data, error, response } = await client.POST('/v1/transactions/{id}/void', {
+  const { data, error, response } = await client.POST('/v1/transactions/{id}/restore', {
     params: {
       path: { id },
       header: { 'If-Match': etag },
     },
-    body: { reason },
   });
-  return unwrap('voidTransaction', data, error, response.status);
+  return unwrap('restoreTransaction', data, error, response.status);
 }
 
 export async function deleteTransaction(id: string, etag: string): Promise<void> {
@@ -213,8 +212,9 @@ export async function deleteTransaction(id: string, etag: string): Promise<void>
   }
 }
 
-/** Force a hard delete of a posted/voided/draft/error transaction
- *  (postings + document_links cascade via FK). Reconciled is still
+/** Force a hard (physical) delete of a transaction — postings +
+ *  document_links cascade via FK. The default deleteTransaction is a
+ *  reversible soft delete; this is irreversible. Reconciled is still
  *  rejected with 409; caller must `unreconcileTransaction` first. */
 export async function hardDeleteTransaction(id: string, etag: string): Promise<void> {
   const { error, response } = await client.DELETE('/v1/transactions/{id}', {

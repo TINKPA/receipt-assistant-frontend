@@ -26,8 +26,6 @@ export function statusBadge(raw: RawTransactionStatus): StatusBadge | null {
       return null;
     case 'reconciled':
       return { label: 'Reconciled', tone: 'green' };
-    case 'voided':
-      return { label: 'Voided', tone: 'red', strikethrough: true };
     case 'error':
       return { label: 'Extraction failed', tone: 'red', retryable: true };
   }

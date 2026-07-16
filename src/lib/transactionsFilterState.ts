@@ -55,7 +55,6 @@ export const DATE_PRESET_LABEL: Record<DatePreset, string> = {
 export const STATUS_OPTIONS: { value: RawTransactionStatus; label: string }[] = [
   { value: 'draft', label: 'Draft' },
   { value: 'posted', label: 'Posted' },
-  { value: 'voided', label: 'Voided' },
   { value: 'reconciled', label: 'Reconciled' },
   { value: 'error', label: 'Error' },
 ];
@@ -168,7 +167,7 @@ export function isFilterActive(filters: FilterState, q: string): boolean {
 // keys from the querystring entirely.
 
 const datePresetSchema = z.enum(['month', 'all', 'last_30d', 'last_90d', 'this_year', 'custom']);
-const statusSchema = z.enum(['draft', 'posted', 'voided', 'reconciled', 'error']);
+const statusSchema = z.enum(['draft', 'posted', 'reconciled', 'error']);
 const sortIdSchema = z.enum(SORT_OPTIONS.map((o) => o.id) as [string, ...string[]]);
 
 // Every field is `.optional().catch(default)`: the `.catch` wraps the

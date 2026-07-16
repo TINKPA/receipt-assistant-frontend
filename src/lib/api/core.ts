@@ -611,7 +611,7 @@ export async function getAccountRegister(
   opts: {
     from?: string;
     to?: string;
-    includeVoided?: boolean;
+    includeDeleted?: boolean;
     cursor?: string;
     limit?: number;
   } = {},
@@ -622,7 +622,7 @@ export async function getAccountRegister(
       query: {
         from: opts.from,
         to: opts.to,
-        include_voided: opts.includeVoided,
+        include_deleted: opts.includeDeleted,
         cursor: opts.cursor,
         limit: opts.limit,
       },

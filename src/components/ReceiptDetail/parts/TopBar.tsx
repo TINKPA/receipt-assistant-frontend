@@ -9,11 +9,9 @@ export function TopBar({
   deletedAt,
   isProcessing,
   canEdit,
-  canVoid,
   canDelete,
   restoring,
   onEdit,
-  onVoid,
   onDelete,
   onRestore,
 }: {
@@ -22,11 +20,9 @@ export function TopBar({
   deletedAt: string | null;
   isProcessing: boolean;
   canEdit: boolean;
-  canVoid: boolean;
   canDelete: boolean;
   restoring: boolean;
   onEdit: () => void;
-  onVoid: () => void;
   onDelete: () => void;
   onRestore: () => void;
 }) {
@@ -98,15 +94,6 @@ export function TopBar({
                       onEdit();
                     }}
                   />
-                  {canVoid && (
-                    <MenuItem
-                      label="Void receipt"
-                      onClick={() => {
-                        setMenuOpen(false);
-                        onVoid();
-                      }}
-                    />
-                  )}
                   <MenuItem
                     label="Delete…"
                     disabled={!canDelete}
