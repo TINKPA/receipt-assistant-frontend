@@ -336,6 +336,10 @@ export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: Re
         <OriginalReceiptCollapsible
           documentId={receipt.documentId}
           kind={primaryDoc?.kind ?? null}
+          mimeType={
+            (primaryDoc as { mime_type?: string | null } | undefined)
+              ?.mime_type ?? null
+          }
           sourceMeta={
             (primaryDoc as { source_meta?: Record<string, unknown> | null } | undefined)
               ?.source_meta ?? null
