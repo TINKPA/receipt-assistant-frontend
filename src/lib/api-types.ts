@@ -397,7 +397,7 @@ export interface paths {
                 query?: {
                     from?: string;
                     to?: string;
-                    include_voided?: boolean | null;
+                    include_deleted?: boolean | null;
                     cursor?: string;
                     limit?: number;
                 };
@@ -456,9 +456,10 @@ export interface paths {
                     account_id?: string;
                     payee_contains?: string;
                     q?: string;
-                    status?: "draft" | "posted" | "voided" | "reconciled" | "error";
+                    status?: "draft" | "posted" | "reconciled" | "error";
                     trip_id?: string;
                     has_document?: boolean | null;
+                    include_deleted?: boolean | null;
                     source_ingest_id?: string;
                     flagged?: "near_dup";
                     sort?: "occurred_on" | "amount" | "created_at";
@@ -597,7 +598,7 @@ export interface paths {
         post?: never;
         /**
          * Delete a transaction
-         * @description Default: only draft/error transactions may be hard-deleted; posted/voided return 409 (must-void-instead). ?hard=true forces a hard delete of any non-reconciled transaction (postings + document_links cascade). Reconciled transactions always reject — unreconcile first.
+         * @description Default: reversible soft delete (sets deleted_at; the row drops out of every money query but is restorable via POST /:id/restore). ?hard=true forces a physical delete (postings + document_links cascade; irreversible). Reconciled transactions reject either way — unreconcile first.
          */
         delete: {
             parameters: {
@@ -621,7 +622,7 @@ export interface paths {
                     };
                     content?: never;
                 };
-                /** @description Must void instead (posted, no ?hard=true), or transaction is reconciled. */
+                /** @description Transaction is reconciled — unreconcile first. */
                 409: {
                     headers: {
                         [name: string]: unknown;
@@ -683,7 +684,7 @@ export interface paths {
         };
         trace?: never;
     };
-    "/v1/transactions/{id}/void": {
+    "/v1/transactions/{id}/restore": {
         parameters: {
             query?: never;
             header?: never;
@@ -692,7 +693,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Void a posted transaction */
+        /**
+         * Restore a soft-deleted transaction
+         * @description Clears deleted_at so the transaction counts again. 404 if it wasn't deleted.
+         */
         post: {
             parameters: {
                 query?: never;
@@ -704,19 +708,24 @@ export interface paths {
                 };
                 cookie?: never;
             };
-            requestBody?: {
-                content: {
-                    "application/json": components["schemas"]["VoidTransactionRequest"];
-                };
-            };
+            requestBody?: never;
             responses: {
-                /** @description Mirror transaction created */
-                201: {
+                /** @description Restored transaction */
+                200: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
                         "application/json": components["schemas"]["Transaction"];
+                    };
+                };
+                /** @description Not found / not deleted */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
                     };
                 };
             };
@@ -901,7 +910,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Bulk update/void/reconcile */
+        /** Bulk update/reconcile */
         post: {
             parameters: {
                 query?: never;
@@ -2792,7 +2801,7 @@ export interface paths {
         post?: never;
         /**
          * Delete a document. Soft-deletes by default; ?hard=true removes the row and quarantines the file under .trash/; ?cascade=true also handles linked transactions.
-         * @description Default: soft delete (sets deleted_at). ?hard=true: hard delete (row removed; file moved to <uploads_dir>/.trash/<timestamp>__<basename>, NOT unlinked); requires no remaining links unless ?cascade=true is also set. ?cascade=true: linked posted transactions are voided, draft/error transactions are hard-deleted, voided transactions are left intact, reconciled transactions abort the operation with 409. ?cascade=true&hard=true: every linked transaction is hard-deleted (postings cascade), the document row is removed, and the image file is moved to .trash/ (never unlinked). Reconciled transactions always block hard cascades — unreconcile first.
+         * @description Default: soft delete (sets deleted_at). ?hard=true: hard delete (row removed; file moved to <uploads_dir>/.trash/<timestamp>__<basename>, NOT unlinked); requires no remaining links unless ?cascade=true is also set. ?cascade=true: linked posted transactions are soft-deleted, draft/error transactions are hard-deleted, already-deleted transactions are left intact, reconciled transactions abort the operation with 409. ?cascade=true&hard=true: every linked transaction is hard-deleted (postings cascade), the document row is removed, and the image file is moved to .trash/ (never unlinked). Reconciled transactions always block hard cascades — unreconcile first.
          */
         delete: {
             parameters: {
@@ -4846,12 +4855,9 @@ export interface components {
             payee: string | null;
             narration: string | null;
             /** @enum {string} */
-            status: "draft" | "posted" | "voided" | "reconciled" | "error";
-            /**
-             * Format: uuid
-             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
-             */
-            voided_by_id: string | null;
+            status: "draft" | "posted" | "reconciled" | "error";
+            /** Format: date-time */
+            deleted_at: string | null;
             /**
              * Format: uuid
              * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
@@ -5449,7 +5455,7 @@ export interface components {
             occurred_on: string;
             payee: string | null;
             /** @enum {string} */
-            status: "draft" | "posted" | "voided" | "reconciled" | "error";
+            status: "draft" | "posted" | "reconciled" | "error";
             total_minor: number;
             currency: string;
             /**
@@ -5945,7 +5951,7 @@ export interface components {
             occurred_on: string;
             payee: string | null;
             /** @enum {string} */
-            status: "draft" | "posted" | "voided" | "reconciled" | "error";
+            status: "draft" | "posted" | "reconciled" | "error";
             total_minor: number;
             currency: string;
             /**
@@ -5993,7 +5999,7 @@ export interface components {
             payee?: string;
             narration?: string;
             /** @enum {string} */
-            status?: "draft" | "posted" | "voided" | "reconciled" | "error";
+            status?: "draft" | "posted" | "reconciled" | "error";
             postings: components["schemas"]["NewPosting"][];
             document_ids?: string[];
             /**
@@ -6032,9 +6038,6 @@ export interface components {
                 [key: string]: unknown;
             };
         };
-        VoidTransactionRequest: {
-            reason?: string;
-        };
         NearDupReviewResponse: {
             /**
              * Format: uuid
@@ -6063,16 +6066,6 @@ export interface components {
                 id: string;
                 if_match: string;
                 patch: components["schemas"]["UpdateTransactionRequest"];
-            } | {
-                /** @enum {string} */
-                op: "void";
-                /**
-                 * Format: uuid
-                 * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
-                 */
-                id: string;
-                if_match: string;
-                reason?: string;
             } | {
                 /** @enum {string} */
                 op: "reconcile";

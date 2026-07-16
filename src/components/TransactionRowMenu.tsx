@@ -35,7 +35,6 @@ export default function TransactionRowMenu({
 
   const canHardDelete =
     rawStatus === 'posted' ||
-    rawStatus === 'voided' ||
     rawStatus === 'draft' ||
     rawStatus === 'error';
   const canUnreconcile = rawStatus === 'reconciled';

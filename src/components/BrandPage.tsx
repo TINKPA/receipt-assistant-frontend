@@ -462,7 +462,6 @@ function RecentRow({
   onSelectReceipt?: (receiptId: string) => void;
 }) {
   const badge = statusBadge(row.status);
-  const isVoided = row.status === 'voided';
   const merchantLabel = row.merchant_custom_name ?? row.merchant_canonical_name;
   const body = (
     <>
@@ -488,10 +487,7 @@ function RecentRow({
         </p>
       </div>
       <span
-        className={cn(
-          'font-display italic font-medium text-[16px] tnum',
-          isVoided && 'line-through opacity-60',
-        )}
+        className="font-display italic font-medium text-[16px] tnum"
       >
         {(row.total_minor / 100).toLocaleString(undefined, {
           style: 'currency',
