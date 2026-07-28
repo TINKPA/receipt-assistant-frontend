@@ -276,21 +276,33 @@ export function displayName(
 ): string {
   // Backward-compat: original signature was (place, fallback, userLangs).
   // Phase C of #79 adds an optional merchant arg ahead of fallback for
-  // brand-level overrides. Disambiguate based on the type of the
-  // second arg.
+  // brand-level overrides.
+  //
+  // Disambiguate on BOTH arg positions, not just the second. Keying only on
+  // "is arg2 an object" silently mis-read the modern form whenever the
+  // transaction had no merchant row: arg2 is then `null`, which is falsy, so
+  // the legacy branch ran, took `null` as the fallback, and discarded the
+  // payee sitting in arg3 — every merchant-less transaction rendered as
+  // "Unknown" in list surfaces while its detail page showed the payee fine.
+  // A string in arg3 can only ever be the modern `fallback` (the legacy form
+  // puts a `userLangs` array there), so it disambiguates the null-merchant
+  // case on its own.
   let merchant:
     | { custom_name?: string | null; canonical_name?: string | null }
     | null
     | undefined;
   let fallback: string | null;
   let userLangs: readonly ('zh' | 'en')[];
-  if (
-    fallbackOrMerchant &&
+  const arg2IsMerchant =
+    !!fallbackOrMerchant &&
     typeof fallbackOrMerchant === 'object' &&
-    !Array.isArray(fallbackOrMerchant)
-  ) {
-    merchant = fallbackOrMerchant;
-    fallback = typeof fallbackOrLangs === 'string' ? fallbackOrLangs : null;
+    !Array.isArray(fallbackOrMerchant);
+  const arg3IsFallback = typeof fallbackOrLangs === 'string';
+  if (arg2IsMerchant || arg3IsFallback) {
+    merchant = arg2IsMerchant
+      ? (fallbackOrMerchant as { custom_name?: string | null; canonical_name?: string | null })
+      : null;
+    fallback = arg3IsFallback ? (fallbackOrLangs as string) : null;
     userLangs = Array.isArray(fallbackOrLangs) ? fallbackOrLangs : userLangsArg;
   } else {
     merchant = null;
