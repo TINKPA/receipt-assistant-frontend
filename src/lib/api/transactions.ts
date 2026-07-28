@@ -8,6 +8,7 @@
  * `./core`, not from `./documents` / `./places`.
  */
 import type { Transaction } from '@/types';
+import type { components } from '@/lib/api-types';
 import {
   client,
   unwrap,
@@ -251,6 +252,29 @@ export async function unreconcileTransaction(
     },
   );
   return unwrap('unreconcileTransaction', data, error, response.status);
+}
+
+export type ListedTransactionItem = components['schemas']['ListedTransactionItem'];
+
+/** Transaction items carrying their own row `id`.
+ *
+ *  `GET /v1/transactions/{id}` nests the `TransactionItem` projection, which
+ *  has no `id` — so the owned-item join (`owned_item.transaction_item_id`)
+ *  cannot be made from the receipt payload alone. `/v1/items` returns the
+ *  `ListedTransactionItem` projection, which does carry `id`, and is the only
+ *  source for it. Note it is a *partial* serialization (no `product_id`,
+ *  `line_type`, `parent_line_no`, `tax_minor`, `effective_total_minor`): use
+ *  it for the `line_no → id` join only, never as an item source. */
+export async function listTransactionItems(opts: {
+  transaction_id: string;
+  limit?: number;
+}): Promise<ListedTransactionItem[]> {
+  const { data, error, response } = await client.GET('/v1/items', {
+    params: {
+      query: { transaction_id: opts.transaction_id, limit: opts.limit ?? 200 },
+    },
+  });
+  return unwrap('listTransactionItems', data, error, response.status).items;
 }
 
 /** Resolve a #134 branch-4 near-dup review flag (v1: dismiss only). */

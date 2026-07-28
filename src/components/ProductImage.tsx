@@ -30,9 +30,18 @@ interface ProductImageProps {
   itemClass: string | null | undefined;
   /** Optional className passthrough — applied to the outer wrapper. */
   className?: string;
+  /** Fallback-glyph font size in px. Set via inline style (so it cannot be
+   *  overridden through `className`) — large heroes pass a bigger value than
+   *  the default grid tile. */
+  glyphSize?: number;
 }
 
-export function ProductImage({ productId, itemClass, className }: ProductImageProps) {
+export function ProductImage({
+  productId,
+  itemClass,
+  className,
+  glyphSize = 34,
+}: ProductImageProps) {
   const [errored, setErrored] = useState(false);
 
   // No product to query OR a prior load errored → render the class
@@ -49,7 +58,7 @@ export function ProductImage({ productId, itemClass, className }: ProductImagePr
           justifyContent: 'center',
           width: '100%',
           height: '100%',
-          fontSize: '34px',
+          fontSize: `${glyphSize}px`,
           color: 'var(--color-ink-faint)',
         }}
       >

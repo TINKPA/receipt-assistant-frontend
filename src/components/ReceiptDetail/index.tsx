@@ -298,7 +298,11 @@ export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: Re
       )}
 
       {!isProcessing && items.length > 0 && (
-        <LineItemsCard items={items} currency={receipt.currency} />
+        <LineItemsCard
+          items={items}
+          currency={receipt.currency}
+          transactionId={receiptId}
+        />
       )}
 
       {receipt.narration && !isProcessing && (

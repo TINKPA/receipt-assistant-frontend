@@ -43,5 +43,11 @@ export const merchantLink = (merchantId: string) =>
 export const brandLink = (brandId: string) =>
   ({ to: '/brand/$brandId', params: { brandId } }) as const;
 
+export const productLink = (productId: string) =>
+  ({ to: '/product/$productId', params: { productId } }) as const;
+
+export const ownedItemLink = (ownedItemId: string) =>
+  ({ to: '/owned/$ownedItemId', params: { ownedItemId } }) as const;
+
 export const batchLink = (batchId: string) =>
   ({ to: '/batches/$batchId', params: { batchId } }) as const;

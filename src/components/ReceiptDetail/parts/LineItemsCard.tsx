@@ -1,6 +1,11 @@
 import { useMemo, useState } from 'react';
+import { Link } from '@tanstack/react-router';
+import { useQuery } from '@tanstack/react-query';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { cn } from '../../../lib/utils';
+import { listTransactionItems } from '../../../lib/api';
+import { listOwnedItemsExpanded } from '../../../lib/api/things';
+import { productLink, ownedItemLink } from '../../../lib/navLinks';
 import type { BackendTransactionItem } from '../../../lib/api';
 
 // Subtle background per item class — keeps the badge informative
@@ -39,6 +44,19 @@ function formatMinor(minor: number | null | undefined, currency: string): string
  *  distributed tax/tip/discount, else the printed line total. */
 function allInMinor(item: BackendTransactionItem): number {
   return item.effective_total_minor ?? item.line_total_minor;
+}
+
+/** A line "could plausibly have produced a physical instance": the backend
+ *  only ever mints owned_items off product-matched durable lines. Used to
+ *  decide whether the card looks up the Things join at all — a receipt with
+ *  no such line fires no extra request. */
+function couldHaveInstance(item: BackendTransactionItem): boolean {
+  return (
+    (item.line_type ?? 'product') === 'product' &&
+    item.product_id != null &&
+    item.product_id !== '' &&
+    item.item_class === 'durable'
+  );
 }
 
 type BreakdownRow = { label: string; minor: number | null; kind: 'base' | 'add' | 'sub' };
@@ -86,12 +104,16 @@ function ProductLine({
   isChild,
   open,
   onToggle,
+  ownedItemId,
 }: {
   item: BackendTransactionItem;
   currency: string;
   isChild: boolean;
   open: boolean;
   onToggle: (() => void) | null;
+  /** Resolved by the card (one shared lookup), null when this line produced
+   *  no tracked instance. */
+  ownedItemId: string | null;
 }) {
   const name = item.normalized_name?.trim() || item.raw_name;
   const cur = item.currency || currency;
@@ -101,6 +123,32 @@ function ProductLine({
   const unresolved = item.tags?.includes('variant-price-unresolved') ?? false;
   const showQty =
     item.unit_price_minor != null && item.quantity != null && item.quantity !== 1;
+
+  const productId = item.product_id;
+  const linkable = productId != null && productId !== '';
+
+  const nameClass = cn(
+    'truncate',
+    isChild ? 'text-[13px] text-[var(--color-ink-soft)]' : 'text-sm font-medium text-[var(--color-ink)]',
+  );
+
+  const amountNode = (
+    <span
+      className={cn(
+        'font-mono tracking-tight tnum',
+        isChild ? 'text-[12.5px] text-[var(--color-ink-soft)]' : 'text-[13.5px] font-semibold',
+      )}
+    >
+      {formatMinor(allInMinor(item), cur)}
+    </span>
+  );
+  const chevronNode =
+    disclosable &&
+    (open ? (
+      <ChevronDown size={15} className="text-[var(--color-ink-faint)]" />
+    ) : (
+      <ChevronRight size={15} className="text-[var(--color-ink-faint)]" />
+    ));
 
   const RowInner = (
     <div
@@ -121,16 +169,24 @@ function ProductLine({
               &#8627;
             </span>
           )}
-          <span
-            className={cn(
-              'truncate',
-              isChild
-                ? 'text-[13px] text-[var(--color-ink-soft)]'
-                : 'text-sm font-medium text-[var(--color-ink)]',
-            )}
-          >
-            {name}
-          </span>
+          {linkable ? (
+            <Link
+              {...productLink(productId!)}
+              data-testid={`line-item-product-${item.line_no}`}
+              className="inline-flex min-w-0 items-baseline gap-1 rounded-[6px] transition-colors hover:text-[var(--color-terracotta)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-terracotta)]"
+            >
+              <span className={cn(nameClass, 'min-w-0')}>{name}</span>
+              {/* Rest-state affordance. This is a touch layout, so hover
+                  alone would leave the link indistinguishable from an
+                  unlinked name — same arrow idiom as AmountHero /
+                  LocationCard. */}
+              <span aria-hidden="true" className="text-[var(--color-accent)]">
+                &rarr;
+              </span>
+            </Link>
+          ) : (
+            <span className={nameClass}>{name}</span>
+          )}
           {!isChild && <ItemClassPill item={item} />}
         </div>
 
@@ -150,30 +206,54 @@ function ProductLine({
             {item.quantity} &times; {formatMinor(item.unit_price_minor, cur)}
           </div>
         )}
+        {/* Secondary, subordinate entry point (#143): the name link is the
+            primary affordance, so this borrows the row's own micro-caption
+            treatment (cf. the `unresolved` line above) rather than the
+            bordered top-level nav pill. */}
+        {ownedItemId && (
+          <Link
+            {...ownedItemLink(ownedItemId)}
+            data-testid={`line-item-thing-${item.line_no}`}
+            className="mt-0.5 inline-flex items-baseline gap-1 rounded-[6px] text-[10px] uppercase tracking-[0.06em] text-[var(--color-ink-faint)] transition-colors hover:text-[var(--color-ink)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-terracotta)]"
+          >
+            View in Things
+            <span aria-hidden="true">&rarr;</span>
+          </Link>
+        )}
       </div>
 
-      <div className="flex items-center gap-1.5">
-        <span
-          className={cn(
-            'font-mono tracking-tight tnum',
-            isChild ? 'text-[12.5px] text-[var(--color-ink-soft)]' : 'text-[13.5px] font-semibold',
-          )}
+      {disclosable && linkable ? (
+        <button
+          type="button"
+          onClick={onToggle!}
+          aria-expanded={open}
+          // The visible content is just the amount, so an unqualified
+          // "Show breakdown" would announce N identical buttons with the
+          // price never read. Name the line it belongs to.
+          aria-label={`${open ? 'Hide' : 'Show'} breakdown for ${name}, ${formatMinor(allInMinor(item), cur)}`}
+          // Negative margins cancel the padding exactly, so the amount's
+          // right edge stays flush with the unlinked rows — while the tap
+          // target spans the row's full height instead of ~24px.
+          className="flex items-center gap-1.5 -my-3 -mx-2 rounded-[8px] px-2 py-3 transition-colors hover:bg-[var(--color-paper-deep)]/25 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-terracotta)]"
         >
-          {formatMinor(allInMinor(item), cur)}
-        </span>
-        {disclosable &&
-          (open ? (
-            <ChevronDown size={15} className="text-[var(--color-ink-faint)]" />
-          ) : (
-            <ChevronRight size={15} className="text-[var(--color-ink-faint)]" />
-          ))}
-      </div>
+          {amountNode}
+          {chevronNode}
+        </button>
+      ) : (
+        <div className="flex items-center gap-1.5">
+          {amountNode}
+          {chevronNode}
+        </div>
+      )}
     </div>
   );
 
   return (
     <li>
-      {disclosable ? (
+      {disclosable && !linkable ? (
+        // Unlinked rows keep the original full-row tap target: nothing in
+        // this row competes with the toggle. Linked rows can't use it —
+        // the name <Link> would be interactive content inside a <button>.
         <button
           type="button"
           onClick={onToggle}
@@ -228,10 +308,53 @@ function ProductLine({
 export function LineItemsCard({
   items,
   currency,
+  transactionId,
 }: {
   items: BackendTransactionItem[];
   currency: string;
+  /** Needed to resolve transaction_item ids for the Things join (#143);
+   *  the nested receipt payload does not carry them. */
+  transactionId: string;
 }) {
+  // #143 — the "View in Things" join, resolved once per card rather than
+  // once per line. A receipt with no product-matched durable line (the
+  // grocery / tax-only case) fires neither request.
+  const wantsThingsJoin = useMemo(() => items.some(couldHaveInstance), [items]);
+
+  // `/v1/transactions/{id}` nests the `TransactionItem` projection, which has
+  // no row `id` — so the id half of the join has to come from `/v1/items`.
+  const { data: listedItems = [] } = useQuery({
+    queryKey: ['transaction-items', transactionId],
+    queryFn: () => listTransactionItems({ transaction_id: transactionId }),
+    enabled: wantsThingsJoin,
+  });
+
+  // Reuse the Things grid's shared cache entry verbatim (same key, same
+  // args as the six existing call sites) so this is usually already warm
+  // and stays consistent with what /owned renders.
+  const { data: ownedRows = [] } = useQuery({
+    queryKey: ['owned-items', 'expanded'],
+    queryFn: () => listOwnedItemsExpanded({ include_retired: true }),
+    enabled: wantsThingsJoin,
+  });
+
+  /** line_no → owned_item.id, for lines that produced a tracked instance. */
+  const thingIdByLineNo = useMemo(() => {
+    const out = new Map<number, string>();
+    if (!wantsThingsJoin) return out;
+    const ownedByTxItem = new Map<string, string>();
+    for (const o of ownedRows) {
+      // null transaction_item_id means "not traceable to a line" — it must
+      // never match a line, so skip it rather than keying on null.
+      if (o.transaction_item_id) ownedByTxItem.set(o.transaction_item_id, o.id);
+    }
+    for (const li of listedItems) {
+      const ownedId = ownedByTxItem.get(li.id);
+      if (ownedId) out.set(li.line_no, ownedId);
+    }
+    return out;
+  }, [wantsThingsJoin, ownedRows, listedItems]);
+
   const { topLevel, childrenOf, adjustments } = useMemo(() => {
     const isProduct = (i: BackendTransactionItem) =>
       (i.line_type ?? 'product') === 'product';
@@ -324,6 +447,11 @@ export function LineItemsCard({
                       ? () => toggleLine(parent.line_no)
                       : null
                   }
+                  ownedItemId={
+                    couldHaveInstance(parent)
+                      ? (thingIdByLineNo.get(parent.line_no) ?? null)
+                      : null
+                  }
                 />
                 {kids.map((kid) => (
                   <div
@@ -338,6 +466,11 @@ export function LineItemsCard({
                       onToggle={
                         disclosableLineNos.has(kid.line_no)
                           ? () => toggleLine(kid.line_no)
+                          : null
+                      }
+                      ownedItemId={
+                        couldHaveInstance(kid)
+                          ? (thingIdByLineNo.get(kid.line_no) ?? null)
                           : null
                       }
                     />
