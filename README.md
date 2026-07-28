@@ -363,7 +363,8 @@ npm run api:types # Regenerate lib/api-types.ts from the backend OpenAPI spec
 ## Related
 
 - [receipt-assistant](https://github.com/TINKPA/receipt-assistant) — Backend: Express + Claude Code CLI + PostgreSQL double-entry ledger + Langfuse monitoring
-- [receipt-assistant-macos](https://github.com/TINKPA/receipt-assistant-macos) — Native macOS client (SwiftUI + swift-openapi-generator)
+
+This app is the **only** client. A SwiftUI macOS client was retired on 2026-07-28 and its repo deleted; a native app is not on the roadmap.
 
 ## License
 
