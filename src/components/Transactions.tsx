@@ -16,6 +16,7 @@ import { listTombstones, removeTombstone } from '../lib/tombstones';
 import { qk } from '../lib/queryKeys';
 import { useDebouncedValue } from '../lib/useDebouncedValue';
 import { cn } from '../lib/utils';
+import { formatMoney } from '../lib/money';
 import type { Transaction } from '../types';
 import { isProcessing as txIsProcessing, statusBadge } from '../lib/transactionStatus';
 import { MerchantIcon } from './MerchantIcon';
@@ -294,6 +295,14 @@ export default function Transactions({
     .filter((tx) => tx.amount < 0)
     .reduce((sum, tx) => sum + tx.amount, 0);
 
+  // Every row's `amount` is already in the workspace base currency (the
+  // backend converts foreign postings at the receipt's date, #184), so
+  // summing them is valid and one currency labels the whole ledger. Read
+  // it off the data rather than hard-coding '$' the way this file used
+  // to — that assumption is exactly what let ¥13,948.80 be displayed and
+  // summed as $13,948.80.
+  const baseCurrency = filteredTransactions[0]?.currency ?? 'USD';
+
   // Group by period: ISO weeks for the recent stretch (this/last week),
   // calendar months for everything older — keeps history calm instead of
   // one "week of … · 1 entry" banner per sparse receipt.
@@ -342,6 +351,7 @@ export default function Transactions({
     <div className="space-y-6">
       <Header
         total={Math.abs(totalExpenses)}
+        currency={baseCurrency}
         count={filteredTransactions.length}
         filters={filters}
         onMonthChange={(ym) =>
@@ -428,6 +438,7 @@ export default function Transactions({
             <PeriodGroup
               key={g.startIso}
               group={g}
+              currency={baseCurrency}
               onHardDelete={handleHardDeleteRequest}
               onUnreconcile={(id) => setUnreconcileTarget(id)}
             />
@@ -567,11 +578,13 @@ function Pill({
 
 function Header({
   total,
+  currency,
   count,
   filters,
   onMonthChange,
 }: {
   total: number;
+  currency: string;
   count: number;
   filters: FilterState;
   onMonthChange: (ym: string) => void;
@@ -600,7 +613,7 @@ function Header({
           TOTAL
         </p>
         <p className="mt-1 font-mono text-xl font-semibold tracking-tight tnum">
-          ${Math.round(total).toLocaleString()}
+          {formatMoney(Math.round(total) * 100, currency, { maximumFractionDigits: 0 })}
         </p>
         <p className="font-mono text-[10px] text-[var(--color-ink-muted)]">
           {count} {count === 1 ? 'entry' : 'entries'}
@@ -716,10 +729,12 @@ interface PeriodBucket {
 
 function PeriodGroup({
   group,
+  currency,
   onHardDelete,
   onUnreconcile,
 }: {
   group: PeriodBucket;
+  currency: string;
   onHardDelete: (id: string) => void;
   onUnreconcile: (id: string) => void;
 }) {
@@ -737,7 +752,9 @@ function PeriodGroup({
           {group.txs.length} {group.txs.length === 1 ? 'entry' : 'entries'}
         </span>
         <span className="ml-auto font-mono text-[11px] font-medium tnum text-[var(--color-ink-soft)]">
-          ${Math.round(Math.abs(group.total)).toLocaleString()}
+          {formatMoney(Math.round(Math.abs(group.total)) * 100, currency, {
+            maximumFractionDigits: 0,
+          })}
         </span>
       </div>
       <ul className="space-y-2">
@@ -861,14 +878,24 @@ function LedgerRow({
         );
       })()}
 
-      {/* Amount */}
+      {/* Amount. Base currency on top — that's the figure the header
+          total and the day subtotals are built from. A foreign-currency
+          receipt hangs its own printed amount underneath (#184); rows in
+          the base currency render exactly as before, no second line. */}
       <span
         className={cn(
-          'font-mono text-[14.5px] font-semibold tracking-tight tnum px-1',
+          'flex flex-col items-end px-1',
           badge?.strikethrough && 'line-through opacity-60',
         )}
       >
-        ${Math.abs(tx.amount).toFixed(2)}
+        <span className="font-mono text-[14.5px] font-semibold tracking-tight tnum">
+          {formatMoney(Math.abs(tx.amount) * 100, tx.currency)}
+        </span>
+        {tx.originalCurrency && tx.originalTotalMinor !== null && (
+          <span className="font-mono text-[11px] tnum text-[var(--color-ink-muted)]">
+            {formatMoney(Math.abs(tx.originalTotalMinor ?? 0), tx.originalCurrency)}
+          </span>
+        )}
       </span>
 
       {/* Row menu */}

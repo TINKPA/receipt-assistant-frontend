@@ -252,6 +252,10 @@ export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: Re
       <AmountHero
         amount={receipt.total}
         currency={receipt.currency}
+        originalTotalMinor={receipt.originalTotalMinor}
+        originalCurrency={receipt.originalCurrency}
+        fxRate={receipt.fxRate}
+        fxAsOfActual={receipt.fxAsOfActual}
         merchant={isProcessing ? 'Processing…' : merchantLabel}
         merchantBrandId={receipt.merchantBrandId}
         category={receipt.category as Category | null}
