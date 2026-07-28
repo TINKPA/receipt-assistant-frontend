@@ -90,9 +90,19 @@ export interface ReceiptView {
   occurred_on: string;
   payee: string | null;
   narration: string | null;
+  /** Workspace base currency — the unit `total_minor` / `total` are in,
+   *  and the only unit it is valid to sum across transactions (#184). */
   currency: string;
   total_minor: number;
   total: number;
+  /** The receipt's own total, in its own currency, when it differs from
+   *  the base currency. Null otherwise. Display only — never summed. */
+  originalTotalMinor: number | null;
+  originalCurrency: string | null;
+  /** Rate applied (original → base) and the publication date it came
+   *  from, for the disclosure line under a converted amount. */
+  fxRate: number | null;
+  fxAsOfActual: string | null;
   /** Category derived from the expense account's subtype / name. */
   category: string | null;
   paymentMethod: string | null;
@@ -389,26 +399,120 @@ function primaryDocument(t: BackendTransaction): BackendTransaction['documents']
 }
 
 /** Sum the absolute value of expense-side postings (positive minor). */
-function totalMinorFromPostings(postings: BackendPosting[]): { minor: number; currency: string } {
-  if (!postings || postings.length === 0) return { minor: 0, currency: 'USD' };
-  // Expense postings are positive; pick the largest-magnitude positive
-  // one as the "total" (matches a typical receipt that credits asset/
-  // liability for -X and debits expense for +X).
-  const positives = postings.filter((p) => p.amount_minor > 0);
-  if (positives.length === 0) {
-    // All-credit edge case — use absolute max.
-    const magnitudes = postings.map((p) => Math.abs(p.amount_minor));
-    const max = Math.max(...magnitudes);
-    return { minor: max, currency: postings[0].currency };
+/**
+ * The transaction's total, in BOTH the workspace base currency (what the
+ * app does arithmetic on) and the currency printed on the receipt (what
+ * the app shows next to it). #184.
+ *
+ * `amount_base_minor` is the field to sum. The backend converts every
+ * foreign-currency posting at the receipt's own date and persists the
+ * result there, so base amounts across different currencies and different
+ * months are directly addable. `amount_minor` is the receipt's own number
+ * and must never enter a sum — this used to be the field the whole UI
+ * read, which is why a ¥13,948.80 receipt contributed $13,948.80 to the
+ * monthly total.
+ *
+ * `original` is null whenever there is nothing to disclose: the receipt
+ * was already in the base currency, so base and original are the same
+ * number and showing it twice is noise.
+ */
+interface PostingsTotal {
+  /** Base-currency minor units. Safe to add across transactions. */
+  minor: number;
+  /** The base currency the `minor` figure is expressed in. */
+  currency: string;
+  /** As printed on the receipt, when that differs from the base. */
+  original: { minor: number; currency: string } | null;
+  /** Rate actually applied, for the disclosure line. */
+  fxRate: number | null;
+}
+
+function totalMinorFromPostings(
+  postings: BackendPosting[],
+  baseCurrency: string,
+): PostingsTotal {
+  const none: PostingsTotal = { minor: 0, currency: baseCurrency, original: null, fxRate: null };
+  if (!postings || postings.length === 0) return none;
+
+  // Expense postings are positive; the total is the positive side
+  // (matches a typical receipt that credits asset/liability for -X and
+  // debits expense for +X). Fall back to the absolute max on the
+  // all-credit edge case.
+  //
+  // `amount_base_minor` is nullable in the schema (the app fills it
+  // before commit), so fall back to `amount_minor` when it is missing —
+  // a same-currency posting has them equal anyway, and a foreign one
+  // that somehow got here unconverted is better shown at face value than
+  // as zero.
+  const base = (p: BackendPosting): number => p.amount_base_minor ?? p.amount_minor;
+  const positives = postings.filter((p) => base(p) > 0);
+  const chosen = positives.length > 0 ? positives : null;
+
+  const minor = chosen
+    ? chosen.reduce((s, p) => s + base(p), 0)
+    : Math.max(...postings.map((p) => Math.abs(base(p))));
+  const sourceLegs = chosen ?? [postings[0]];
+
+  // A posting carries the currency it was *recorded* in, so the base
+  // currency has to come from outside it (caller resolves it — see
+  // `baseCurrencyFromMetadata`). `fx_rate` being set is the signal that a
+  // conversion happened and there is an original worth disclosing.
+  const leg = sourceLegs[0];
+  const converted = leg.fx_rate !== null && leg.fx_rate !== undefined;
+
+  if (!converted) {
+    return { minor, currency: leg.currency, original: null, fxRate: null };
   }
-  const total = positives.reduce((s, p) => s + p.amount_minor, 0);
-  return { minor: total, currency: positives[0].currency };
+  const originalMinor = chosen
+    ? chosen.reduce((s, p) => s + p.amount_minor, 0)
+    : Math.max(...postings.map((p) => Math.abs(p.amount_minor)));
+  return {
+    minor,
+    currency: baseCurrency,
+    original: { minor: originalMinor, currency: leg.currency },
+    fxRate: Number(leg.fx_rate),
+  };
+}
+
+/**
+ * Workspace base currency, as recorded by the backend's FX pass (#184).
+ *
+ * `metadata.fx` is written whenever a transaction actually needed
+ * conversion, and it names the base currency it converted *into* — which
+ * is exactly the case where the frontend can't infer it from the posting.
+ * Everything else is already in the base currency, so the posting's own
+ * currency is the right answer and this fallback never fires for them.
+ */
+const DEFAULT_BASE_CURRENCY = 'USD';
+
+interface FxProvenance {
+  baseCurrency: string;
+  rate: number | null;
+  asOfActual: string | null;
+}
+
+function fxFromMetadata(md: Record<string, unknown>): FxProvenance | null {
+  const fx = md.fx;
+  if (!fx || typeof fx !== 'object') return null;
+  const rec = fx as Record<string, unknown>;
+  const rates = Array.isArray(rec.rates) ? (rec.rates as Record<string, unknown>[]) : [];
+  const first = rates[0];
+  return {
+    baseCurrency:
+      typeof rec.base_currency === 'string' ? rec.base_currency : DEFAULT_BASE_CURRENCY,
+    rate: typeof first?.rate === 'number' ? first.rate : null,
+    asOfActual: typeof first?.as_of_actual === 'string' ? first.as_of_actual : null,
+  };
 }
 
 export function toReceiptView(t: BackendTransaction, etag: string | null = null): ReceiptView {
-  const { minor, currency } = totalMinorFromPostings(t.postings);
+  const md = (t.metadata ?? {}) as Record<string, unknown>;
+  const fx = fxFromMetadata(md);
+  const { minor, currency, original, fxRate } = totalMinorFromPostings(
+    t.postings,
+    fx?.baseCurrency ?? DEFAULT_BASE_CURRENCY,
+  );
   const doc = primaryDocument(t);
-  const md = t.metadata ?? {};
   const paymentMethod =
     (typeof (md as Record<string, unknown>).payment_method === 'string'
       ? ((md as Record<string, unknown>).payment_method as string)
@@ -423,6 +527,12 @@ export function toReceiptView(t: BackendTransaction, etag: string | null = null)
     currency,
     total_minor: minor,
     total: minor / 100,
+    // #184 — what the receipt itself says, when that differs from the
+    // base-currency figure above. Null for same-currency receipts.
+    originalTotalMinor: original?.minor ?? null,
+    originalCurrency: original?.currency ?? null,
+    fxRate: fxRate ?? fx?.rate ?? null,
+    fxAsOfActual: fx?.asOfActual ?? null,
     category: categoryFromTxn(t),
     paymentMethod,
     documentId: doc?.id ?? null,
@@ -456,7 +566,14 @@ export function mapTransaction(t: BackendTransaction): Transaction {
     date: rv.occurred_on,
     paymentMethod: rv.paymentMethod ?? null,
     // UI convention: expenses render as negative; income stays positive.
+    // Always the BASE-currency figure — this is what every total, group
+    // subtotal and rollup in the app sums (#184).
     amount: classification.transactionType === 'income' ? rv.total : -rv.total,
+    currency: rv.currency,
+    originalTotalMinor: rv.originalTotalMinor,
+    originalCurrency: rv.originalCurrency,
+    fxRate: rv.fxRate,
+    fxAsOfActual: rv.fxAsOfActual,
     rawStatus: t.status,
     documentId: rv.documentId,
     documentKind: rv.documentKind,

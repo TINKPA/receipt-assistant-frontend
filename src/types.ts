@@ -41,7 +41,17 @@ export interface Transaction {
    *  best-effort). Used as a row-subtitle fallback in Apple-Wallet
    *  style when `paymentMethod` is unavailable. */
   placeCity?: string | null;
+  /** Workspace base currency. Expenses negative, income positive.
+   *  This is the ONLY amount that may be summed — see `src/lib/money.ts`. */
   amount: number;
+  currency: string;
+  /** #184 — the receipt's own total and currency when it differs from
+   *  the base currency, plus the rate used. Display only; null for the
+   *  same-currency case, which is almost every row. */
+  originalTotalMinor?: number | null;
+  originalCurrency?: string | null;
+  fxRate?: number | null;
+  fxAsOfActual?: string | null;
   /** Single source of truth for state. UI-visible status labels are derived
    *  via `statusBadge(rawStatus)` from `src/lib/transactionStatus.ts`. */
   rawStatus: RawTransactionStatus;
