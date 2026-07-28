@@ -27,6 +27,16 @@ export const qk = {
     all: ['batches'] as const,
     list: (args: { limit: number }) => ['batches', args] as const,
   },
+  /** Retryable failed uploads (#158/#141) — the only problem category a human
+   *  can resolve. Shared by the Uploads needs-attention panel and the Home
+   *  badge so both read one cache entry and a retry invalidates them together. */
+  ingestProblems: ['ingestProblems'] as const,
+  /** The non-retryable remainder, queried per group. Kept apart from the above
+   *  because these outnumber the actionable rows ~100:1 (a shared paginated
+   *  call buries them), and apart from each other because `limit` applies to
+   *  the combined set and would make each group's count wrong. */
+  ingestProblemsUnreadable: ['ingestProblems', 'unsupported'] as const,
+  ingestProblemsDupes: ['ingestProblems', 'dupes'] as const,
   /** A single ingest batch — shared by BatchDetail and the upload-job poller
    *  (ProcessingCardList) so both collapse onto one cache entry per batch. */
   batch: (id: string) => ['batch', id] as const,

@@ -74,6 +74,31 @@ export async function getIngest(id: string): Promise<BackendIngest> {
   return unwrap('getIngest', data, error, response.status);
 }
 
+/** Uploads that never became a transaction (#158) — `error`, `unsupported`,
+ *  `dedup`, `near_dup`. Every row carries `category` / `retryable` /
+ *  `dedup_of`, so callers pick an affordance from `category` and never parse
+ *  the `error` string. */
+export async function listIngestProblems(
+  opts: { cursor?: string; limit?: number; status?: string } = {},
+): Promise<{ items: BackendIngest[]; nextCursor: string | null }> {
+  const { data, error, response } = await client.GET('/v1/ingests/problems', {
+    params: { query: opts },
+  });
+  const body = unwrap('listIngestProblems', data, error, response.status);
+  return { items: body.items, nextCursor: body.next_cursor ?? null };
+}
+
+/** Re-run an ingest's original stored bytes. Server answers 202 with the
+ *  freshly-created ingest to poll — 409 if the row isn't retryable, 422 if the
+ *  source bytes are gone. Both surface through `unwrap` as ProblemDetails. */
+export async function retryIngest(id: string): Promise<BackendIngest> {
+  const { data, error, response } = await client.POST('/v1/ingests/{id}/retry', {
+    params: { path: { id } },
+  });
+  const body = unwrap('retryIngest', data, error, response.status);
+  return body.ingest;
+}
+
 /** Server-Sent Events subscription to a batch stream.
  *
  *  Emits `hello`, `job.started|done|error`, `batch.extracted`, and
