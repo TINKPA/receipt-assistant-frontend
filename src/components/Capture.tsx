@@ -108,6 +108,13 @@ export default function Capture({ onCancel, onComplete }: CaptureProps) {
   // drops back to the camera with the batch intact (count badge on shutter).
   const [reviewing, setReviewing] = useState(false);
 
+  // A blob URL only renders in an <img> when the blob is actually an image.
+  // PDFs and saved HTML receipts are valid uploads with no thumbnail, so the
+  // confirm stage shows them a document card rather than a broken image.
+  const isImageFile = (file: File) => file.type.startsWith('image/');
+  const documentKind = (file: File) =>
+    file.type === 'application/pdf' ? 'PDF document' : 'Saved web page';
+
   const addPending = (file: File) => {
     setPending((p) => [...p, { file, url: URL.createObjectURL(file) }]);
     setReviewing(true);
@@ -234,9 +241,26 @@ export default function Capture({ onCancel, onComplete }: CaptureProps) {
           </div>
 
           <div className="relative mt-4 flex-1 overflow-hidden rounded-[20px] border-[0.5px] border-[var(--color-rule-soft)] bg-[var(--color-ink)]">
-            <img src={last.url} alt="Captured receipt" className="absolute inset-0 h-full w-full object-contain" />
+            {isImageFile(last.file) ? (
+              <img src={last.url} alt="Captured receipt" className="absolute inset-0 h-full w-full object-contain" />
+            ) : (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-8 text-center">
+                <span aria-hidden="true" className="text-[34px] leading-none text-[var(--color-paper-fold)]">
+                  ▤
+                </span>
+                <p className="break-all font-display text-[15px] font-medium leading-snug text-[var(--color-paper)]">
+                  {last.file.name}
+                </p>
+                <p className="font-mono text-[8.5px] uppercase tracking-[0.14em] text-[var(--color-paper-fold)]">
+                  {documentKind(last.file)}
+                </p>
+              </div>
+            )}
             <span className="absolute bottom-3 left-3 rounded-full bg-[color:rgba(251,247,238,0.92)] px-2.5 py-1 font-mono text-[8.5px] tracking-[0.04em] text-[var(--color-ink-soft)]">
-              {totalKB} KB{pending.length > 1 ? ` · ${pending.length} shots` : ''}
+              {totalKB} KB
+              {pending.length > 1
+                ? ` · ${pending.length} ${pending.every((p) => isImageFile(p.file)) ? 'shots' : 'files'}`
+                : ''}
             </span>
           </div>
 
@@ -296,10 +320,16 @@ export default function Capture({ onCancel, onComplete }: CaptureProps) {
         className="hidden"
         onChange={handlePicked}
       />
+      {/* Saved web receipts (Square, Toast, most online-order confirmations) arrive
+          as an HTML page, so `text/html` belongs here alongside images and PDFs —
+          the backend classifies them as receipt_email and extracts them fine. The
+          bare `.html` extension is a deliberate duplicate: iOS Safari and Android
+          Chrome apply non-media MIME types in `accept` inconsistently and will grey
+          the files out without it. */}
       <input
         ref={galleryInputRef}
         type="file"
-        accept="image/*,application/pdf"
+        accept="image/*,application/pdf,text/html,.html"
         className="hidden"
         onChange={handlePicked}
       />
