@@ -1,11 +1,15 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
+import { useState } from 'react';
 import {
   listBatches,
   listTransactions,
+  listIngestProblems,
+  retryIngest,
   dismissNearDupFlag,
   extractProblemMessage,
   type BackendBatchSummary,
+  type BackendIngest,
 } from '../lib/api';
 import { cn } from '../lib/utils';
 import { qk } from '../lib/queryKeys';
@@ -73,6 +77,8 @@ export default function Batches({ onSelectBatch }: BatchesProps) {
           {items.length} batches · every file accountable
         </p>
       </header>
+
+      <NeedsAttentionSection />
 
       <NeedsReviewSection />
 
@@ -152,6 +158,299 @@ function BatchRow({
         {badge.label}
       </span>
     </button>
+  );
+}
+
+/** Human sentence for a problem ingest, chosen from `category` + `status` —
+ *  never by pattern-matching the raw `error`, which is agent prose. The raw
+ *  text is still shown underneath for `input_problem`, where it is the only
+ *  thing that tells the user what to fix. */
+function reasonFor(ing: BackendIngest): string {
+  if (ing.category === 'informational') {
+    return ing.status === 'near_dup'
+      ? 'Looks like a receipt you already filed.'
+      : 'Already in your ledger — the same file was uploaded before.';
+  }
+  if (ing.category === 'transient_actionable') {
+    const e = ing.error ?? '';
+    if (/401|credential|authentication/i.test(e)) return 'The extractor was logged out when this arrived.';
+    if (/timeout|timed out/i.test(e)) return 'Extraction timed out.';
+    if (/rate.?limit|429/i.test(e)) return 'Hit a rate limit.';
+    return 'Extraction failed on a temporary error.';
+  }
+  if (ing.status === 'unsupported') return "We couldn't read a receipt out of this file.";
+  return 'This file could not be processed.';
+}
+
+const ATTENTION_TONE: Record<string, { chip: string; dot: string; label: string }> = {
+  transient_actionable: {
+    chip: 'bg-[color:rgba(181,52,26,0.13)] text-[var(--color-accent)]',
+    dot: 'bg-[var(--color-accent)]',
+    label: 'failed',
+  },
+  input_problem: {
+    chip: 'bg-[color:rgba(63,85,99,0.13)] text-[var(--color-slate)]',
+    dot: 'bg-[var(--color-slate)]',
+    label: 'unreadable',
+  },
+  informational: {
+    chip: 'bg-[color:rgba(63,85,99,0.10)] text-[var(--color-slate)]',
+    dot: 'bg-[var(--color-slate)]',
+    label: 'duplicate',
+  },
+};
+
+/**
+ * Needs attention (#141) — uploads that never became a transaction.
+ * Backed by `GET /v1/ingests/problems` (#158): every row carries `category`,
+ * `retryable` and `dedup_of`, so the affordance comes off `category` and the
+ * `error` string is never parsed for control flow.
+ *
+ * Only `transient_actionable` rows get the alarm treatment, because they are
+ * the only ones a human can actually resolve — a receipt that failed on a 401
+ * or a timeout and just needs re-running. The other two categories are real
+ * but not summons: production currently carries ~102 `unsupported` and ~285
+ * `dedup` rows, and rendering those as "needs attention" would mean a red
+ * banner that never clears. They live behind quiet one-line expanders, and
+ * the panel drops its accent styling entirely when nothing is retryable.
+ *
+ * Fetched as two queries rather than one, because the actionable rows are the
+ * rare ones: a single `limit=100` call comes back 81% duplicates and buries
+ * them.
+ *
+ * The API has no dismiss field, so nothing here pretends to be dismissable —
+ * collapsing is the honest version of "stop nagging me".
+ */
+function NeedsAttentionSection() {
+  const queryClient = useQueryClient();
+  const [expanded, setExpanded] = useState<'none' | 'input' | 'dupes'>('none');
+  const [failed, setFailed] = useState<Record<string, string>>({});
+
+  const { data: actionableData } = useQuery({
+    queryKey: qk.ingestProblems,
+    queryFn: () => listIngestProblems({ status: 'error', limit: 50 }),
+  });
+  // Three queries, not one. `limit` applies to the combined result set, so a
+  // single call for all non-retryable statuses returns whichever rows happen
+  // to sort first and the per-group counts come out wrong — measured against
+  // production: one limit=200 call reported "23 unreadable / 177 duplicates"
+  // when the real figures are 102 and 285+.
+  const { data: unreadableData } = useQuery({
+    queryKey: qk.ingestProblemsUnreadable,
+    queryFn: () => listIngestProblems({ status: 'unsupported', limit: 100 }),
+  });
+  const { data: dupeData } = useQuery({
+    queryKey: qk.ingestProblemsDupes,
+    queryFn: () => listIngestProblems({ status: 'dedup,near_dup', limit: 100 }),
+  });
+
+  const retry = useMutation({
+    mutationFn: (id: string) => retryIngest(id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: qk.ingestProblems });
+      void queryClient.invalidateQueries({ queryKey: qk.batches.all });
+    },
+    onError: (err, id) => setFailed((f) => ({ ...f, [id]: extractProblemMessage(err) })),
+  });
+
+  const actionable = actionableData?.items ?? [];
+  const unreadable = unreadableData?.items ?? [];
+  const dupes = dupeData?.items ?? [];
+  // A non-null cursor means there are more than we asked for, so the count is
+  // a floor, not a total — say "100+" rather than assert a number we can't see.
+  const moreUnreadable = Boolean(unreadableData?.nextCursor);
+  const moreDupes = Boolean(dupeData?.nextCursor);
+  const restCount = unreadable.length + dupes.length;
+
+  if (actionable.length === 0 && restCount === 0) {
+    return (
+      <p className="px-1 font-display italic text-[12.5px] leading-snug text-[var(--color-ink-soft)]">
+        Nothing needs attention — every upload is accounted for.
+      </p>
+    );
+  }
+
+  const urgent = actionable.length > 0;
+
+  return (
+    <section
+      className={cn(
+        'rounded-[13px] border-[0.5px] px-3.5 py-3',
+        urgent
+          ? 'border-l-[3px] border-[color:rgba(181,52,26,0.35)] border-l-[var(--color-accent)] bg-[color:rgba(181,52,26,0.07)]'
+          : 'border-[var(--color-rule-soft)] bg-[var(--color-surface)]',
+      )}
+    >
+      <p
+        className={cn(
+          'flex items-center justify-between font-mono text-[8px] uppercase tracking-[0.16em]',
+          urgent ? 'text-[var(--color-accent)]' : 'text-[var(--color-ink-muted)]',
+        )}
+      >
+        <span>{urgent ? '⚠ Needs attention' : 'Uploads without a transaction'}</span>
+        <span>
+          {urgent
+            ? `${actionable.length} to retry`
+            : `${restCount}${moreUnreadable || moreDupes ? '+' : ''} filed away`}
+        </span>
+      </p>
+
+      {urgent && (
+        <div className="mt-2.5 space-y-2">
+          {actionable.map((ing) => (
+            <AttentionRow
+              key={ing.id}
+              ingest={ing}
+              onRetry={() => retry.mutate(ing.id)}
+              retrying={retry.isPending && retry.variables === ing.id}
+              error={failed[ing.id]}
+            />
+          ))}
+        </div>
+      )}
+
+      <div className="mt-2.5 space-y-1.5">
+        <CollapsedGroup
+          count={unreadable.length}
+          atLeast={moreUnreadable}
+          label={`file${unreadable.length === 1 ? '' : 's'} we couldn't read a receipt from`}
+          open={expanded === 'input'}
+          onToggle={() => setExpanded((e) => (e === 'input' ? 'none' : 'input'))}
+          rows={unreadable}
+        />
+        <CollapsedGroup
+          count={dupes.length}
+          atLeast={moreDupes}
+          label="already in your ledger"
+          open={expanded === 'dupes'}
+          onToggle={() => setExpanded((e) => (e === 'dupes' ? 'none' : 'dupes'))}
+          rows={dupes}
+        />
+      </div>
+    </section>
+  );
+}
+
+/** One quiet line that opens into its rows. Capped at 25 on screen with the
+ *  remainder stated, so a 285-row dedup history never silently truncates. */
+function CollapsedGroup({
+  count,
+  atLeast,
+  label,
+  open,
+  onToggle,
+  rows,
+}: {
+  count: number;
+  atLeast?: boolean;
+  label: string;
+  open: boolean;
+  onToggle: () => void;
+  rows: BackendIngest[];
+}) {
+  const CAP = 25;
+  if (count === 0) return null;
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className="flex w-full items-center justify-between rounded-[9px] px-1 py-1 text-left"
+      >
+        <span className="text-[11px] leading-snug text-[var(--color-ink-soft)]">
+          <span className="font-medium tabular-nums">
+            {count}
+            {atLeast ? '+' : ''}
+          </span>{' '}
+          {label}
+        </span>
+        <span aria-hidden="true" className="font-mono text-[10px] text-[var(--color-ink-muted)]">
+          {open ? '↑' : '›'}
+        </span>
+      </button>
+      {open && (
+        <div className="mt-1.5 space-y-1.5">
+          {rows.slice(0, CAP).map((ing) => (
+            <AttentionRow key={ing.id} ingest={ing} onRetry={() => {}} retrying={false} />
+          ))}
+          {count > CAP && (
+            <p className="px-1 font-mono text-[9px] uppercase tracking-[0.1em] text-[var(--color-ink-muted)]">
+              + {count - CAP} more not shown
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AttentionRow({
+  ingest,
+  onRetry,
+  retrying,
+  error,
+}: {
+  ingest: BackendIngest;
+  onRetry: () => void;
+  retrying: boolean;
+  error?: string;
+}) {
+  const tone = ATTENTION_TONE[ingest.category] ?? ATTENTION_TONE.input_problem;
+  return (
+    <div className="rounded-[10px] bg-[var(--color-surface)] px-3 py-2">
+      <div className="flex items-start justify-between gap-2">
+        <p className="min-w-0 flex-1 break-all font-display text-[13px] font-medium leading-tight">
+          {ingest.filename}
+        </p>
+        <span
+          className={cn(
+            'inline-flex flex-shrink-0 items-center gap-1.5 rounded-full px-2 py-[2px] font-mono text-[7.5px] uppercase tracking-[0.1em]',
+            tone.chip,
+          )}
+        >
+          <span className={cn('h-[5px] w-[5px] rounded-full', tone.dot)} />
+          {tone.label}
+        </span>
+      </div>
+
+      <p className="mt-0.5 text-[10.5px] leading-snug text-[var(--color-ink-soft)]">
+        {reasonFor(ingest)}{' '}
+        <span className="font-mono text-[9px] text-[var(--color-ink-muted)]">
+          · {fmtWhen(ingest.created_at)}
+        </span>
+      </p>
+
+      {/* The agent's own words — the only place that says what to fix. */}
+      {ingest.category === 'input_problem' && ingest.error && (
+        <p className="mt-1 line-clamp-3 font-mono text-[9px] leading-snug text-[var(--color-ink-muted)]">
+          {ingest.error}
+        </p>
+      )}
+
+      {error && <p className="mt-1 text-[10px] leading-snug text-[var(--color-stamp)]">{error}</p>}
+
+      <div className="mt-2 flex items-center gap-2">
+        {ingest.retryable && (
+          <button
+            type="button"
+            onClick={onRetry}
+            disabled={retrying}
+            className="rounded-full bg-[var(--color-ink)] px-3 py-1 font-mono text-[8.5px] uppercase tracking-[0.06em] text-[var(--color-paper)] disabled:opacity-50"
+          >
+            {retrying ? 'retrying…' : 'retry ↻'}
+          </button>
+        )}
+        {ingest.dedup_of && (
+          <Link
+            {...receiptLink(ingest.dedup_of)}
+            className="rounded-full border-[0.5px] border-[var(--color-rule)] px-3 py-1 font-mono text-[8.5px] uppercase tracking-[0.06em] text-[var(--color-ink-soft)]"
+          >
+            view the original ›
+          </Link>
+        )}
+      </div>
+    </div>
   );
 }
 

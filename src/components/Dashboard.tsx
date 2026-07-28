@@ -6,7 +6,7 @@ import {
   fetchSummary,
   classifyBackendCategory,
 } from '../lib/api';
-import { listBatches } from '../lib/api/ingest';
+import { listBatches, listIngestProblems } from '../lib/api/ingest';
 import type { Transaction } from '../types';
 import { isProcessing as txIsProcessing } from '../lib/transactionStatus';
 import { cn } from '../lib/utils';
@@ -86,6 +86,8 @@ export default function Dashboard({
     <div className="space-y-6">
       <GreetingRow now={monthRange.now} />
 
+      <NeedsAttentionBadge />
+
       <MonthCard
         now={monthRange.now}
         amount={totalSpent}
@@ -113,6 +115,48 @@ export default function Dashboard({
       />
       <RecentList items={transactions} loading={loading} />
     </div>
+  );
+}
+
+/* ── Needs-attention badge (#141) ─────────────────────────────── */
+
+/**
+ * A single slim line, only when an upload actually needs a human — a receipt
+ * that failed to extract used to vanish silently (the 2026-06-23 OAuth outage
+ * swallowed six of them for two days). Deep-links to the Uploads panel that
+ * owns the retry / view-duplicate affordances rather than duplicating them
+ * here; Home only says "there is something", never "here is how to fix it".
+ *
+ * Counts only rows the user can act on — a long dedup history is not a summons.
+ * Shares `qk.ingestProblems` with that panel, so a retry there updates this.
+ */
+function NeedsAttentionBadge() {
+  const { data } = useQuery({
+    queryKey: qk.ingestProblems,
+    queryFn: () => listIngestProblems({ status: 'error', limit: 50 }),
+  });
+  // Retryable failures only. `unsupported` and `dedup` are real but not
+  // actionable — production carries hundreds, and counting them here would
+  // pin a red banner to Home permanently.
+  const n = (data?.items ?? []).filter((i) => i.category === 'transient_actionable').length;
+  if (n === 0) return null;
+
+  return (
+    <Link
+      to="/batches"
+      className={cn(
+        'flex items-center justify-between rounded-[12px] px-3.5 py-2.5',
+        'border-[0.5px] border-l-[3px] border-[color:rgba(181,52,26,0.35)] border-l-[var(--color-accent)]',
+        'bg-[color:rgba(181,52,26,0.07)] transition-colors hover:bg-[color:rgba(181,52,26,0.11)]',
+      )}
+    >
+      <span className="font-mono text-[8.5px] uppercase tracking-[0.16em] text-[var(--color-accent)]">
+        ⚠ {n} upload{n === 1 ? '' : 's'} need{n === 1 ? 's' : ''} attention
+      </span>
+      <span aria-hidden="true" className="font-mono text-[11px] text-[var(--color-accent)]">
+        ›
+      </span>
+    </Link>
   );
 }
 

@@ -62,6 +62,9 @@ export type CreateTransactionRequest = components['schemas']['CreateTransactionR
 export type DocumentKind = components['schemas']['DocumentKind'];
 export type BatchStatus = components['schemas']['BatchStatus'];
 export type IngestStatus = components['schemas']['IngestStatus'];
+/** Why an upload didn't become a transaction, in the shape a client can
+ *  switch on. Drive affordances off this, never off the `error` string. */
+export type IngestCategory = components['schemas']['IngestCategory'];
 
 export async function fetchBackendBuildInfo(): Promise<BuildInfo> {
   const response = await fetch('/api/version');

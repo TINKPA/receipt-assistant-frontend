@@ -3363,7 +3363,7 @@ export interface paths {
                     cursor?: string;
                     limit?: number;
                     batch_id?: string;
-                    status?: components["schemas"]["IngestStatus"];
+                    status?: string;
                 };
                 header?: never;
                 path?: never;
@@ -3381,6 +3381,58 @@ export interface paths {
                             items: components["schemas"]["Ingest"][];
                             next_cursor: string | null;
                         };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/ingests/problems": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List uploads needing attention (#158) — every ingest that didn't reach `done` and isn't still in flight (default: error, unsupported, dedup, near_dup). Each row carries `category`, `retryable`, and `dedup_of` so a client can choose the right affordance without string-parsing `error`. */
+        get: {
+            parameters: {
+                query?: {
+                    cursor?: string;
+                    limit?: number;
+                    status?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Paginated problem ingests */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            items: components["schemas"]["Ingest"][];
+                            next_cursor: string | null;
+                        };
+                    };
+                };
+                /** @description Unknown status token in filter */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
                     };
                 };
             };
@@ -3434,6 +3486,72 @@ export interface paths {
         };
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/ingests/{id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry a failed/unsupported ingest (#158). Re-runs the original stored bytes through the batch pipeline (genuine-restore dedup branch — not suppressed). Returns 202 with the freshly-created ingest to poll. Only `error`/`unsupported` are retryable. */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Retry enqueued — poll the returned ingest / batch */
+                202: {
+                    headers: {
+                        Location?: string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RetryIngestResponse"];
+                    };
+                };
+                /** @description Ingest not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+                /** @description Ingest is not in a retryable state */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+                /** @description Stored source bytes missing */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
         delete?: never;
         options?: never;
         head?: never;
@@ -5578,6 +5696,8 @@ export interface components {
             /** @default [] */
             document_ids: string[];
         } | null;
+        /** @enum {string} */
+        IngestCategory: "ok" | "in_progress" | "transient_actionable" | "input_problem" | "informational";
         Ingest: {
             /**
              * Format: uuid
@@ -5601,6 +5721,13 @@ export interface components {
             classification: components["schemas"]["IngestClassification"];
             produced: components["schemas"]["IngestProduced"];
             error: string | null;
+            category: components["schemas"]["IngestCategory"];
+            retryable: boolean;
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            dedup_of: string | null;
             /** Format: date-time */
             created_at: string;
             /** Format: date-time */
@@ -5671,6 +5798,20 @@ export interface components {
                 filename: string;
                 mime_type: string | null;
             }[];
+            poll: string;
+        };
+        RetryIngestResponse: {
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            retried_ingest_id: string;
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            batch_id: string;
+            ingest: components["schemas"]["Ingest"];
             poll: string;
         };
         /**
