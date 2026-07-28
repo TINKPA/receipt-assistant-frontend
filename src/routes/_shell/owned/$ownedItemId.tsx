@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { listOwnedItemsExpanded, patchOwnedItem } from '../../../lib/api/things';
-import { daysHeld, perDay, ownedStatus, classGlyph } from '../../../lib/things';
+import { daysHeld, perDay, ownedStatus } from '../../../lib/things';
+import { ProductImage } from '../../../components/ProductImage';
 import { useBack } from '../../../lib/useBack';
 import { cn } from '../../../lib/utils';
 
@@ -75,7 +76,7 @@ function OwnedDetailRoute() {
           onClick={back}
           className="font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--color-accent)]"
         >
-          ← Things
+          ← Back
         </button>
         <span className="font-mono text-[8.5px] uppercase tracking-[0.14em] text-[var(--color-ink-muted)]">
           daily cost · amortization
@@ -84,10 +85,10 @@ function OwnedDetailRoute() {
 
       {/* hero */}
       <div className="relative flex aspect-[5/3] items-center justify-center overflow-hidden rounded-[18px] border-[0.5px] border-[var(--color-rule-soft)] bg-[var(--color-paper-deep)]">
-        <span aria-hidden="true" className="text-[64px] text-[var(--color-ink-faint)]">
-          {classGlyph(item.item_class)}
-        </span>
-        <span className="absolute bottom-3 left-3 rounded-full bg-[color:rgba(251,247,238,0.92)] px-2.5 py-1 font-mono text-[8.5px] text-[var(--color-ink-soft)]">
+        {/* glyphSize 64 preserves the pre-#142 hero glyph scale — ProductImage
+            defaults to the 34px grid-tile size. */}
+        <ProductImage productId={item.product_id} itemClass={item.item_class} glyphSize={64} />
+        <span className="absolute bottom-3 left-3 rounded-full border-[0.5px] border-[var(--color-rule-soft)] bg-[color:rgba(251,247,238,0.92)] px-2.5 py-1 font-mono text-[8.5px] text-[var(--color-ink-soft)]">
           ● {status}
           {item.acquired_on ? ` · since ${item.acquired_on}` : ''}
         </span>
