@@ -401,7 +401,6 @@ function primaryDocument(t: BackendTransaction): BackendTransaction['documents']
   return img ?? t.documents[0];
 }
 
-/** Sum the absolute value of expense-side postings (positive minor). */
 /**
  * The transaction's total, in BOTH the workspace base currency (what the
  * app does arithmetic on) and the currency printed on the receipt (what
@@ -454,16 +453,14 @@ function totalMinorFromPostings(
   const minor = chosen
     ? chosen.reduce((s, p) => s + base(p), 0)
     : Math.max(...postings.map((p) => Math.abs(base(p))));
-  const sourceLegs = chosen ?? [postings[0]];
 
   // A posting carries the currency it was *recorded* in, so the base
   // currency has to come from outside it (caller resolves it — see
-  // `baseCurrencyFromMetadata`). `fx_rate` being set is the signal that a
+  // `fxFromMetadata`). `fx_rate` being set is the signal that a
   // conversion happened and there is an original worth disclosing.
-  const leg = sourceLegs[0];
-  const converted = leg.fx_rate !== null && leg.fx_rate !== undefined;
+  const leg = (chosen ?? postings)[0];
 
-  if (!converted) {
+  if (leg.fx_rate == null) {
     return { minor, currency: leg.currency, original: null, fxRate: null };
   }
   const originalMinor = chosen
@@ -516,10 +513,7 @@ export function toReceiptView(t: BackendTransaction, etag: string | null = null)
     fx?.baseCurrency ?? DEFAULT_BASE_CURRENCY,
   );
   const doc = primaryDocument(t);
-  const paymentMethod =
-    (typeof (md as Record<string, unknown>).payment_method === 'string'
-      ? ((md as Record<string, unknown>).payment_method as string)
-      : null) ?? null;
+  const paymentMethod = typeof md.payment_method === 'string' ? md.payment_method : null;
   return {
     id: t.id,
     status: t.status,
