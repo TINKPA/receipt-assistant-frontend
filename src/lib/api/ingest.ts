@@ -99,6 +99,16 @@ export async function retryIngest(id: string): Promise<BackendIngest> {
   return body.ingest;
 }
 
+/** Decode one SSE frame's `data` field. Frames carry JSON in practice, but
+ *  a bare string is legal on the wire, so fall back to the raw text. */
+function parseEventPayload(data: string): unknown {
+  try {
+    return JSON.parse(data);
+  } catch {
+    return data;
+  }
+}
+
 /** Server-Sent Events subscription to a batch stream.
  *
  *  Emits `hello`, `job.started|done|error`, `batch.extracted`, and
@@ -129,24 +139,12 @@ export function subscribeToBatch(
   for (const name of named) {
     es.addEventListener(name, (e) => {
       const me = e as MessageEvent;
-      let payload: unknown = me.data;
-      try {
-        payload = JSON.parse(me.data);
-      } catch {
-        /* keep as string */
-      }
-      onEvent(name, payload);
+      onEvent(name, parseEventPayload(me.data));
     });
   }
   es.onmessage = (me) => {
     // Frames without an explicit `event:` line land here.
-    let payload: unknown = me.data;
-    try {
-      payload = JSON.parse(me.data);
-    } catch {
-      /* keep as string */
-    }
-    onEvent('message', payload);
+    onEvent('message', parseEventPayload(me.data));
   };
   es.onerror = (e) => {
     onError?.(e);

@@ -55,7 +55,7 @@ interface TransactionsProps {
 }
 
 interface TombstoneRow {
-  status: 'loading' | 'present' | 'gone';
+  status: 'present' | 'gone';
   id: string;
   doc?: BackendDocument;
 }
@@ -414,49 +414,69 @@ export default function Transactions({
         onSelectTransaction={onSelectReceipt}
       />
 
-      {loading ? (
-        <EmptyState>
-          <p className="font-display italic text-lg text-[var(--color-ink-muted)]">loading…</p>
-        </EmptyState>
-      ) : error ? (
-        <EmptyState>
-          <p className="text-[var(--color-stamp)]">{error}</p>
-        </EmptyState>
-      ) : filteredTransactions.length === 0 ? (
-        <EmptyState>
-          <p className="font-display italic text-[var(--color-ink-muted)] text-lg">
-            {filters.datePreset === 'month'
-              ? `Nothing in ${monthLabelLong(filters.month || currentMonthYM())}.`
-              : hasActiveFilter
-                ? 'No entries match the current filters.'
-                : 'No entries yet — capture your first receipt.'}
-          </p>
-        </EmptyState>
-      ) : activeSort.sort === 'occurred_on' ? (
-        <div className="space-y-7">
-          {groups.map((g) => (
-            <PeriodGroup
-              key={g.startIso}
-              group={g}
-              currency={baseCurrency}
-              onHardDelete={handleHardDeleteRequest}
-              onUnreconcile={(id) => setUnreconcileTarget(id)}
-            />
-          ))}
-        </div>
-      ) : (
-        <ul className="space-y-2">
-          {filteredTransactions.map((tx) => (
-            <li key={tx.id}>
-              <LedgerRow
-                tx={tx}
-                onHardDelete={handleHardDeleteRequest}
-                onUnreconcile={(id) => setUnreconcileTarget(id)}
-              />
-            </li>
-          ))}
-        </ul>
-      )}
+      {(() => {
+        // Five mutually exclusive body states, as early returns. The
+        // grouped rendering only applies to the occurred_on sort; every
+        // other sort falls through to the flat list.
+        if (loading) {
+          return (
+            <EmptyState>
+              <p className="font-display italic text-lg text-[var(--color-ink-muted)]">loading…</p>
+            </EmptyState>
+          );
+        }
+        if (error) {
+          return (
+            <EmptyState>
+              <p className="text-[var(--color-stamp)]">{error}</p>
+            </EmptyState>
+          );
+        }
+        if (filteredTransactions.length === 0) {
+          const emptyMessage = (): string => {
+            if (filters.datePreset === 'month') {
+              return `Nothing in ${monthLabelLong(filters.month || currentMonthYM())}.`;
+            }
+            if (hasActiveFilter) return 'No entries match the current filters.';
+            return 'No entries yet — capture your first receipt.';
+          };
+          return (
+            <EmptyState>
+              <p className="font-display italic text-[var(--color-ink-muted)] text-lg">
+                {emptyMessage()}
+              </p>
+            </EmptyState>
+          );
+        }
+        if (activeSort.sort === 'occurred_on') {
+          return (
+            <div className="space-y-7">
+              {groups.map((g) => (
+                <PeriodGroup
+                  key={g.startIso}
+                  group={g}
+                  currency={baseCurrency}
+                  onHardDelete={handleHardDeleteRequest}
+                  onUnreconcile={(id) => setUnreconcileTarget(id)}
+                />
+              ))}
+            </div>
+          );
+        }
+        return (
+          <ul className="space-y-2">
+            {filteredTransactions.map((tx) => (
+              <li key={tx.id}>
+                <LedgerRow
+                  tx={tx}
+                  onHardDelete={handleHardDeleteRequest}
+                  onUnreconcile={(id) => setUnreconcileTarget(id)}
+                />
+              </li>
+            ))}
+          </ul>
+        );
+      })()}
 
       {/* Infinite-scroll sentinel: when it scrolls into view (or near it,
           per rootMargin) the next page loads and appends. Only present while

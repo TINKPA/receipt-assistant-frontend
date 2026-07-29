@@ -104,4 +104,3 @@ export async function fetchSummary(opts: {
     total_spent: it.total_minor / 100,
   }));
 }
-export type SpendingSummary = LegacySummaryItem;

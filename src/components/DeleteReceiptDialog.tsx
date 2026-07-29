@@ -199,9 +199,8 @@ export default function DeleteReceiptDialog({
 
   const renderOptions = () => (
     <div className="space-y-3">
-      {(['soft', 'cascade-soft', 'cascade-hard'] as const)
-        .filter(() => documentId !== null)
-        .map((m) => (
+      {documentId !== null &&
+        (['soft', 'cascade-soft', 'cascade-hard'] as const).map((m) => (
           <OptionRow
             key={m}
             mode={m}
@@ -506,6 +505,20 @@ interface OptionRowProps {
   disabledReason?: string;
 }
 
+/** Border treatment for an option row. The hard tier carries the cardinal
+ *  outline at two strengths (rest / selected); every other tier uses the
+ *  neutral rule. Kept out of the JSX so the 2x2 reads as two lines. */
+function optionBorderClass(tier: 'safe' | 'cascade' | 'hard', selected: boolean): string {
+  if (tier === 'hard') {
+    return selected
+      ? 'border-[color:rgba(181,52,26,0.6)]'
+      : 'border-[color:rgba(181,52,26,0.35)] hover:border-[color:rgba(181,52,26,0.6)]';
+  }
+  return selected
+    ? 'border-[var(--color-ink-muted)]'
+    : 'border-[var(--color-rule-soft)] hover:border-[var(--color-rule)]';
+}
+
 function OptionRow({ mode, selected, onSelect, disabledReason }: OptionRowProps) {
   const { glyph, tier, tag, title, help } = OPTION_DESCRIPTIONS[mode];
   const disabled = disabledReason !== undefined;
@@ -516,13 +529,7 @@ function OptionRow({ mode, selected, onSelect, disabledReason }: OptionRowProps)
       disabled={disabled}
       className={cn(
         'flex w-full items-start gap-3 rounded-[13px] border-[0.5px] bg-[var(--color-surface)] px-3 py-3 text-left transition-colors',
-        selected
-          ? tier === 'hard'
-            ? 'border-[color:rgba(181,52,26,0.6)]'
-            : 'border-[var(--color-ink-muted)]'
-          : tier === 'hard'
-            ? 'border-[color:rgba(181,52,26,0.35)] hover:border-[color:rgba(181,52,26,0.6)]'
-            : 'border-[var(--color-rule-soft)] hover:border-[var(--color-rule)]',
+        optionBorderClass(tier, selected),
         disabled && 'cursor-not-allowed opacity-40',
       )}
     >
@@ -550,7 +557,7 @@ function OptionRow({ mode, selected, onSelect, disabledReason }: OptionRowProps)
         <span className="mt-1 block text-[10.5px] leading-snug text-[var(--color-ink-muted)]">
           {help}
         </span>
-        {disabled && disabledReason && (
+        {disabledReason && (
           <span className="mt-1.5 block font-mono text-[9px] text-[var(--color-accent)]">
             ⚿ {disabledReason}
           </span>

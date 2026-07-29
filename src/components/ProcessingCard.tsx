@@ -45,6 +45,15 @@ export default function ProcessingCardList({
   );
 }
 
+/** Title tint per terminal state. A fixed map, so it lives at module scope
+ *  rather than being rebuilt on every render. */
+const TITLE_CLASS: Record<ProcessingItem['status'], string> = {
+  processing: 'text-[var(--color-terracotta-deep)]',
+  done: 'text-[var(--color-sage)]',
+  duplicate: 'text-[var(--color-ink)]',
+  error: 'text-[var(--color-stamp)]',
+};
+
 function ProcessingCard({
   item,
   onDismiss,
@@ -109,13 +118,7 @@ function ProcessingCard({
         <p
           className={cn(
             'text-[15px] font-semibold leading-snug',
-            item.status === 'error'
-              ? 'text-[var(--color-stamp)]'
-              : item.status === 'done'
-                ? 'text-[var(--color-sage)]'
-                : item.status === 'duplicate'
-                  ? 'text-[var(--color-ink)]'
-                  : 'text-[var(--color-terracotta-deep)]',
+            TITLE_CLASS[item.status],
           )}
         >
           {processing && 'Reading your receipt…'}

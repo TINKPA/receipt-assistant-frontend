@@ -362,11 +362,11 @@ export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: Re
                 tone="success"
                 onDismiss={() => setReExtractState({ kind: 'idle' })}
               >
-                {reExtractState.changedKeys.length === 0 && !reExtractState.ocrChanged
-                  ? 'No changes — the agent produced the same output.'
-                  : reExtractState.changedKeys.length === 0
+                {reExtractState.changedKeys.length > 0
+                  ? `Updated ${reExtractState.changedKeys.join(', ')}.`
+                  : reExtractState.ocrChanged
                     ? 'OCR text refreshed; no transaction fields changed.'
-                    : `Updated ${reExtractState.changedKeys.join(', ')}.`}
+                    : 'No changes — the agent produced the same output.'}
               </ReExtractBanner>
             )}
             {reExtractState.kind === 'error' && (

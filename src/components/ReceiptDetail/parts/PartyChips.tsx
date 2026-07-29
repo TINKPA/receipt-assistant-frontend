@@ -125,11 +125,16 @@ function PartiesSheet({
 }) {
   const txLevel = parties.filter((p) => p.transaction_item_id == null);
   const itemLevel = parties.filter((p) => p.transaction_item_id != null);
+  // `indexOf` returns -1 for a role the design doesn't enumerate; +1 turns
+  // that into 0, which `||` then replaces with 99 so unknown roles sort
+  // last instead of first. Named so the trick is read once, not per use.
+  const rank = (role: string) => {
+    const i = ROLE_ORDER.indexOf(role);
+    return i === -1 ? 99 : i + 1;
+  };
   const byRole = (rows: TransactionParty[]) =>
     [...rows].sort(
-      (a, b) =>
-        (ROLE_ORDER.indexOf(a.role) + 1 || 99) - (ROLE_ORDER.indexOf(b.role) + 1 || 99) ||
-        a.display_name.localeCompare(b.display_name),
+      (a, b) => rank(a.role) - rank(b.role) || a.display_name.localeCompare(b.display_name),
     );
 
   return (

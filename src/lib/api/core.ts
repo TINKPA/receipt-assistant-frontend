@@ -305,22 +305,24 @@ export function displayName(
     | null
     | undefined;
   let fallback: string | null;
-  let userLangs: readonly ('zh' | 'en')[];
   const arg2IsMerchant =
     !!fallbackOrMerchant &&
     typeof fallbackOrMerchant === 'object' &&
     !Array.isArray(fallbackOrMerchant);
   const arg3IsFallback = typeof fallbackOrLangs === 'string';
+  // Independent of the disambiguation below: the languages only ever come
+  // from arg3 (legacy call form) or the defaulted arg4, never from arg2.
+  const userLangs: readonly ('zh' | 'en')[] = Array.isArray(fallbackOrLangs)
+    ? fallbackOrLangs
+    : userLangsArg;
   if (arg2IsMerchant || arg3IsFallback) {
     merchant = arg2IsMerchant
       ? (fallbackOrMerchant as { custom_name?: string | null; canonical_name?: string | null })
       : null;
     fallback = arg3IsFallback ? (fallbackOrLangs as string) : null;
-    userLangs = Array.isArray(fallbackOrLangs) ? fallbackOrLangs : userLangsArg;
   } else {
     merchant = null;
     fallback = typeof fallbackOrMerchant === 'string' ? fallbackOrMerchant : null;
-    userLangs = Array.isArray(fallbackOrLangs) ? fallbackOrLangs : userLangsArg;
   }
 
   // Layer-3 cascade per #79: per-place override → brand-level override
@@ -513,6 +515,7 @@ export function toReceiptView(t: BackendTransaction, etag: string | null = null)
     fx?.baseCurrency ?? DEFAULT_BASE_CURRENCY,
   );
   const doc = primaryDocument(t);
+  const merchant = merchantFromTxn(t);
   const paymentMethod = typeof md.payment_method === 'string' ? md.payment_method : null;
   return {
     id: t.id,
@@ -537,8 +540,8 @@ export function toReceiptView(t: BackendTransaction, etag: string | null = null)
     documents: t.documents,
     postings: t.postings,
     place: t.place ?? null,
-    merchantBrandId: merchantFromTxn(t)?.brand_id ?? null,
-    merchantId: merchantFromTxn(t)?.id ?? null,
+    merchantBrandId: merchant?.brand_id ?? null,
+    merchantId: merchant?.id ?? null,
     items: t.items ?? [],
     etag,
   };
