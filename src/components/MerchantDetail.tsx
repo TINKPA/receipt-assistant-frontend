@@ -223,7 +223,7 @@ export default function MerchantDetail({ merchantId, onBack, onSelectReceipt, on
             }
             className={cn(
               'block text-left font-display italic font-medium text-3xl sm:text-4xl leading-tight tracking-tight transition-colors',
-              m.photo_url ? 'text-white hover:text-white/80' : 'text-white hover:text-white/80',
+              'text-white hover:text-white/80',
             )}
           >
             {m.custom_name ?? m.canonical_name}
@@ -241,14 +241,15 @@ export default function MerchantDetail({ merchantId, onBack, onSelectReceipt, on
             const override = place.custom_name ?? place.custom_name_zh ?? null;
             const zh = override ?? pickCjk(place.display_name_zh);
             if (zh && zh === m.canonical_name) return null;
+            // Provenance label: a user override wins, then the two OCR
+            // sources, then Google's own localized name.
             const source = zh
-              ? override
-                ? 'you'
-                : place.display_name_zh_source === 'photo_ocr'
-                  ? 'storefront'
-                  : place.display_name_zh_source === 'receipt_ocr'
-                    ? 'receipt'
-                    : 'Google'
+              ? (() => {
+                  if (override) return 'you';
+                  if (place.display_name_zh_source === 'photo_ocr') return 'storefront';
+                  if (place.display_name_zh_source === 'receipt_ocr') return 'receipt';
+                  return 'Google';
+                })()
               : null;
             return (
               <button

@@ -16,7 +16,6 @@ import {
   genIdempotencyKey,
   mapTransaction,
   toReceiptView,
-  extractProblemMessage,
 } from './core';
 import type {
   BackendTransaction,
@@ -204,13 +203,7 @@ export async function deleteTransaction(id: string, etag: string): Promise<void>
       header: { 'If-Match': etag },
     },
   });
-  if (error) {
-    const e = new Error(
-      `deleteTransaction failed (${response.status}): ${extractProblemMessage(error)}`,
-    );
-    (e as Error & { problem?: unknown }).problem = error;
-    throw e;
-  }
+  if (error) unwrap('deleteTransaction', undefined, error, response.status);
 }
 
 /** Force a hard (physical) delete of a transaction — postings +
@@ -225,13 +218,7 @@ export async function hardDeleteTransaction(id: string, etag: string): Promise<v
       query: { hard: 'true' },
     },
   });
-  if (error) {
-    const e = new Error(
-      `hardDeleteTransaction failed (${response.status}): ${extractProblemMessage(error)}`,
-    );
-    (e as Error & { problem?: unknown }).problem = error;
-    throw e;
-  }
+  if (error) unwrap('hardDeleteTransaction', undefined, error, response.status);
 }
 
 /** Pure state flip `reconciled → posted`. Required before any hard

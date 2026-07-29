@@ -149,7 +149,6 @@ src/
 ├── routes/                # TanStack Router file-based routes (_shell layout, /transactions, /receipt/$id, /brand/$id, /add, …)
 ├── routeTree.gen.ts       # Generated route tree (do not edit by hand)
 ├── types.ts               # UI Transaction + Category types
-├── constants.ts           # Static fixtures for as-yet-unwired sections
 ├── index.css              # Tailwind v4 @theme tokens (Variant B — Soft / Organic)
 ├── lib/
 │   ├── api.ts             # ★ Type-safe backend client (openapi-fetch wrapper)

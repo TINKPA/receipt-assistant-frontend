@@ -273,7 +273,7 @@ function ProductLine({
         <div
           className={cn(
             'bg-[var(--color-paper)] border-t border-[var(--color-rule-soft)] px-5 py-2.5',
-            isChild ? 'pl-11' : '',
+            isChild && 'pl-11',
           )}
         >
           <dl className="space-y-1">

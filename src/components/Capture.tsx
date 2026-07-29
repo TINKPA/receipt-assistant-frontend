@@ -75,14 +75,16 @@ export default function Capture({ onCancel, onComplete }: CaptureProps) {
         setCamera({ kind: 'streaming' });
       } catch (err: unknown) {
         if (cancelled) return;
-        const message =
-          err instanceof Error
-            ? err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError'
-              ? 'Camera permission denied.'
-              : err.name === 'NotFoundError' || err.name === 'OverconstrainedError'
-                ? 'No camera available on this device.'
-                : err.message
-            : 'Camera unavailable.';
+        let message = 'Camera unavailable.';
+        if (err instanceof Error) {
+          if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+            message = 'Camera permission denied.';
+          } else if (err.name === 'NotFoundError' || err.name === 'OverconstrainedError') {
+            message = 'No camera available on this device.';
+          } else {
+            message = err.message;
+          }
+        }
         setCamera({ kind: 'denied', message });
       }
     };
@@ -427,17 +429,13 @@ export default function Capture({ onCancel, onComplete }: CaptureProps) {
                   'text-[var(--color-terracotta)]',
             )}
           >
-            {upload.kind === 'uploading'
-              ? `uploading ${upload.filename}…`
-              : upload.kind === 'error'
-                ? 'oops — try again ↓'
-                : camera.kind === 'requesting'
-                  ? 'opening the camera…'
-                  : showCameraFallbackHint
-                    ? 'tap to use system camera or photos'
-                    : isStreaming
-                      ? 'center it gently'
-                      : 'center it gently'}
+            {(() => {
+              if (upload.kind === 'uploading') return `uploading ${upload.filename}…`;
+              if (upload.kind === 'error') return 'oops — try again ↓';
+              if (camera.kind === 'requesting') return 'opening the camera…';
+              if (showCameraFallbackHint) return 'tap to use system camera or photos';
+              return 'center it gently';
+            })()}
           </p>
         </div>
       </div>

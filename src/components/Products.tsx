@@ -46,9 +46,8 @@ const CLASS_BADGE: Record<ProductClass, string> = {
   other: 'bg-stone-100 text-stone-700',
 };
 
-function formatMinor(minor: number, currency: string = 'USD'): string {
-  const sym = currency === 'USD' ? '$' : '';
-  return `${sym}${(minor / 100).toFixed(2)}`;
+function formatMinor(minor: number): string {
+  return `$${(minor / 100).toFixed(2)}`;
 }
 
 interface ProductsProps {

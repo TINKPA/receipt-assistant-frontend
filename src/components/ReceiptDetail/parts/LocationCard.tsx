@@ -2,6 +2,27 @@ import { Link } from '@tanstack/react-router';
 import { merchantLink } from '../../../lib/navLinks';
 import type { ReceiptView } from '../../../lib/api';
 
+/** Google geocoder `primary_type` values that mean "this place_id resolved
+ *  to a bare address, not a business" — see `trustPlaceId` below. Module
+ *  scope, like ITEM_CLASS_STYLE in LineItemsCard and ROLE_DOT in
+ *  PartyChips: it is a constant, not per-render state. */
+const GEOCODING_FALLBACK_TYPES = new Set([
+  'premise',
+  'subpremise',
+  'street_address',
+  'route',
+  'intersection',
+  'postal_code',
+  'plus_code',
+  'locality',
+  'sublocality',
+  'neighborhood',
+  'administrative_area_level_1',
+  'administrative_area_level_2',
+  'administrative_area_level_3',
+  'country',
+]);
+
 // FE#15 + design #35 (pastel-pillow): persistent Location card. Whole card
 // click opens Google Maps for the actual merchant (uses google_place_id
 // + payee), not just the address. "View all visits" remains the in-app
@@ -37,22 +58,6 @@ export function LocationCard({
   // those cases we drop the place_id and rely on Google's text search,
   // which finds the actual merchant at that address (e.g. "Tokyo
   // Central 1740 Artesia Blvd, Gardena, CA").
-  const GEOCODING_FALLBACK_TYPES = new Set([
-    'premise',
-    'subpremise',
-    'street_address',
-    'route',
-    'intersection',
-    'postal_code',
-    'plus_code',
-    'locality',
-    'sublocality',
-    'neighborhood',
-    'administrative_area_level_1',
-    'administrative_area_level_2',
-    'administrative_area_level_3',
-    'country',
-  ]);
   const trustPlaceId =
     !!place?.google_place_id &&
     !!place?.primary_type &&

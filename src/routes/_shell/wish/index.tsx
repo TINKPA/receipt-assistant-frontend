@@ -1,8 +1,11 @@
 import { useMemo, useState } from 'react';
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { createWishItem, listWishItems } from '../../../lib/api/things';
-import { listOwnedItemsExpanded } from '../../../lib/api/things';
+import {
+  createWishItem,
+  listOwnedItemsExpanded,
+  listWishItems,
+} from '../../../lib/api/things';
 import { wishPerDay, fmtPerDay, fmtDollars, isSnoozed, perDay } from '../../../lib/things';
 import { cn } from '../../../lib/utils';
 
@@ -137,6 +140,14 @@ function WishRoute() {
         <div className="grid grid-cols-2 gap-2.5">
           {filtered.map((w) => {
             const snoozed = isSnoozed(w);
+            // Badge tint: snoozing wins over urgency, then the three
+            // urgency buckets.
+            const badgeTint = ((): string => {
+              if (snoozed) return 'bg-[var(--color-ink-faint)]';
+              if (w.urgency === 'now') return 'bg-[var(--color-accent)]';
+              if (w.urgency === 'soon') return 'bg-[var(--color-amber)]';
+              return 'bg-[var(--color-slate)]';
+            })();
             return (
               <Link
                 key={w.id}
@@ -161,13 +172,7 @@ function WishRoute() {
                   <span
                     className={cn(
                       'absolute left-2 top-2 rounded-full px-2 py-[2px] font-mono text-[7px] uppercase tracking-[0.1em] text-[var(--color-paper)]',
-                      snoozed
-                        ? 'bg-[var(--color-ink-faint)]'
-                        : w.urgency === 'now'
-                          ? 'bg-[var(--color-accent)]'
-                          : w.urgency === 'soon'
-                            ? 'bg-[var(--color-amber)]'
-                            : 'bg-[var(--color-slate)]',
+                      badgeTint,
                     )}
                   >
                     {snoozed ? 'snoozed' : w.urgency}

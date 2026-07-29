@@ -55,13 +55,7 @@ export async function softDeleteDocument(id: string): Promise<void> {
   const { error, response } = await client.DELETE('/v1/documents/{id}', {
     params: { path: { id } },
   });
-  if (error) {
-    const e = new Error(
-      `softDeleteDocument failed (${response.status}): ${extractProblemMessage(error)}`,
-    );
-    (e as Error & { problem?: unknown }).problem = error;
-    throw e;
-  }
+  if (error) unwrap('softDeleteDocument', undefined, error, response.status);
 }
 
 /** Cascade delete: also handles linked transactions (posted → voided
@@ -78,13 +72,7 @@ export async function cascadeDeleteDocument(
   const { error, response } = await client.DELETE('/v1/documents/{id}', {
     params: { path: { id }, query },
   });
-  if (error) {
-    const e = new Error(
-      `cascadeDeleteDocument failed (${response.status}): ${extractProblemMessage(error)}`,
-    );
-    (e as Error & { problem?: unknown }).problem = error;
-    throw e;
-  }
+  if (error) unwrap('cascadeDeleteDocument', undefined, error, response.status);
 }
 
 /** Hard-delete a document with no linked transactions (file + row gone).
@@ -94,13 +82,7 @@ export async function hardDeleteDocument(id: string): Promise<void> {
   const { error, response } = await client.DELETE('/v1/documents/{id}', {
     params: { path: { id }, query: { hard: 'true' } },
   });
-  if (error) {
-    const e = new Error(
-      `hardDeleteDocument failed (${response.status}): ${extractProblemMessage(error)}`,
-    );
-    (e as Error & { problem?: unknown }).problem = error;
-    throw e;
-  }
+  if (error) unwrap('hardDeleteDocument', undefined, error, response.status);
 }
 
 /** Clear `deleted_at` on a soft-deleted document. */

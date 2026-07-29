@@ -1,5 +1,6 @@
 import React from 'react';
 import TabBar, { type TabDestination } from './TabBar';
+import { cn } from '../lib/utils';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -21,14 +22,14 @@ export default function Layout({ children, tab, tabBarHidden = false }: LayoutPr
   return (
     <div className="min-h-screen bg-[var(--color-paper)] text-[var(--color-ink)]">
       <main
-        className={[
+        className={cn(
           'mx-auto w-full max-w-[480px] sm:max-w-[640px] lg:max-w-[960px] xl:max-w-[1100px]',
           'px-4 sm:px-6 lg:px-10',
           'pt-4 sm:pt-6 lg:pt-10',
           tabBarHidden
             ? 'pb-[env(safe-area-inset-bottom,0px)]'
             : 'pb-[calc(env(safe-area-inset-bottom,0px)+5rem)]',
-        ].join(' ')}
+        )}
       >
         {children}
       </main>

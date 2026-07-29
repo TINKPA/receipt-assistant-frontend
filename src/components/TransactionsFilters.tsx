@@ -73,28 +73,31 @@ export default function TransactionsFilters({
 
   const activeSort = resolveSort(sortId);
 
-  const dateLabel =
-    filters.datePreset === 'month'
-      ? monthLabelLong(filters.month || currentMonthYM())
-      : filters.datePreset === 'custom'
-        ? filters.customFrom || filters.customTo
-          ? `${filters.customFrom || '…'} → ${filters.customTo || '…'}`
-          : 'Custom range'
-        : DATE_PRESET_LABEL[filters.datePreset];
+  // Date chip label: the month name in month mode, the bounds in custom
+  // mode (or 'Custom range' before any bound is set), else the preset name.
+  const computeDateLabel = (): string => {
+    if (filters.datePreset === 'month') {
+      return monthLabelLong(filters.month || currentMonthYM());
+    }
+    if (filters.datePreset !== 'custom') {
+      return DATE_PRESET_LABEL[filters.datePreset];
+    }
+    if (!filters.customFrom && !filters.customTo) return 'Custom range';
+    return `${filters.customFrom || '…'} → ${filters.customTo || '…'}`;
+  };
 
-  const categoryLabel =
-    filters.categories.length === 0
-      ? 'All'
-      : filters.categories.length === 1
-        ? filters.categories[0]
-        : `${filters.categories.length} selected`;
+  const dateLabel = computeDateLabel();
 
-  const typeLabel =
-    filters.transactionTypes.length === 0
-      ? 'All'
-      : filters.transactionTypes.length === 1
-        ? filters.transactionTypes[0]
-        : `${filters.transactionTypes.length} selected`;
+  // Both multi-select chips label the same way: All / the single
+  // selection / an "N selected" count.
+  const multiSelectLabel = (selected: readonly string[]): string => {
+    if (selected.length === 0) return 'All';
+    if (selected.length === 1) return selected[0];
+    return `${selected.length} selected`;
+  };
+
+  const categoryLabel = multiSelectLabel(filters.categories);
+  const typeLabel = multiSelectLabel(filters.transactionTypes);
 
   const toggleCategory = (c: Category) => {
     onChange({
@@ -456,6 +459,16 @@ function Chip({
   onClick: () => void;
   variant?: 'default' | 'stamp';
 } & React.ButtonHTMLAttributes<HTMLButtonElement>) {
+  // Three chip surfaces: inactive, active-stamp (show-deleted), active-default.
+  const toneClass = (): string => {
+    if (!active) {
+      return 'bg-[var(--color-surface)] border-[var(--color-rule)] text-[var(--color-ink)] hover:border-[var(--color-ink)]/30';
+    }
+    if (variant === 'stamp') {
+      return 'bg-[var(--color-stamp)]/10 border-[var(--color-stamp)]/30 text-[var(--color-stamp)]';
+    }
+    return 'bg-[var(--color-ink)] border-[var(--color-ink)] text-[var(--color-paper)]';
+  };
   return (
     <button
       type="button"
@@ -463,11 +476,7 @@ function Chip({
       {...rest}
       className={cn(
         'rounded-full px-4 py-2 text-sm font-medium border transition-colors',
-        active
-          ? variant === 'stamp'
-            ? 'bg-[var(--color-stamp)]/10 border-[var(--color-stamp)]/30 text-[var(--color-stamp)]'
-            : 'bg-[var(--color-ink)] border-[var(--color-ink)] text-[var(--color-paper)]'
-          : 'bg-[var(--color-surface)] border-[var(--color-rule)] text-[var(--color-ink)] hover:border-[var(--color-ink)]/30',
+        toneClass(),
       )}
     >
       {children}

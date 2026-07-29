@@ -238,23 +238,43 @@ function MonthCard({
         </p>
       )}
       <p className="relative mt-2.5 text-[12px] text-[color:rgba(221,211,190,0.85)]">
-        {loading ? (
-          ' '
-        ) : count === 0 ? (
-          'No entries yet — snap your first receipt below.'
-        ) : (
-          <>
-            {delta !== null && (
-              <span className={delta <= 0 ? 'text-[#8FA468]' : 'text-[#D08770]'}>
-                {delta <= 0 ? '↓' : '↑'} {Math.abs(delta)}% vs {priorMonth} pace ·{' '}
-              </span>
-            )}
-            <strong className="font-medium text-[var(--color-paper)]">{count}</strong>{' '}
-            {count === 1 ? 'transaction' : 'transactions'}
-          </>
-        )}
+        {monthMetaLine({ loading, count, delta, priorMonth })}
       </p>
     </section>
+  );
+}
+
+/**
+ * The month card's meta line, in three mutually-exclusive states: a blank
+ * placeholder while the totals load, an empty-state nudge when the month has
+ * no entries, else the pace delta plus the transaction count.
+ *
+ * A plain function, not a component — it is called inline so the rendered
+ * element tree is exactly what the ternary chain it replaced produced.
+ */
+function monthMetaLine({
+  loading,
+  count,
+  delta,
+  priorMonth,
+}: {
+  loading: boolean;
+  count: number;
+  delta: number | null;
+  priorMonth: string;
+}) {
+  if (loading) return ' ';
+  if (count === 0) return 'No entries yet — snap your first receipt below.';
+  return (
+    <>
+      {delta !== null && (
+        <span className={delta <= 0 ? 'text-[#8FA468]' : 'text-[#D08770]'}>
+          {delta <= 0 ? '↓' : '↑'} {Math.abs(delta)}% vs {priorMonth} pace ·{' '}
+        </span>
+      )}
+      <strong className="font-medium text-[var(--color-paper)]">{count}</strong>{' '}
+      {count === 1 ? 'transaction' : 'transactions'}
+    </>
   );
 }
 
