@@ -203,28 +203,33 @@ function Donut({
   const total = segments.reduce((s, x) => s + x.value, 0) || 1;
   const R = 30;
   const C = 2 * Math.PI * R;
-  let offset = 0;
+  // Each arc starts where every earlier arc ended, so the running sum is
+  // derived up front rather than by mutating a counter inside the .map()
+  // below — a reassignment during render, which the compiler rejects.
+  const arcs = segments.reduce<Array<{ len: number; offset: number }>>((acc, seg) => {
+    const prev = acc[acc.length - 1];
+    acc.push({
+      len: (seg.value / total) * C,
+      offset: prev ? prev.offset + prev.len : 0,
+    });
+    return acc;
+  }, []);
   return (
     <div className="relative h-[88px] w-[88px] flex-shrink-0">
       <svg viewBox="0 0 80 80" className="h-full w-full -rotate-90">
-        {segments.map((seg, i) => {
-          const len = (seg.value / total) * C;
-          const el = (
-            <circle
-              key={i}
-              cx="40"
-              cy="40"
-              r={R}
-              fill="none"
-              stroke={seg.color}
-              strokeWidth="10"
-              strokeDasharray={`${len} ${C - len}`}
-              strokeDashoffset={-offset}
-            />
-          );
-          offset += len;
-          return el;
-        })}
+        {arcs.map(({ len, offset }, i) => (
+          <circle
+            key={i}
+            cx="40"
+            cy="40"
+            r={R}
+            fill="none"
+            stroke={segments[i].color}
+            strokeWidth="10"
+            strokeDasharray={`${len} ${C - len}`}
+            strokeDashoffset={-offset}
+          />
+        ))}
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
         <span className="font-display text-[18px] leading-none tnum">{totalItems}</span>

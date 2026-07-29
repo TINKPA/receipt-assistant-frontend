@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import BuildInfoPanel from './BuildInfoPanel';
 import { fetchBackendBuildInfo, fetchTransactions } from '../lib/api';
@@ -47,11 +48,16 @@ export default function Settings({ onOpenProducts, onOpenBrands, onOpenUploads }
     queryFn: () => fetchTransactions({ sort: 'occurred_on', order: 'asc', limit: 1 }),
   });
 
+  // Read the clock once per mount instead of on every render. Reading it
+  // during render is impure — two renders a tick apart could disagree — and
+  // a tenure measured in weeks has no reason to re-derive mid-session.
+  const [mountedAt] = useState(() => Date.now());
+
   const tenure = (() => {
     const first = earliest?.[0]?.date;
     if (!first) return 'your ledger';
     const start = new Date(first + 'T00:00:00');
-    const weeks = Math.max(1, Math.round((Date.now() - start.getTime()) / (7 * 86400000)));
+    const weeks = Math.max(1, Math.round((mountedAt - start.getTime()) / (7 * 86400000)));
     const since = start.toLocaleDateString(undefined, { year: 'numeric', month: '2-digit' });
     return `${weeks} weeks of receipts · since ${since}`;
   })();
