@@ -482,8 +482,13 @@ function NeedsReviewSection() {
       </p>
       <div className="mt-2.5 space-y-2">
         {flagged.map((t) => {
-          const check = (t.metadata as Record<string, any> | null)?.near_dup_check ?? {};
-          const candidate: string | undefined = check.candidate_transaction_id;
+          const check = ((t.metadata as Record<string, unknown> | null)?.near_dup_check ??
+            {}) as Record<string, unknown>;
+          const candidate =
+            typeof check.candidate_transaction_id === 'string'
+              ? check.candidate_transaction_id
+              : undefined;
+          const reason = typeof check.reason === 'string' ? check.reason : null;
           return (
             <div key={t.id} className="rounded-[10px] bg-[var(--color-surface)] px-3 py-2">
               <Link
@@ -495,7 +500,7 @@ function NeedsReviewSection() {
               </Link>
               <p className="mt-0.5 text-[10.5px] leading-snug text-[var(--color-ink-soft)]">
                 Same amount + day as an existing transaction, no order number to tell them apart.
-                {check.reason ? ` ${String(check.reason).slice(0, 80)}` : ''}
+                {reason ? ` ${reason.slice(0, 80)}` : ''}
               </p>
               <div className="mt-2 flex items-center gap-2">
                 {candidate && (
