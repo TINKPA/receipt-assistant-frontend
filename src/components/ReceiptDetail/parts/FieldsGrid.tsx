@@ -1,24 +1,48 @@
 import React from 'react';
 import { cn } from '../../../lib/utils';
+import { formatMoney } from '../../../lib/money';
 
+/**
+ * Tax / tip / payment-method cells under the hero.
+ *
+ * Takes money as MINOR units plus a currency, not pre-formatted strings,
+ * for two reasons: the ledger stores every amount as an integer minor
+ * value so minor units are what the caller already has (no lossy
+ * round-trip through a float), and the `> 0` suppression rule below —
+ * "a zero or absent tax renders no cell at all" — has to look at the
+ * number. Handing in a formatted string would push that rule out to
+ * every caller. Formatting itself is `formatMoney`'s job; this component
+ * never writes a currency symbol of its own (see src/lib/money.ts for
+ * why a hard-coded `$` is a bug).
+ */
 export function FieldsGrid({
   payment,
-  tax,
-  tip,
+  taxMinor,
+  tipMinor,
+  currency,
   isProcessing,
 }: {
   payment: string | null;
-  tax: number | undefined;
-  tip: number | undefined;
+  /** Tax as printed on the receipt, in minor units (cents). Undefined
+   *  when the receipt carried no tax line. */
+  taxMinor: number | undefined;
+  /** Tip as printed on the receipt, in minor units. */
+  tipMinor: number | undefined;
+  /** ISO-4217 code the two amounts above are denominated in. */
+  currency: string;
   isProcessing: boolean;
 }) {
   if (isProcessing) return null;
   const cells: React.ReactNode[] = [];
-  if (tax != null && tax > 0) {
-    cells.push(<SmallFieldCard key="tax" label="Tax" value={`$${tax.toFixed(2)}`} numeric />);
+  if (taxMinor != null && taxMinor > 0) {
+    cells.push(
+      <SmallFieldCard key="tax" label="Tax" value={formatMoney(taxMinor, currency)} numeric />,
+    );
   }
-  if (tip != null && tip > 0) {
-    cells.push(<SmallFieldCard key="tip" label="Tip" value={`$${tip.toFixed(2)}`} numeric />);
+  if (tipMinor != null && tipMinor > 0) {
+    cells.push(
+      <SmallFieldCard key="tip" label="Tip" value={formatMoney(tipMinor, currency)} numeric />,
+    );
   }
   if (payment) {
     cells.push(

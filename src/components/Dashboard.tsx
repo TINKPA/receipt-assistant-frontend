@@ -421,8 +421,14 @@ function RecentList({
         // Apple-Wallet style: location wins over payment method when
         // the receipt has a geocoded place. Payment method only shows
         // for online/no-location entries; category is the last resort.
+        // The payment leg uses `||`, not `??`: the backend maps this
+        // through as `rv.paymentMethod ?? null`, so a whitespace-only
+        // string survives, and `.trim()` then yields `''` — not nullish,
+        // so `??` would short-circuit and print a blank subtitle instead
+        // of the category fallback this comment promises. placeCity
+        // keeps `??` because formatPlaceCity returns null, never ''.
         const subtitle =
-          tx.placeCity ?? tx.paymentMethod?.trim() ?? categoryLine;
+          tx.placeCity ?? (tx.paymentMethod?.trim() || categoryLine);
         return (
           <li
             key={tx.id}

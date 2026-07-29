@@ -7,7 +7,6 @@ import {
   toReceiptView,
   restoreDocument,
   type BackendTransaction,
-  type BackendTransactionItem,
   type ReExtractDocumentResult,
 } from '../../lib/api';
 import { statusBadge } from '../../lib/transactionStatus';
@@ -46,6 +45,38 @@ function md<T = unknown>(meta: Metadata | undefined, key: string): T | undefined
   if (!meta) return undefined;
   const v = meta[key];
   return v as T | undefined;
+}
+
+/**
+ * Read a money field out of the extractor's metadata blob, in MINOR
+ * units.
+ *
+ * Every money value the extractor writes is an integer minor amount, but
+ * the KEY it writes it under has drifted. All three spellings observed
+ * across the live corpus are accepted, in this order:
+ *
+ *   1. `<field>_minor` — the canonical modern key.
+ *   2. a bare `<field>` NUMBER — the legacy key, also minor units in
+ *      spite of the plain name. Proof: transaction d81bdc3d has
+ *      `subtotal` 17312 + `tax` 102 = 17414, exactly its posting's
+ *      `amount_minor`, so that 102 is $1.02 and not $102.00.
+ *   3. a bare `<field>` OBJECT carrying `<field>_minor` — the VAT block
+ *      an invoice produces, e.g. `{ rate: '13%', tax_minor: 1120,
+ *      gross_total_minor: …, net_subtotal_minor: … }`.
+ *
+ * Anything else — a string, null, NaN — returns undefined so the cell is
+ * suppressed rather than rendering `NaN`.
+ */
+function moneyMinor(meta: Metadata, field: 'tax' | 'tip'): number | undefined {
+  const direct = meta[`${field}_minor`];
+  if (typeof direct === 'number' && Number.isFinite(direct)) return direct;
+  const bare = meta[field];
+  if (typeof bare === 'number' && Number.isFinite(bare)) return bare;
+  if (bare && typeof bare === 'object') {
+    const nested = (bare as Metadata)[`${field}_minor`];
+    if (typeof nested === 'number' && Number.isFinite(nested)) return nested;
+  }
+  return undefined;
 }
 
 /**
@@ -179,41 +210,28 @@ export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: Re
   }
 
   // Pull extractor-stashed fields out of metadata.
-  const meta = (receipt as unknown as { documents: Array<{ extraction_meta?: Metadata }> });
-  const extraction = meta.documents[0]?.extraction_meta ?? undefined;
-  const txMeta = (receipt.postings[0] as unknown as { metadata?: Metadata })?.metadata;
-  const legacy: Metadata = { ...(txMeta ?? {}), ...(extraction ?? {}) };
+  //
+  // The TRANSACTION's own metadata is the only source. Postings carry no
+  // metadata (the backend's `mapPostingRow` emits id / transaction_id /
+  // account_id / amount_minor / currency / fx_rate / amount_base_minor /
+  // memo / created_at and nothing else) and document refs carry no
+  // `extraction_meta`. This block used to read both of those through
+  // `as unknown as` casts, which type-check but are always `undefined` at
+  // runtime — so raw_text, items and quality silently never rendered.
+  const legacy: Metadata = receipt.metadata;
 
   const isProcessing = receipt.status === 'draft';
-  const tax = md<number>(legacy, 'tax');
-  const tip = md<number>(legacy, 'tip');
+  const taxMinor = moneyMinor(legacy, 'tax');
+  const tipMinor = moneyMinor(legacy, 'tip');
+  // Metadata money is what the paper printed, so it is denominated in the
+  // RECEIPT's own currency — `originalCurrency` whenever the backend
+  // converted the postings into the workspace base, and the base currency
+  // otherwise (there is then nothing to disclose and the two are equal).
+  // Passing `receipt.currency` unconditionally would label a ¥11.20 CNY
+  // tax as "$11.20", which is the exact failure src/lib/money.ts exists
+  // to prevent.
+  const receiptCurrency = receipt.originalCurrency ?? receipt.currency;
   const rawText = md<string>(legacy, 'raw_text');
-  // #81: prefer transaction_items table (relational, with item_class /
-  // unit_price_minor / line_total_minor); fall back to legacy
-  // metadata.items JSON for transactions ingested before the lift.
-  const legacyItems = md<Array<{ name: string; quantity?: number; unit_price?: number; total_price?: number }>>(legacy, 'items');
-  const items: BackendTransactionItem[] = receipt.items.length > 0
-    ? receipt.items
-    : (legacyItems ?? []).map((i, idx) => ({
-        line_no: idx + 1,
-        parent_line_no: null,
-        raw_name: i.name,
-        normalized_name: null,
-        product_variant: null,
-        quantity: i.quantity ?? 1,
-        unit: null,
-        unit_price_minor: i.unit_price != null ? Math.round(i.unit_price * 100) : null,
-        line_total_minor: i.total_price != null ? Math.round(i.total_price * 100) : 0,
-        currency: receipt.currency,
-        item_class: 'other',
-        confidence: 'low',
-        line_type: 'product',
-        product_id: null,
-        tax_minor: null,
-        tip_share_minor: null,
-        discount_share_minor: null,
-        effective_total_minor: i.total_price != null ? Math.round(i.total_price * 100) : 0,
-      } satisfies BackendTransactionItem));
   const confidence = md<number>(
     (legacy.quality as Metadata | undefined) ?? {},
     'confidence_score',
@@ -225,7 +243,7 @@ export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: Re
   const merchantLabel = receipt.payee ?? receipt.narration ?? 'Unknown';
 
   const primaryDoc = receipt.documents.find((d) => d.id === receipt.documentId) ?? receipt.documents[0];
-  const docDeletedAt = (primaryDoc as { deleted_at?: string | null } | undefined)?.deleted_at ?? null;
+  const docDeletedAt = primaryDoc?.deleted_at ?? null;
   const isTombstoned = docDeletedAt != null;
 
   const canDelete = !isTombstoned;
@@ -288,8 +306,9 @@ export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: Re
 
       <FieldsGrid
         payment={receipt.paymentMethod ?? null}
-        tax={tax}
-        tip={tip}
+        taxMinor={taxMinor}
+        tipMinor={tipMinor}
+        currency={receiptCurrency}
         isProcessing={isProcessing}
       />
 
@@ -301,9 +320,17 @@ export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: Re
         />
       )}
 
-      {!isProcessing && items.length > 0 && (
+      {/* Line items come from the relational `transaction_items` table
+          (#81). There is deliberately NO `metadata.items` fallback here:
+          the BACKEND already folds pre-#81 metadata rows into this same
+          array — `mapTransactionRow` falls back to
+          `itemsFromMetadataFallback(metadata)` and runs it through the
+          same `mapTransactionItem` mapper
+          (src/routes/transactions.service.ts). An empty array therefore
+          means the transaction genuinely has no lines. */}
+      {!isProcessing && receipt.items.length > 0 && (
         <LineItemsCard
-          items={items}
+          items={receipt.items}
           currency={receipt.currency}
           transactionId={receiptId}
         />

@@ -47,7 +47,18 @@ export const qk = {
   brand: (id: string) => ['brand', id] as const,
   brandRollup: (id: string) => ['brandRollup', id] as const,
   products: (klass: string, search: string) => ['products', klass, search] as const,
+  /** A bare catalog row, exactly what `getProduct(id)` resolves. Read by
+   *  the consumer product page (/product/$productId). */
   product: (id: string) => ['product', id] as const,
+  /** The admin catalog's detail pane, which resolves the product AND its
+   *  owned instances into one `{ product, owned }` object. It needs its
+   *  own key: TanStack matches keys structurally, so when both queries
+   *  used `['product', id]` they shared ONE cache entry and (within the
+   *  30s staleTime) each screen could be served the other's shape —
+   *  the product page then rendered an empty <h1> off the wrapper. The
+   *  `['product', id]` prefix is kept deliberately so a broad
+   *  invalidation of one product still refreshes both entries. */
+  productWithOwned: (id: string) => ['product', id, 'withOwned'] as const,
   monthlyReview: (now: string, prev: string) => ['monthlyReview', now, prev] as const,
   yearlyReview: (now: string, prev: string) => ['yearlyReview', now, prev] as const,
   buildInfo: ['buildInfo'] as const,

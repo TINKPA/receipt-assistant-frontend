@@ -5,6 +5,7 @@ import { listOwnedItemsExpanded } from '../../../lib/api/things';
 import { daysHeld, perDay, fmtPerDay } from '../../../lib/things';
 import { ProductImage } from '../../../components/ProductImage';
 import { brandLink } from '../../../lib/navLinks';
+import { qk } from '../../../lib/queryKeys';
 import { useBack } from '../../../lib/useBack';
 import { cn } from '../../../lib/utils';
 
@@ -25,7 +26,7 @@ function ProductRoute() {
   const back = useBack('/owned');
 
   const { data: product, isLoading } = useQuery({
-    queryKey: ['product', productId],
+    queryKey: qk.product(productId),
     queryFn: () => getProduct(productId),
   });
   const { data: owned = [] } = useQuery({

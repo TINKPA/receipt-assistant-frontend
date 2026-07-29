@@ -23,6 +23,21 @@ import { categoryLedgerLink, dateRangeLedgerLink } from '../lib/navLinks';
  * dark-Material "Year in Review" page.
  */
 
+// Y-M-D from LOCAL getters. `d.toISOString().slice(0, 10)` shifts a local
+// Date into UTC before taking the date part, so in negative-offset
+// timezones every evening reads as tomorrow — the as-of snapshot date and
+// the "current quarter" highlight both roll over a day early. Kept as a
+// module-local helper (matching `startOfYear` / `endOfYear` below, and
+// MonthlyReview's own `startOfMonth` / `endOfMonth`) rather than imported
+// from Dashboard.tsx: pulling a helper out of a sibling route component
+// would drag that whole component and its imports into this chunk.
+function isoDay(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 function startOfYear(d: Date): string {
   return `${d.getFullYear()}-01-01`;
 }
@@ -80,14 +95,11 @@ export default function YearlyReview({ year }: { year?: number }) {
   };
 
   const { data, isLoading: loading, error: queryError } = useQuery({
-    queryKey: qk.yearlyReview(
-      now.toISOString().slice(0, 10),
-      lastYear.toISOString().slice(0, 10),
-    ),
+    queryKey: qk.yearlyReview(isoDay(now), isoDay(lastYear)),
     queryFn: async () => {
       const [nw, nwPrev, cf, tr, sm] = await Promise.all([
-        getNetWorthReport({ asOf: now.toISOString().slice(0, 10) }),
-        getNetWorthReport({ asOf: lastYear.toISOString().slice(0, 10) }),
+        getNetWorthReport({ asOf: isoDay(now) }),
+        getNetWorthReport({ asOf: isoDay(lastYear) }),
         getCashflowReport({ from: startOfYear(now), to: endOfYear(now) }),
         getTrendsReport({
           from: startOfYear(now),
@@ -124,7 +136,7 @@ export default function YearlyReview({ year }: { year?: number }) {
   for (const b of data?.cashflow?.buckets ?? []) {
     quarterMinor[quarterOf(b.month)] += b.expense_minor ?? 0;
   }
-  const nowQuarter = isCurrentYear ? quarterOf(today.toISOString().slice(0, 10)) : 3;
+  const nowQuarter = isCurrentYear ? quarterOf(isoDay(today)) : 3;
 
   // 12 month bars; trends buckets are sparse (only months with data).
   const monthMinor = new Array<number>(12).fill(0);
