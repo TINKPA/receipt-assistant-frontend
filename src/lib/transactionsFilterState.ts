@@ -104,7 +104,14 @@ export function effectiveDateRange(
   filters: FilterState,
   now: Date = new Date(),
 ): { occurred_from?: string; occurred_to?: string } {
-  const ymd = (d: Date) => d.toISOString().slice(0, 10);
+  // Y-M-D from LOCAL getters, never `toISOString()` — that converts to UTC
+  // first, so in positive-offset timezones the early hours of the local day
+  // render as yesterday and `last_30d` / `last_90d` / `this_year` would send
+  // an `occurred_to` that excludes today's receipts. `currentMonthYM` above
+  // is already local, so mixing the two frames here was also internally
+  // inconsistent. Same rule as `money.ts::shortDate`.
+  const ymd = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   switch (filters.datePreset) {
     case 'month': {
       // Default browse mode: a single calendar month. '' = current month.

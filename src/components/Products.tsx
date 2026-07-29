@@ -191,7 +191,7 @@ function ProductDetail({
   const [banner, setBanner] = useState<{ tone: 'ok' | 'err'; text: string } | null>(null);
 
   const { data, error: queryError } = useQuery({
-    queryKey: qk.product(productId),
+    queryKey: qk.productWithOwned(productId),
     queryFn: () =>
       Promise.all([
         getProduct(productId),
@@ -220,7 +220,7 @@ function ProductDetail({
     mutationFn: () => recomputeProduct(productId),
     onSuccess: (r) => {
       queryClient.setQueryData(
-        qk.product(productId),
+        qk.productWithOwned(productId),
         (old: { product: BackendProduct; owned: BackendOwnedItem[] } | undefined) =>
           old
             ? {
@@ -322,7 +322,7 @@ function ProductDetail({
         product={product}
         onSaved={(updated) => {
           queryClient.setQueryData(
-            qk.product(productId),
+            qk.productWithOwned(productId),
             (old: { product: BackendProduct; owned: BackendOwnedItem[] } | undefined) =>
               old ? { ...old, product: updated } : old,
           );

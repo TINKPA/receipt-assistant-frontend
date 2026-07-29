@@ -152,7 +152,7 @@ function OwnedDetailRoute() {
                 {days?.toLocaleString() ?? 0} / {target.toLocaleString()} days
               </span>
               <span className="font-semibold text-[var(--color-accent)]">
-                {progress?.toFixed(1)}% achieved
+                {progress?.toFixed(1) ?? 0}% achieved
               </span>
             </div>
             {targetPerDay !== null && (

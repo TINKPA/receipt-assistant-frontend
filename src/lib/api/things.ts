@@ -28,7 +28,7 @@ export async function listOwnedItemsExpanded(opts: {
       },
     },
   });
-  return unwrap('listOwnedItems', data, error, response.status).items;
+  return unwrap('listOwnedItemsExpanded', data, error, response.status).items;
 }
 
 export async function patchOwnedItem(

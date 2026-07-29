@@ -994,6 +994,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/transactions/{id}/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add manually-entered line items to a transaction
+         * @description Manual backfill for a purchase with no receipt to OCR (#183). Before this endpoint, `transaction_items` had exactly one writer — the ingest agent — so a transaction created via `POST /v1/transactions` could never gain line items, a product-catalog link, or a Things entry.
+         *
+         *     **Provenance.** Rows created here are stamped `source='manual'` and left with a NULL `extraction_version` ("no prompt produced this row"). Both are real columns — read them instead of string-matching `metadata.source`, and do NOT write a `'manual'` sentinel into `extraction_version`.
+         *
+         *     **Not ledger-mutating.** No postings are written and the head row is untouched, so `version` does not change and no `If-Match` is required. It is the caller's job to keep the postings consistent with the lines they type — the sum of `effective_total_minor` is NOT reconciled against the postings.
+         *
+         *     `effective_total_minor` (`line_total + tax + tip - discount`) is a generated column and is echoed back computed by the database, never accepted from the client.
+         *
+         *     Lines join the transaction's current live `extraction_run` so they read back alongside existing items. Omit `line_no` to append after the highest live line; supply it to make the call safely retryable (a repeat 409s rather than duplicating).
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["AddTransactionItemsRequest"];
+                };
+            };
+            responses: {
+                /** @description Items created */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AddTransactionItemsResponse"];
+                    };
+                };
+                /** @description Transaction not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+                /** @description line_no already used in the live extraction run, or the transaction is soft-deleted */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+                /** @description Validation failed — unknown product_id, duplicate line_no in the request, or an un-inferrable currency (transaction has no postings, or they span several currencies) */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/transactions/{tid}/postings/{pid}": {
         parameters: {
             query?: never;
@@ -1167,7 +1247,60 @@ export interface paths {
             };
         };
         put?: never;
-        post?: never;
+        /**
+         * Create a catalog product manually
+         * @description Manual catalog entry for a purchase with no receipt to OCR (#183). The catalog was previously written only by the ingest agent, which made `POST /v1/owned-items` (`product_id` NOT NULL) unreachable for anything not scanned.
+         *
+         *     **Idempotent on `(workspace_id, merchant_id, product_key)`** (the existing unique index, NULLS NOT DISTINCT so portable products with `merchant_id=null` participate). A repeat create with the same `product_key` returns **200** with the existing row rather than 409 — manual entry is retry-prone. The existing row is returned **unmodified**: a retry never overwrites edits made through PATCH in the meantime. A genuinely new row returns **201** with a `Location` header.
+         *
+         *     **Provenance.** Rows created here carry `source='manual'` (a real column, #183 Phase 3) — filter on it rather than string-matching `metadata.source`. The ingest upsert never rewrites `source`, so a manually-entered product that OCR later confirms stays `manual`: the column records origin, not last touch.
+         *
+         *     **`brand_id` self-heals.** It is an FK into the global `brands` registry and there is no `POST /v1/brands`; an unknown id is registered with `name = brand_id`, exactly as the ingest path's brand FK guard already does.
+         *
+         *     Aggregate stats (`purchase_count`, `total_spent_minor`, `first_purchased_on`, `last_purchased_on`) are not accepted — they are recomputed from the live `transaction_items` set. Link items, then call `POST /v1/products/{id}/recompute`.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CreateProductRequest"];
+                };
+            };
+            responses: {
+                /** @description Idempotent hit — a product with this (merchant, product_key) already existed; returned unchanged */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Product"];
+                    };
+                };
+                /** @description Created */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Product"];
+                    };
+                };
+                /** @description Validation failed (bad item_class, unknown merchant_id) */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
         delete?: never;
         options?: never;
         head?: never;
@@ -1514,6 +1647,15 @@ export interface paths {
                 };
                 /** @description Source already retired */
                 409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+                /** @description Validation failed (malformed `id`, missing or malformed `target_id`) */
+                422: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -3114,11 +3256,13 @@ export interface paths {
         put?: never;
         /**
          * Re-OCR the receipt and UPDATE the linked transaction in place.
-         * @description Phase 4c of the 3-layer rollout (#80 / #91). Spawns `claude -p` with a narrow re-extract prompt; the agent reads the cached image bytes and refreshes `transactions.{payee, occurred_on, occurred_at, metadata.extraction}` plus `documents.{ocr_text, ocr_model_version}`. **Out of scope**: postings, place_id, merchant_id, document_links — those have their own paths. **Layer-3 shielded**: HARD fields (status, narration, trip_id, identity columns) never touched; SOFT fields (occurred_on, occurred_at, payee) protected by `metadata.user_edited.<field>` CASE expressions, so user PATCH overrides survive. Returns 422 if the document has zero or >1 linked transactions.
+         * @description Phase 4c of the 3-layer rollout (#80 / #91). Spawns `claude -p` with a narrow re-extract prompt; the agent reads the cached image bytes and refreshes `transactions.{payee, occurred_on, occurred_at, metadata.extraction}` plus `documents.{ocr_text, ocr_model_version}`. **Out of scope**: postings, place_id, merchant_id, document_links — those have their own paths. **Layer-3 shielded**: HARD fields (status, narration, trip_id, identity columns) never touched; SOFT fields (occurred_on, occurred_at, payee) protected by `metadata.user_edited.<field>` CASE expressions, so user PATCH overrides survive. For `.eml` / `text/html` documents the body is MIME-decoded and linearized server-side and inlined into the prompt (#167) — the agent does not decode it itself. The response's `outcome` field is the completion signal; do NOT infer success from `re_extracted_at` advancing.
          */
         post: {
             parameters: {
-                query?: never;
+                query?: {
+                    transaction_id?: string;
+                };
                 header?: never;
                 path: {
                     id: string;
@@ -3145,7 +3289,7 @@ export interface paths {
                         "application/problem+json": components["schemas"]["ProblemDetails"];
                     };
                 };
-                /** @description Document not linked to exactly one transaction, or has no file_path */
+                /** @description `document-no-file-path` (row has no file_path), `document-file-missing` (file_path does not resolve on disk — checked BEFORE spawning the agent), `document-no-transaction` (zero linked transactions), `document-multiple-transactions` (more than one and no `?transaction_id=`), or `re-extract-agent-error` (the agent printed `ERROR <reason>` and wrote nothing; `detail` carries its reason). */
                 422: {
                     headers: {
                         [name: string]: unknown;
@@ -4860,6 +5004,8 @@ export interface components {
             source_meta?: {
                 [key: string]: unknown;
             } | null;
+            /** Format: date-time */
+            deleted_at: string | null;
         };
         Place: {
             /**
@@ -4951,6 +5097,8 @@ export interface components {
             /** @default null */
             discount_share_minor: number | null;
             effective_total_minor: number;
+            /** @default extraction */
+            source: string;
         };
         Transaction: {
             /**
@@ -5002,6 +5150,56 @@ export interface components {
             documents: components["schemas"]["TransactionDocumentRef"][];
             place: components["schemas"]["Place"];
             merchant: components["schemas"]["TransactionMerchantRef"];
+            items: components["schemas"]["TransactionItem"][];
+        };
+        NewTransactionItem: {
+            line_no?: number;
+            parent_line_no?: number | null;
+            raw_name: string;
+            normalized_name?: string | null;
+            product_variant?: string | null;
+            quantity?: number | null;
+            unit?: string | null;
+            unit_price_minor?: number | null;
+            line_total_minor: number;
+            /** @example USD */
+            currency?: string;
+            /** @enum {string} */
+            item_class: "durable" | "consumable" | "food_drink" | "service" | "other";
+            /** @enum {string|null} */
+            durability_tier?: "luxury" | "standard" | null;
+            /** @enum {string|null} */
+            food_kind?: "restaurant_dish" | "grocery_food" | "beverage" | null;
+            tags?: string[] | null;
+            /** @enum {string} */
+            confidence?: "high" | "medium" | "low";
+            line_type?: string;
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            product_id?: string | null;
+            tax_minor?: number | null;
+            tip_share_minor?: number | null;
+            discount_share_minor?: number | null;
+            /**
+             * @description User-defined JSON object; not schema-validated.
+             * @default {}
+             */
+            metadata: {
+                [key: string]: unknown;
+            };
+        };
+        AddTransactionItemsRequest: {
+            items: components["schemas"]["NewTransactionItem"][];
+        };
+        AddTransactionItemsResponse: {
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            transaction_id: string;
+            extraction_run: number;
             items: components["schemas"]["TransactionItem"][];
         };
         BulkResultItem: {
@@ -5068,6 +5266,8 @@ export interface components {
              */
             preferred_asset_id: string | null;
             image_url: string | null;
+            /** @default extraction */
+            source: string;
             /**
              * @description User-defined JSON object; not schema-validated.
              * @default {}
@@ -5123,6 +5323,32 @@ export interface components {
         UploadProductAssetForm: {
             /** Format: binary */
             file?: string;
+        };
+        CreateProductRequest: {
+            product_key: string;
+            canonical_name: string;
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            merchant_id?: string | null;
+            brand_id?: string | null;
+            /** @enum {string} */
+            item_class: "durable" | "consumable" | "food_drink" | "service" | "other";
+            model?: string | null;
+            color?: string | null;
+            size?: string | null;
+            variant?: string | null;
+            sku?: string | null;
+            manufacturer?: string | null;
+            notes?: string | null;
+            /**
+             * @description User-defined JSON object; not schema-validated.
+             * @default {}
+             */
+            metadata: {
+                [key: string]: unknown;
+            };
         };
         UpdateProductRequest: {
             custom_name?: string | null;
@@ -6262,6 +6488,11 @@ export interface components {
              * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
              */
             session_id: string;
+            /**
+             * @description What the run actually did (#167). `written` = the agent's psql block moved something. `no_change` = it demonstrably wrote NOTHING (the metadata UPDATE always rewrites `extraction.ran_at`, so empty `changed_keys` means no write happened, NOT that the output was identical). `agent_error` is part of the vocabulary but never appears on a 200 — the agent's `ERROR` line surfaces as a 422 `re-extract-agent-error`. Batch tooling MUST key on this field, never on whether `re_extracted_at` advanced.
+             * @enum {string}
+             */
+            outcome: "written" | "no_change" | "agent_error";
         };
         UpdatePlaceRequest: {
             custom_name?: string | null;

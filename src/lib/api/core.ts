@@ -126,6 +126,16 @@ export interface ReceiptView {
   /** Line items lifted from transaction_items (#81). Empty array
    *  for transactions without extracted lines. */
   items: BackendTransactionItem[];
+  /** The transaction's own `metadata` blob, verbatim. This is where the
+   *  extractor stashes everything that has no column of its own —
+   *  `raw_text`, the legacy `items` JSON, the `extraction` provenance
+   *  block, `category_hint`, `ocr_audit`, and per-merchant oddments. It
+   *  is carried through untouched (and untyped beyond `unknown` values)
+   *  because the key set is open-ended by design: readers pick out the
+   *  keys they know and ignore the rest. Postings and documents do NOT
+   *  carry a metadata blob — this transaction-level one is the only
+   *  source, so screens wanting extractor output must read it here. */
+  metadata: Record<string, unknown>;
   etag: string | null;
 }
 
@@ -543,6 +553,7 @@ export function toReceiptView(t: BackendTransaction, etag: string | null = null)
     merchantBrandId: merchant?.brand_id ?? null,
     merchantId: merchant?.id ?? null,
     items: t.items ?? [],
+    metadata: md,
     etag,
   };
 }
