@@ -112,6 +112,7 @@ export interface ReceiptView {
   /** Primary document (receipt image) if any. */
   documentId: string | null;
   documentKind: string | null;
+  isManual: boolean;
   documents: BackendTransaction['documents'];
   postings: BackendPosting[];
   /** Google Places entry for the merchant location, if geocoded. */
@@ -547,6 +548,8 @@ export function toReceiptView(t: BackendTransaction, etag: string | null = null)
     paymentMethod,
     documentId: doc?.id ?? null,
     documentKind: doc?.kind ?? null,
+    // `metadata.source` is stamped 'manual' by the add-manually flow (#150).
+    isManual: (t.metadata as Record<string, unknown> | null)?.source === 'manual',
     documents: t.documents,
     postings: t.postings,
     place: t.place ?? null,
@@ -588,6 +591,7 @@ export function mapTransaction(t: BackendTransaction): Transaction {
     rawStatus: t.status,
     documentId: rv.documentId,
     documentKind: rv.documentKind,
+    isManual: rv.isManual,
     merchantBrandId: m?.brand_id ?? null,
     merchantId: m?.id ?? null,
   };

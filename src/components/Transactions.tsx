@@ -157,7 +157,13 @@ export default function Transactions({
     };
     return {
       limit: PAGE_SIZE,
-      has_document: true,
+      // No `has_document` filter. It was correct when this screen browsed
+      // *receipts* and every row had a document by definition, but the ledger
+      // now holds transactions that legitimately have none: a hand-entered
+      // backfill (#150/#183) and, later, a statement-derived row (#175).
+      // Filtering on it made every manual transaction invisible here — the
+      // user's own 2021 router backfill included, which is the purchase #183
+      // was written to make reachable.
       q: debouncedSearch.trim() || undefined,
       status: filters.status,
       payee_contains: debouncedPayee.trim() || undefined,
@@ -798,9 +804,18 @@ function PeriodGroup({
  * unmarked, keeping the list calm (#76). Glyphs are forced to text
  * rendering (no emoji color) to sit in the muted meta line.
  */
+/** The provenance mark on a ledger row. Photos are unmarked — they are the
+ *  default and tagging every one of them would be noise (#76).
+ *
+ *  `manual` is checked FIRST and keyed off `isManual`, not off a missing
+ *  document. A hand-entered row genuinely has no document, but so does an
+ *  OCR run whose document link failed, and labelling that second case
+ *  "manual" would credit the user with something the extractor got wrong. */
 function sourceTag(
   kind: string | null | undefined,
+  isManual?: boolean,
 ): { glyph: string; label: string } | null {
+  if (isManual) return { glyph: '✎', label: 'manual' };
   if (kind === 'receipt_email') return { glyph: '✉︎', label: 'email' };
   if (kind === 'receipt_pdf' || kind === 'statement_pdf')
     return { glyph: '⌗', label: 'pdf' };
@@ -876,7 +891,7 @@ function LedgerRow({
                 </span>
               )}
               {(() => {
-                const src = sourceTag(tx.documentKind);
+                const src = sourceTag(tx.documentKind, tx.isManual);
                 return src ? (
                   <span className="ml-1" title={`From ${src.label}`}>
                     · <span className="not-italic">{src.glyph}</span> {src.label}
