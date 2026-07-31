@@ -138,7 +138,11 @@ function NeedsAttentionBadge() {
   // Retryable failures only. `unsupported` and `dedup` are real but not
   // actionable — production carries hundreds, and counting them here would
   // pin a red banner to Home permanently.
-  const n = (data?.items ?? []).filter((i) => i.category === 'transient_actionable').length;
+  // `retryable`, not a hardcoded category. Naming one category here is how
+  // #151 happened in the panel: `infrastructure_fault` was added by #199 and
+  // an enumerated list silently stops counting the rows it doesn't know about.
+  // The server already computes this predicate — defer to it.
+  const n = (data?.items ?? []).filter((i) => i.retryable).length;
   if (n === 0) return null;
 
   return (

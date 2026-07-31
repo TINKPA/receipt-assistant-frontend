@@ -178,8 +178,14 @@ function reasonFor(ing: BackendIngest): string {
     if (/rate.?limit|429/i.test(e)) return 'Hit a rate limit.';
     return 'Extraction failed on a temporary error.';
   }
-  if (ing.status === 'unsupported') return "We couldn't read a receipt out of this file.";
-  return 'This file could not be processed.';
+  // Our fault, and the copy must say so. `spawn E2BIG` was rendered to the
+  // user as "This file could not be processed" — blaming a document that was
+  // never at fault (#199).
+  if (ing.category === 'infrastructure_fault') {
+    return 'Something broke on our side while processing this — the file is fine.';
+  }
+  if (ing.category === 'input_problem') return "We couldn't read a receipt out of this file.";
+  return 'This upload did not finish.';
 }
 
 const ATTENTION_TONE: Record<string, { chip: string; dot: string; label: string }> = {
@@ -187,6 +193,11 @@ const ATTENTION_TONE: Record<string, { chip: string; dot: string; label: string 
     chip: 'bg-[color:rgba(181,52,26,0.13)] text-[var(--color-accent)]',
     dot: 'bg-[var(--color-accent)]',
     label: 'failed',
+  },
+  infrastructure_fault: {
+    chip: 'bg-[color:rgba(181,52,26,0.13)] text-[var(--color-accent)]',
+    dot: 'bg-[var(--color-accent)]',
+    label: 'our fault',
   },
   input_problem: {
     chip: 'bg-[color:rgba(63,85,99,0.13)] text-[var(--color-slate)]',
@@ -206,17 +217,28 @@ const ATTENTION_TONE: Record<string, { chip: string; dot: string; label: string 
  * `retryable` and `dedup_of`, so the affordance comes off `category` and the
  * `error` string is never parsed for control flow.
  *
- * Only `transient_actionable` rows get the alarm treatment, because they are
- * the only ones a human can actually resolve — a receipt that failed on a 401
- * or a timeout and just needs re-running. The other two categories are real
- * but not summons: production currently carries ~102 `unsupported` and ~285
- * `dedup` rows, and rendering those as "needs attention" would mean a red
- * banner that never clears. They live behind quiet one-line expanders, and
- * the panel drops its accent styling entirely when nothing is retryable.
+ * Only rows the API reports as `retryable` get the alarm treatment — today
+ * that is `transient_actionable` (a 401 or a timeout that just needs
+ * re-running) and `infrastructure_fault` (our crash, recovered by a retry).
+ * The other categories are real but not summons: production carries ~102
+ * `unsupported` and ~285 `dedup` rows, and rendering those as "needs
+ * attention" would mean a red banner that never clears. They live behind quiet
+ * one-line expanders, and the panel drops its accent styling entirely when
+ * nothing is retryable.
  *
- * Fetched as two queries rather than one, because the actionable rows are the
- * rare ones: a single `limit=100` call comes back 81% duplicates and buries
- * them.
+ * Membership is decided by `category` / `retryable` on each returned row, NOT
+ * by which status bucket the row was fetched from. The `status` argument is
+ * only a coarse server-side prefilter — `/v1/ingests/problems` accepts no
+ * `category` parameter, so the partition has to happen here. Treating the
+ * fetch bucket as the answer is what caused #151: this component asked for
+ * `status='error'`, called the whole result "N to retry", and then rendered a
+ * `spawn E2BIG` infrastructure fault with an `unreadable` chip, file-blaming
+ * copy, and no retry button — because the button is gated on `retryable`,
+ * which was false. The header promised a retry the row could not offer.
+ *
+ * Fetched as three queries rather than one, because the actionable rows are
+ * the rare ones: a single `limit=100` call comes back 81% duplicates and
+ * buries them.
  *
  * The API has no dismiss field, so nothing here pretends to be dismissable —
  * collapsing is the honest version of "stop nagging me".
@@ -226,6 +248,9 @@ function NeedsAttentionSection() {
   const [expanded, setExpanded] = useState<'none' | 'input' | 'dupes'>('none');
   const [failed, setFailed] = useState<Record<string, string>>({});
 
+  // `status='error'` is a prefilter, not the predicate — see the note above.
+  // Everything the pipeline failed on lands in `error`; `category` then says
+  // whose fault it was and `retryable` says whether a button helps.
   const { data: actionableData } = useQuery({
     queryKey: qk.ingestProblems,
     queryFn: () => listIngestProblems({ status: 'error', limit: 50 }),
@@ -253,8 +278,15 @@ function NeedsAttentionSection() {
     onError: (err, id) => setFailed((f) => ({ ...f, [id]: extractProblemMessage(err) })),
   });
 
-  const actionable = actionableData?.items ?? [];
-  const unreadable = unreadableData?.items ?? [];
+  // Partition on what the API says each row IS, not on which bucket it came
+  // from. An `error` row the server declares non-retryable belongs with the
+  // things we merely explain, never under a header that promises a retry.
+  const fetched = actionableData?.items ?? [];
+  const actionable = fetched.filter((i) => i.retryable);
+  const unreadable = [
+    ...(unreadableData?.items ?? []),
+    ...fetched.filter((i) => !i.retryable),
+  ];
   const dupes = dupeData?.items ?? [];
   // A non-null cursor means there are more than we asked for, so the count is
   // a floor, not a total — say "100+" rather than assert a number we can't see.
