@@ -62,6 +62,12 @@ export interface Transaction {
    *  `receipt_pdf` | …). Drives the list source glyph — only non-photo
    *  sources are marked (#76). */
   documentKind?: string | null;
+  /** Hand-entered rather than extracted from a document (#150/#183).
+   *  From `metadata.source === 'manual'`, which the add-manually flow
+   *  stamps. Distinct from `documentKind == null`: an OCR run that failed
+   *  to link its document also has no kind, and conflating the two would
+   *  label a broken extraction as something the user typed. */
+  isManual?: boolean;
   /** Canonical merchant brand id (kebab-case, e.g. "costco"). Populated
    *  from the joined `merchant.brand_id`. Drives navigation from a
    *  receipt → BrandPage (one brand across all its physical stores). */
