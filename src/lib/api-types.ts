@@ -3645,7 +3645,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Retry a failed/unsupported ingest (#158). Re-runs the original stored bytes through the batch pipeline (genuine-restore dedup branch — not suppressed). Returns 202 with the freshly-created ingest to poll. Only `error`/`unsupported` are retryable. */
+        /** Retry a failed ingest (#158). Re-runs the original stored bytes through the batch pipeline (genuine-restore dedup branch — not suppressed). Returns 202 with the freshly-created ingest to poll. Accepts exactly the ingests whose `retryable` field is true, i.e. category `transient_actionable` or `infrastructure_fault` (#199); anything else 409s. `unsupported` was accepted before #199 despite always reporting `retryable: false`, and no longer is. */
         post: {
             parameters: {
                 query?: never;
@@ -5922,8 +5922,41 @@ export interface components {
             /** @default [] */
             document_ids: string[];
         } | null;
-        /** @enum {string} */
-        IngestCategory: "ok" | "in_progress" | "transient_actionable" | "input_problem" | "informational";
+        /**
+         * @description Why an ingest ended where it did, so a client picks its affordance from
+         *     an enum instead of string-parsing `error` (which is agent prose).
+         *
+         *     - `ok` — reached `done` and produced a transaction.
+         *     - `in_progress` — still `queued` / `processing`.
+         *     - `transient_actionable` — our failure, self-clearing: expired auth,
+         *       timeout, rate limit, upstream 5xx. Retrying the same bytes is likely
+         *       to succeed once the outage passes. Retryable.
+         *     - `infrastructure_fault` — our failure, not obviously self-clearing: a
+         *       crash, a bad deploy, a kernel or database fault. Nothing is wrong with
+         *       the user's document, so do not tell them there is. Retryable, and a
+         *       retry is how such an incident is normally recovered.
+         *     - `input_problem` — `unsupported`: the pipeline could not find a receipt
+         *       in this file. The same bytes will fail the same way; the user must
+         *       supply a different document. Not retryable.
+         *     - `informational` — `dedup` / `near_dup`; not a failure at all. The
+         *       pre-existing transaction is in `dedup_of`. Not retryable.
+         *
+         *     ADDED IN #199: `infrastructure_fault`. Additive — no previously-emitted
+         *     value changed meaning, but a client that exhaustively switches on this
+         *     enum must add a branch or it will fall through to its default. Before
+         *     #199 an unrecognized `error` string defaulted to `input_problem`, so
+         *     backend outages were reported to the user as bad documents; the default
+         *     is now `infrastructure_fault`. Rows that previously came back as
+         *     `input_problem` with `status='error'` will now come back as
+         *     `infrastructure_fault` with `retryable: true`.
+         *
+         *     `retryable` is exactly membership of `transient_actionable` /
+         *     `infrastructure_fault`, and `POST /v1/ingests/{id}/retry` enforces the
+         *     same predicate — a row the API reports as retryable will be accepted,
+         *     and one it does not will 409.
+         * @enum {string}
+         */
+        IngestCategory: "ok" | "in_progress" | "transient_actionable" | "infrastructure_fault" | "input_problem" | "informational";
         Ingest: {
             /**
              * Format: uuid
@@ -5948,6 +5981,7 @@ export interface components {
             produced: components["schemas"]["IngestProduced"];
             error: string | null;
             category: components["schemas"]["IngestCategory"];
+            /** @description Whether `POST /v1/ingests/{id}/retry` will accept this ingest. True exactly for categories `transient_actionable` and `infrastructure_fault`; the endpoint enforces the same predicate, so this field and the endpoint can never disagree (#199). */
             retryable: boolean;
             /**
              * Format: uuid
