@@ -31,6 +31,27 @@ export async function listOwnedItemsExpanded(opts: {
   return unwrap('listOwnedItemsExpanded', data, error, response.status).items;
 }
 
+export type CreateOwnedItemRequest = components['schemas']['CreateOwnedItemRequest'];
+
+/**
+ * Put a product on the Things shelf.
+ *
+ * There is no `acquisition_cost_minor` on this resource — the price comes
+ * from the linked purchase. `GET /v1/owned-items?expand=product` derives
+ * `paid_minor` as `COALESCE(ti.effective_total_minor, ti.line_total_minor)`
+ * over `LEFT JOIN transaction_items ti ON ti.id = o.transaction_item_id`,
+ * and `perDay()` returns null without it. So an owned item created with
+ * only `product_id` renders "—" instead of a $/day forever: **always pass
+ * `transaction_item_id` when the purchase is known.** `acquired_on` is the
+ * other half — it's the denominator of the amortization.
+ */
+export async function createOwnedItem(
+  body: CreateOwnedItemRequest,
+): Promise<components['schemas']['OwnedItem']> {
+  const { data, error, response } = await client.POST('/v1/owned-items', { body });
+  return unwrap('createOwnedItem', data, error, response.status);
+}
+
 export async function patchOwnedItem(
   id: string,
   body: UpdateOwnedItemRequest,

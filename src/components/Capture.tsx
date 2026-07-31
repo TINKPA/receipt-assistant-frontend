@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { Link } from '@tanstack/react-router';
 import { ingestBatch, extractProblemMessage } from '../lib/api';
 import { cn } from '../lib/utils';
 
@@ -470,9 +471,40 @@ export default function Capture({ onCancel, onComplete }: CaptureProps) {
               onClick={() => setReviewing(true)}
             />
           ) : (
-            <OptButton label="Type it in" disabled hint="soon" />
+            /* The slot that used to hold a disabled "Type it in · soon"
+               placeholder. That promise is kept by the entry below now, and
+               a greyed-out twin of a working link reads as broken — so the
+               slot is an invisible spacer, which also keeps the shutter
+               optically centred in the 1fr_auto_1fr grid. */
+            <span aria-hidden="true" className="h-14" />
           )}
         </div>
+
+        {/* No-receipt entry (#150). Below the capture options, not among
+            them: this path doesn't produce a document, so it doesn't
+            belong in a row of ways to supply one. */}
+        <div className="mt-5 border-t-[0.5px] border-[var(--color-rule)] pt-4">
+          <Link
+            to="/add-manual"
+            className="group flex items-center justify-between rounded-[14px] border-[0.5px] border-[var(--color-rule)] bg-[var(--color-surface)] px-4 py-3 transition-colors hover:border-[var(--color-accent)]"
+          >
+            <span className="min-w-0">
+              <span className="block font-display text-[14px] font-medium leading-tight">
+                No receipt? Record it manually
+              </span>
+              <span className="mt-0.5 block font-mono text-[8.5px] uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">
+                type the amount · add a line item · keep it in things
+              </span>
+            </span>
+            <span
+              aria-hidden="true"
+              className="ml-3 shrink-0 font-mono text-[13px] text-[var(--color-accent)] transition-transform group-hover:translate-x-0.5"
+            >
+              →
+            </span>
+          </Link>
+        </div>
+
         <p className="mt-4 text-[10px] tracking-[0.18em] uppercase text-center text-[var(--color-ink-muted)]">
           Processed via Claude AI · Monitored by Langfuse
         </p>

@@ -29,6 +29,37 @@ export async function listProducts(opts: ListProductsOptions = {}): Promise<Back
   return unwrap('listProducts', data, error, response.status).items;
 }
 
+export type CreateProductRequest = components['schemas']['CreateProductRequest'];
+
+export interface CreateProductResult {
+  product: BackendProduct;
+  /** False when the server matched an existing row instead of inserting. */
+  created: boolean;
+}
+
+/**
+ * Create a catalog product (#183 Phase 1).
+ *
+ * Idempotent on `(workspace_id, merchant_id, product_key)`: a repeat
+ * create returns **200 with the existing row unmodified**, a fresh one
+ * returns **201**. Callers can treat both as success — the `created`
+ * flag is exposed only so the UI can say "already in your catalog"
+ * rather than implying it just made something.
+ *
+ * Rows are stamped `source='manual'` server-side (a real column, Phase
+ * 3); the ingest upsert never rewrites it, so a manually-entered product
+ * that OCR later confirms stays `manual`.
+ */
+export async function createProduct(
+  body: CreateProductRequest,
+): Promise<CreateProductResult> {
+  const { data, error, response } = await client.POST('/v1/products', { body });
+  return {
+    product: unwrap('createProduct', data, error, response.status),
+    created: response.status === 201,
+  };
+}
+
 export async function getProduct(id: string): Promise<BackendProduct> {
   const { data, error, response } = await client.GET('/v1/products/{id}', {
     params: { path: { id } },

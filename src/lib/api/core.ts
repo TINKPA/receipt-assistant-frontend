@@ -729,6 +729,25 @@ export async function listAccounts(opts: {
   return unwrap('listAccounts', data, error, response.status);
 }
 
+/**
+ * The accounts a transaction may actually post to.
+ *
+ * `GET /v1/accounts` returns the *tree roots* by default — Assets,
+ * Liabilities, Expenses, Income, Equity. Those are category headers, not
+ * places money lands, so a picker built on the default response offers
+ * the user nothing they want (#150). `?flat=true` returns every row, and
+ * the postable ones are the leaves: they have a parent (so they aren't a
+ * root header) and no children of their own (so they aren't a mid-level
+ * header either). Today's chart of accounts has no mid-level nodes, but
+ * testing both ends means adding one later doesn't silently put an
+ * unpostable header in the picker.
+ */
+export async function listPostableAccounts(): Promise<BackendAccount[]> {
+  const all = await listAccounts({ flat: true });
+  const parents = new Set(all.map((a) => a.parent_id).filter(Boolean));
+  return all.filter((a) => a.parent_id !== null && !parents.has(a.id));
+}
+
 export async function getAccountBalance(
   id: string,
   opts: { asOf?: string; currency?: string; includeChildren?: boolean } = {},

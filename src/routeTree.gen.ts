@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as AddManualRouteImport } from './routes/add-manual'
 import { Route as AddRouteImport } from './routes/add'
 import { Route as ShellRouteImport } from './routes/_shell'
 import { Route as ShellIndexRouteImport } from './routes/_shell/index'
@@ -31,6 +32,11 @@ import { Route as ShellBatchesBatchIdRouteImport } from './routes/_shell/batches
 import { Route as ShellSettingsProductsIndexRouteImport } from './routes/_shell/settings/products/index'
 import { Route as ShellSettingsBrandsIndexRouteImport } from './routes/_shell/settings/brands/index'
 
+const AddManualRoute = AddManualRouteImport.update({
+  id: '/add-manual',
+  path: '/add-manual',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AddRoute = AddRouteImport.update({
   id: '/add',
   path: '/add',
@@ -141,6 +147,7 @@ const ShellSettingsBrandsIndexRoute =
 export interface FileRoutesByFullPath {
   '/': typeof ShellIndexRoute
   '/add': typeof AddRoute
+  '/add-manual': typeof AddManualRoute
   '/transactions': typeof ShellTransactionsRoute
   '/batches/$batchId': typeof ShellBatchesBatchIdRoute
   '/brand/$brandId': typeof ShellBrandBrandIdRoute
@@ -162,6 +169,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/add': typeof AddRoute
+  '/add-manual': typeof AddManualRoute
   '/transactions': typeof ShellTransactionsRoute
   '/': typeof ShellIndexRoute
   '/batches/$batchId': typeof ShellBatchesBatchIdRoute
@@ -186,6 +194,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_shell': typeof ShellRouteWithChildren
   '/add': typeof AddRoute
+  '/add-manual': typeof AddManualRoute
   '/_shell/transactions': typeof ShellTransactionsRoute
   '/_shell/': typeof ShellIndexRoute
   '/_shell/batches/$batchId': typeof ShellBatchesBatchIdRoute
@@ -211,6 +220,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/add'
+    | '/add-manual'
     | '/transactions'
     | '/batches/$batchId'
     | '/brand/$brandId'
@@ -232,6 +242,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/add'
+    | '/add-manual'
     | '/transactions'
     | '/'
     | '/batches/$batchId'
@@ -255,6 +266,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/_shell'
     | '/add'
+    | '/add-manual'
     | '/_shell/transactions'
     | '/_shell/'
     | '/_shell/batches/$batchId'
@@ -279,10 +291,18 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   ShellRoute: typeof ShellRouteWithChildren
   AddRoute: typeof AddRoute
+  AddManualRoute: typeof AddManualRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/add-manual': {
+      id: '/add-manual'
+      path: '/add-manual'
+      fullPath: '/add-manual'
+      preLoaderRoute: typeof AddManualRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/add': {
       id: '/add'
       path: '/add'
@@ -482,6 +502,7 @@ const ShellRouteWithChildren = ShellRoute._addFileChildren(ShellRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   ShellRoute: ShellRouteWithChildren,
   AddRoute: AddRoute,
+  AddManualRoute: AddManualRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

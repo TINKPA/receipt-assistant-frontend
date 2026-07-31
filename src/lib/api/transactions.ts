@@ -134,6 +134,7 @@ export async function createTransaction(input: {
   narration?: string;
   occurred_on: string;
   occurred_at?: string;
+  status?: CreateTransactionRequest['status'];
   postings: NewPosting[];
   document_ids?: string[];
   trip_id?: string;
@@ -149,6 +150,7 @@ export async function createTransaction(input: {
     // accepts empty.
     metadata: input.metadata ?? {},
   };
+  if (input.status) body.status = input.status;
   if (input.occurred_at) body.occurred_at = input.occurred_at;
   if (input.payee != null) body.payee = input.payee;
   if (input.narration != null) body.narration = input.narration;
@@ -239,6 +241,39 @@ export async function unreconcileTransaction(
     },
   );
   return unwrap('unreconcileTransaction', data, error, response.status);
+}
+
+export type NewTransactionItem = components['schemas']['NewTransactionItem'];
+export type AddTransactionItemsResponse =
+  components['schemas']['AddTransactionItemsResponse'];
+
+/**
+ * Attach line items to an existing transaction (#183 Phase 2) — the only
+ * write path into `transaction_items` that isn't the ingest agent's SQL.
+ *
+ * Rows created here are stamped `source='manual'` by the server with a
+ * NULL `extraction_version`; don't send a `'manual'` sentinel yourself.
+ * `effective_total_minor` (`line_total + tax + tip − discount`) is
+ * server-computed — render it from the response, never recompute it here.
+ *
+ * Pass an explicit `line_no` on every item: it makes a retry idempotent
+ * (a repeat 409s rather than appending the line twice), which matters
+ * because manual entry over a flaky phone connection is exactly where a
+ * double-post happens. Omitting it appends instead.
+ *
+ * Note the response nests the `TransactionItem` projection, which carries
+ * no row `id`. To link an owned-item you need the id, so follow this with
+ * `listTransactionItems` and join on `line_no`.
+ */
+export async function addTransactionItems(
+  transactionId: string,
+  items: NewTransactionItem[],
+): Promise<AddTransactionItemsResponse> {
+  const { data, error, response } = await client.POST('/v1/transactions/{id}/items', {
+    params: { path: { id: transactionId } },
+    body: { items },
+  });
+  return unwrap('addTransactionItems', data, error, response.status);
 }
 
 export type ListedTransactionItem = components['schemas']['ListedTransactionItem'];
