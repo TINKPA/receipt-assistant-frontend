@@ -61,5 +61,11 @@ export const qk = {
   productWithOwned: (id: string) => ['product', id, 'withOwned'] as const,
   monthlyReview: (now: string, prev: string) => ['monthlyReview', now, prev] as const,
   yearlyReview: (now: string, prev: string) => ['yearlyReview', now, prev] as const,
+  /** Leaf accounts a transaction can post to — the manual-entry pickers
+   *  (#150). Its own key because the shape is a filtered subset, not the
+   *  raw `GET /v1/accounts` tree any other caller would want. */
+  postableAccounts: ['accounts', 'postable'] as const,
+  /** The Things grid's expanded owned-item list. */
+  ownedItemsExpanded: ['owned-items', 'expanded'] as const,
   buildInfo: ['buildInfo'] as const,
 } as const;
