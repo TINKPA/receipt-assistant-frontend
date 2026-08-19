@@ -285,7 +285,7 @@ export default function MonthlyReview({ month }: { month?: string }) {
                     </span>
                   </span>
                   <span className="font-mono text-[13px] font-semibold tracking-tight tnum">
-                    ${Math.abs(tx.amount).toFixed(2)}
+                    {tx.amount > 0 ? '+' : ''}${Math.abs(tx.amount).toFixed(2)}
                   </span>
                 </Link>
               </li>

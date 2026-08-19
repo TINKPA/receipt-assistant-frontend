@@ -4977,6 +4977,11 @@ export interface components {
              */
             account_id: string;
             /**
+             * @description Type of this posting's account. Select the spend leg with account_type='expense', then read the sign: positive = purchase, negative = refund. Do NOT select the leg by sign — that inverts refunds.
+             * @enum {string}
+             */
+            account_type: "asset" | "liability" | "equity" | "income" | "expense";
+            /**
              * @description Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.
              * @example 14723
              */
@@ -6187,6 +6192,38 @@ export interface components {
              */
             avg_per_txn_minor: number;
         };
+        PointsProgrammeTotal: {
+            /** @example HYATT_PT */
+            currency: string;
+            /**
+             * @description Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.
+             * @example 14723
+             */
+            points_minor: number;
+            /**
+             * @description Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.
+             * @example 14723
+             */
+            base_minor: number;
+            valuation_exists: boolean;
+            valuation_confirmed: boolean;
+        };
+        PointsDisclosure: {
+            policy: string;
+            included_in_totals: boolean;
+            /**
+             * @description Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.
+             * @example 14723
+             */
+            base_minor: number;
+            /**
+             * @description Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.
+             * @example 14723
+             */
+            unconfirmed_base_minor: number;
+            unvalued_transaction_count: number;
+            programmes: components["schemas"]["PointsProgrammeTotal"][];
+        };
         SummaryReport: {
             /**
              * Format: date
@@ -6208,6 +6245,7 @@ export interface components {
              * @example 14723
              */
             grand_total_minor: number;
+            points: components["schemas"]["PointsDisclosure"];
         };
         TrendsItem: {
             key: string;
@@ -6245,6 +6283,7 @@ export interface components {
             /** @example USD */
             currency: string;
             buckets: components["schemas"]["TrendsBucket"][];
+            points: components["schemas"]["PointsDisclosure"];
         };
         NetWorthAccount: {
             /**
@@ -6290,6 +6329,7 @@ export interface components {
              */
             net_worth_minor: number;
             by_account: components["schemas"]["NetWorthAccount"][];
+            points: components["schemas"]["PointsDisclosure"];
         };
         CashflowBucket: {
             month: string;
@@ -6338,6 +6378,7 @@ export interface components {
              */
             net_minor: number;
             buckets: components["schemas"]["CashflowBucket"][];
+            points: components["schemas"]["PointsDisclosure"];
         };
         MerchantDetail: {
             merchant: components["schemas"]["Merchant"];

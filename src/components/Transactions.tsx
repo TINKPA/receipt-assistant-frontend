@@ -297,8 +297,15 @@ export default function Transactions({
     return out;
   }, [transactions, filters.categories, filters.transactionTypes, brandFilter]);
 
+  // Spend total: every SPENDING row, whatever its sign (#221). It used to
+  // filter `amount < 0`, which was the same thing back when spending was
+  // the only kind of row and every one of them was negative. A refund is
+  // a spending row with a POSITIVE amount, and dropping it would leave
+  // the header claiming the full purchase price of something that was
+  // returned. Filtering by type instead keeps income out, which is what
+  // the sign test was really doing.
   const totalExpenses = filteredTransactions
-    .filter((tx) => tx.amount < 0)
+    .filter((tx) => tx.transactionType !== 'income')
     .reduce((sum, tx) => sum + tx.amount, 0);
 
   // Every row's `amount` is already in the workspace base currency (the
@@ -923,7 +930,16 @@ function LedgerRow({
           badge?.strikethrough && 'line-through opacity-60',
         )}
       >
-        <span className="font-mono text-[14.5px] font-semibold tracking-tight tnum">
+        {/* Money coming back (a refund) or coming in (income) is positive
+            and gets a leading + so it cannot be read as one more purchase
+            of the same size (#221). Spending rows render bare, as before. */}
+        <span
+          className={cn(
+            'font-mono text-[14.5px] font-semibold tracking-tight tnum',
+            tx.amount > 0 && 'text-emerald-700',
+          )}
+        >
+          {tx.amount > 0 ? '+' : ''}
           {formatMoney(Math.abs(tx.amount) * 100, tx.currency)}
         </span>
         {tx.originalCurrency && tx.originalTotalMinor !== null && (
