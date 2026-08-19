@@ -480,8 +480,15 @@ function RecentList({
                 </Link>
               );
             })()}
-            <span className="font-mono text-[14px] font-semibold tracking-tight tnum">
-              ${Math.abs(tx.amount).toFixed(2)}
+            {/* Positive = money back (refund) or in (income); + so it
+                does not read as another purchase (#221). */}
+            <span
+              className={cn(
+                'font-mono text-[14px] font-semibold tracking-tight tnum',
+                tx.amount > 0 && 'text-emerald-700',
+              )}
+            >
+              {tx.amount > 0 ? '+' : ''}${Math.abs(tx.amount).toFixed(2)}
             </span>
           </li>
         );

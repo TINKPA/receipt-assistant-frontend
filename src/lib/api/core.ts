@@ -157,7 +157,13 @@ export interface CategoryClassification {
  *
  *  Unknown input returns `{category: null, transactionType: 'spending'}`.
  *  Callers MUST NOT render `transactionType` as a category label; the UI
- *  shows "no category" instead. */
+ *  shows "no category" instead.
+ *
+ *  NOTE the `transactionType` here is a DEFAULT. The authority on whether
+ *  a transaction is spend or income is its postings, not its category
+ *  string — an income row still carries a merchant category (the payout
+ *  counterparty is a real merchant), so reading the type off the category
+ *  would call every buyback "spending". `transactionTypeOf` decides. */
 export function classifyBackendCategory(raw: string | null | undefined): CategoryClassification {
   if (typeof raw === 'string') {
     const trimmed = raw.trim();
@@ -166,6 +172,19 @@ export function classifyBackendCategory(raw: string | null | undefined): Categor
     }
   }
   return { category: null, transactionType: 'spending' };
+}
+
+/** Spend or income, decided by the ledger (#221).
+ *
+ *  A transaction with an income-type posting is income (a device buyback,
+ *  an insurance payout). Everything else is spending — including a
+ *  REFUND, which is spending with a negative amount, because it belongs
+ *  next to the purchase it reverses and nets that category down rather
+ *  than counting as money earned. */
+export function transactionTypeOf(t: BackendTransaction): Transaction['transactionType'] {
+  return (t.postings ?? []).some((p) => p.account_type === 'income')
+    ? 'income'
+    : 'spending';
 }
 
 function categoryFromTxn(t: BackendTransaction): string | null {
@@ -449,10 +468,21 @@ function totalMinorFromPostings(
   const none: PostingsTotal = { minor: 0, currency: baseCurrency, original: null, fxRate: null };
   if (!postings || postings.length === 0) return none;
 
-  // Expense postings are positive; the total is the positive side
-  // (matches a typical receipt that credits asset/liability for -X and
-  // debits expense for +X). Fall back to the absolute max on the
-  // all-credit edge case.
+  // Pick the leg that carries the MEANING of the transaction — the
+  // expense leg for spend, the income leg for earnings — by
+  // `account_type`, and KEEP ITS SIGN (#221).
+  //
+  // This used to pick `base(p) > 0`, i.e. the positive leg, on the
+  // reasoning that a receipt credits asset/liability for -X and debits
+  // expense for +X. True of a purchase, backwards on a refund: a return
+  // posts expense −X / card +X, so the positive leg is the CARD, and the
+  // row rendered as a same-size PURCHASE and was summed into the month's
+  // spend. Costco's 2024-11-16 −$71.17 return displayed as +$71.17 of
+  // Shopping.
+  //
+  // Income has no expense leg at all (asset debit / income credit), so it
+  // is negated here to come out positive, matching what the payout
+  // document itself says.
   //
   // `amount_base_minor` is nullable in the schema (the app fills it
   // before commit), so fall back to `amount_minor` when it is missing —
@@ -460,24 +490,34 @@ function totalMinorFromPostings(
   // that somehow got here unconverted is better shown at face value than
   // as zero.
   const base = (p: BackendPosting): number => p.amount_base_minor ?? p.amount_minor;
-  const positives = postings.filter((p) => base(p) > 0);
-  const chosen = positives.length > 0 ? positives : null;
+  const signed = (p: BackendPosting): number =>
+    p.account_type === 'income' ? -base(p) : base(p);
 
-  const minor = chosen
-    ? chosen.reduce((s, p) => s + base(p), 0)
+  // `account_type` arrives on every posting the API serves. Guard anyway:
+  // a cached response from before #221 has none, and silently summing an
+  // undefined type would zero the row.
+  const meaningful = postings.filter(
+    (p) => p.account_type === 'expense' || p.account_type === 'income',
+  );
+  const chosen = meaningful.length > 0
+    ? meaningful
+    : postings.filter((p) => base(p) > 0);
+
+  const minor = chosen.length > 0
+    ? chosen.reduce((s, p) => s + signed(p), 0)
     : Math.max(...postings.map((p) => Math.abs(base(p))));
 
   // A posting carries the currency it was *recorded* in, so the base
   // currency has to come from outside it (caller resolves it — see
   // `fxFromMetadata`). `fx_rate` being set is the signal that a
   // conversion happened and there is an original worth disclosing.
-  const leg = (chosen ?? postings)[0];
+  const leg = (chosen.length > 0 ? chosen : postings)[0];
 
   if (leg.fx_rate == null) {
     return { minor, currency: leg.currency, original: null, fxRate: null };
   }
-  const originalMinor = chosen
-    ? chosen.reduce((s, p) => s + p.amount_minor, 0)
+  const originalMinor = chosen.length > 0
+    ? chosen.reduce((s, p) => s + (p.account_type === 'income' ? -p.amount_minor : p.amount_minor), 0)
     : Math.max(...postings.map((p) => Math.abs(p.amount_minor)));
   return {
     minor,
@@ -565,6 +605,7 @@ export function toReceiptView(t: BackendTransaction, etag: string | null = null)
 export function mapTransaction(t: BackendTransaction): Transaction {
   const rv = toReceiptView(t);
   const classification = classifyBackendCategory(rv.category);
+  const transactionType = transactionTypeOf(t);
   const m = merchantFromTxn(t);
   // Single-name policy (see receipt-assistant-frontend#?): list
   // rows show ONE name, picked by displayName(). No subtitle, no
@@ -576,13 +617,18 @@ export function mapTransaction(t: BackendTransaction): Transaction {
     description: displayName(t.place, m, rv.payee ?? rv.narration ?? null),
     placeCity: formatPlaceCity(t.place),
     category: classification.category,
-    transactionType: classification.transactionType,
+    transactionType,
     date: rv.occurred_on,
     paymentMethod: rv.paymentMethod ?? null,
     // UI convention: expenses render as negative; income stays positive.
     // Always the BASE-currency figure — this is what every total, group
     // subtotal and rollup in the app sums (#184).
-    amount: classification.transactionType === 'income' ? rv.total : -rv.total,
+    //
+    // `rv.total` is the signed expense (or income) leg, so a REFUND
+    // arrives negative and this negation turns it POSITIVE — money that
+    // came back, rendered on the income side of zero and subtracting
+    // from the month's spend total, which is exactly right (#221).
+    amount: transactionType === 'income' ? rv.total : -rv.total,
     currency: rv.currency,
     originalTotalMinor: rv.originalTotalMinor,
     originalCurrency: rv.originalCurrency,
