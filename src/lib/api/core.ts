@@ -18,6 +18,11 @@
  */
 import imageCompression from 'browser-image-compression';
 import createClient from 'openapi-fetch';
+import {
+  hasUnconfirmedValuation,
+  pointsFromMetadata,
+  type PointsMetadata,
+} from '../points';
 import type { components, paths } from '@/lib/api-types';
 import type { Category, Transaction } from '@/types';
 import { CATEGORIES } from '@/types';
@@ -106,6 +111,11 @@ export interface ReceiptView {
    *  from, for the disclosure line under a converted amount. */
   fxRate: number | null;
   fxAsOfActual: string | null;
+  /** #216 — points valuation provenance, when the base figure came from
+   *  a rate the owner supplied rather than a published FX quote. Null on
+   *  every cash-only transaction. Drives the `≈` and the unconfirmed
+   *  marking: unlike an FX rate, this number is somebody's judgement. */
+  points: PointsMetadata | null;
   /** Category derived from the expense account's subtype / name. */
   category: string | null;
   paymentMethod: string | null;
@@ -558,12 +568,34 @@ function fxFromMetadata(md: Record<string, unknown>): FxProvenance | null {
   };
 }
 
+/**
+ * The base currency a transaction's amounts were converted INTO, from
+ * whichever pass did the converting.
+ *
+ * #184 established that a posting carries the currency it was *recorded*
+ * in, so the base has to come from metadata. It read `metadata.fx` only —
+ * correct while FX was the sole converter. #206 added a second one, and a
+ * points-only transaction has `metadata.points` and NO `metadata.fx`, so
+ * the lookup missed and fell through to the `USD` default.
+ *
+ * That default happened to be right on the first award folio, which is
+ * the dangerous kind of correct: nothing would have surfaced the bug
+ * until a non-USD workspace rendered `$714.00` for a figure that was
+ * never dollars. Both passes record `base_currency`; read both.
+ */
+function baseCurrencyFromMetadata(md: Record<string, unknown>): string {
+  const fx = fxFromMetadata(md);
+  if (fx) return fx.baseCurrency;
+  return pointsFromMetadata(md)?.base_currency ?? DEFAULT_BASE_CURRENCY;
+}
+
 export function toReceiptView(t: BackendTransaction, etag: string | null = null): ReceiptView {
   const md = (t.metadata ?? {}) as Record<string, unknown>;
   const fx = fxFromMetadata(md);
+  const points = pointsFromMetadata(md);
   const { minor, currency, original, fxRate } = totalMinorFromPostings(
     t.postings,
-    fx?.baseCurrency ?? DEFAULT_BASE_CURRENCY,
+    baseCurrencyFromMetadata(md),
   );
   const doc = primaryDocument(t);
   const merchant = merchantFromTxn(t);
@@ -584,6 +616,10 @@ export function toReceiptView(t: BackendTransaction, etag: string | null = null)
     originalCurrency: original?.currency ?? null,
     fxRate: fxRate ?? fx?.rate ?? null,
     fxAsOfActual: fx?.asOfActual ?? null,
+    // #216 — the provenance of the base figure when it came from a
+    // points valuation rather than a published FX rate. Null for every
+    // cash-only transaction, which is almost all of them.
+    points,
     category: categoryFromTxn(t),
     paymentMethod,
     documentId: doc?.id ?? null,
@@ -634,6 +670,12 @@ export function mapTransaction(t: BackendTransaction): Transaction {
     originalCurrency: rv.originalCurrency,
     fxRate: rv.fxRate,
     fxAsOfActual: rv.fxAsOfActual,
+    // #216 — two booleans rather than the whole blob: a ledger row shows
+    // the `≈` and the marking, never the rate or its provenance, and
+    // widening the row type to carry a payload no row renders invites
+    // exactly the drift this issue is about.
+    pointsValued: rv.points != null,
+    pointsUnconfirmed: hasUnconfirmedValuation(rv.points),
     rawStatus: t.status,
     documentId: rv.documentId,
     documentKind: rv.documentKind,

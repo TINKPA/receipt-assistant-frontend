@@ -52,6 +52,12 @@ export interface Transaction {
   originalCurrency?: string | null;
   fxRate?: number | null;
   fxAsOfActual?: string | null;
+  /** #216 — set when this row's base amount came from a points
+   *  valuation. Its presence is what makes the base figure an estimate
+   *  rather than a conversion, so the row renders `≈`. */
+  pointsValued?: boolean;
+  /** #216 — the valuation behind that estimate has no sign-off yet. */
+  pointsUnconfirmed?: boolean;
   /** Single source of truth for state. UI-visible status labels are derived
    *  via `statusBadge(rawStatus)` from `src/lib/transactionStatus.ts`. */
   rawStatus: RawTransactionStatus;
