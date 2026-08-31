@@ -13,6 +13,7 @@ import { cn } from '../lib/utils';
 import { qk } from '../lib/queryKeys';
 import { MerchantIcon } from './MerchantIcon';
 import { categoryLedgerLink, dateRangeLedgerLink, receiptLink } from '../lib/navLinks';
+import { PointsDisclosureNote } from './PointsDisclosureNote';
 
 /**
  * Monthly review — board screen 22 (Insights lane, tracking
@@ -209,6 +210,15 @@ export default function MonthlyReview({ month }: { month?: string }) {
             </span>
           )}
         </p>
+        {/* #216 — the SPENT figure above is a cashflow total, and cashflow
+            INCLUDES points converted at the workspace valuation. August
+            2026 is 16% points on an unconfirmed rate, and nothing said so.
+            Renders nothing in a month with no points, so every other month
+            is untouched. */}
+        <PointsDisclosureNote
+          points={cashflow?.points}
+          currency={cashflow?.currency ?? 'USD'}
+        />
       </div>
 
       {/* cmp-bars */}

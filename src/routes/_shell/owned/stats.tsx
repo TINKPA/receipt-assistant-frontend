@@ -2,7 +2,15 @@ import { useMemo } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { listOwnedItemsExpanded, type OwnedItemExpanded } from '../../../lib/api/things';
-import { ownedStatus, daysHeld, perDay, fmtPerDay, type OwnedStatus } from '../../../lib/things';
+import {
+  ownedStatus,
+  daysHeld,
+  fmtDollars,
+  paidBaseMinor,
+  perDay,
+  fmtPerDay,
+  type OwnedStatus,
+} from '../../../lib/things';
 import { useBack } from '../../../lib/useBack';
 import { cn } from '../../../lib/utils';
 
@@ -176,7 +184,7 @@ function AssetDashboard() {
                   </span>
                   <span className="font-mono text-[8.5px] text-[var(--color-ink-muted)]">
                     {daysHeld(it)?.toLocaleString() ?? '—'} days ·{' '}
-                    ${it.paid_minor != null ? Math.round(it.paid_minor / 100).toLocaleString() : '—'}
+                    {fmtDollars(paidBaseMinor(it))}
                   </span>
                 </span>
                 <span className="font-mono text-[11px] font-semibold text-[var(--color-accent)] tnum">
@@ -263,7 +271,9 @@ function computeStats(items: OwnedItemExpanded[]): Stats {
   let dailyMinor = 0;
 
   for (const it of items) {
-    const v = it.paid_minor ?? 0;
+    // #216 — base currency only. A CNY line summed raw put ~9,400 of
+    // phantom dollars into these totals.
+    const v = paidBaseMinor(it) ?? 0;
     totalValueMinor += v;
     const s = ownedStatus(it);
     byStatus[s].count += 1;

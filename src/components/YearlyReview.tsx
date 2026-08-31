@@ -13,6 +13,7 @@ import { qk } from '../lib/queryKeys';
 import type { Category } from '../types';
 import { cn } from '../lib/utils';
 import { categoryLedgerLink, dateRangeLedgerLink } from '../lib/navLinks';
+import { PointsDisclosureNote } from './PointsDisclosureNote';
 
 /**
  * Yearly review — board screen 23 (Insights lane, tracking
@@ -205,6 +206,19 @@ export default function YearlyReview({ year }: { year?: number }) {
           vs a year ago
         </p>
       </section>
+
+      {/* #216 — net worth EXCLUDES points accounts by design: only
+          redemptions are ingested, so a points balance would be a tally of
+          points spent rather than held. The payload says so; without this
+          the figure just looks short to anyone who checks it against a
+          real balance. Placed outside the inked section deliberately —
+          the note's amber/ink palette is built for paper, not for the
+          dark hero. */}
+      <PointsDisclosureNote
+        points={data?.netWorth?.points}
+        currency={data?.netWorth?.currency ?? 'USD'}
+        className="mt-0"
+      />
 
       {/* q-grid */}
       <div className="grid grid-cols-4 gap-2">

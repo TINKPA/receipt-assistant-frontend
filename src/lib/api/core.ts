@@ -60,6 +60,8 @@ export type BackendSummaryItem = components['schemas']['SummaryItem'];
 export type BackendTrendsReport = components['schemas']['TrendsReport'];
 export type BackendNetWorthReport = components['schemas']['NetWorthReport'];
 export type BackendCashflowReport = components['schemas']['CashflowReport'];
+/** #216 — the points block every /v1/reports/* payload carries. */
+export type BackendPointsDisclosure = components['schemas']['PointsDisclosure'];
 export type BackendProblemDetails = components['schemas']['ProblemDetails'];
 export type NewPosting = components['schemas']['NewPosting'];
 export type UpdateTransactionRequest = components['schemas']['UpdateTransactionRequest'];

@@ -2,7 +2,14 @@ import { useState } from 'react';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { listOwnedItemsExpanded, patchOwnedItem } from '../../../lib/api/things';
-import { daysHeld, perDay, ownedStatus } from '../../../lib/things';
+import { formatMoney } from '../../../lib/money';
+import {
+  daysHeld,
+  paidBaseMinor,
+  paidOriginal,
+  perDay,
+  ownedStatus,
+} from '../../../lib/things';
 import { ProductImage } from '../../../components/ProductImage';
 import { useBack } from '../../../lib/useBack';
 import { cn } from '../../../lib/utils';
@@ -62,7 +69,12 @@ function OwnedDetailRoute() {
 
   const days = daysHeld(item);
   const pd = perDay(item);
-  const paid = item.paid_minor != null ? item.paid_minor / 100 : null;
+  // #216 — base currency, or null. Never `paid_minor / 100`: for a
+  // CNY line that is yuan wearing a dollar sign, and for a points line it
+  // is 100x low in a unit that is not money.
+  const paidBase = paidBaseMinor(item);
+  const paid = paidBase != null ? paidBase / 100 : null;
+  const paidAsPrinted = paidOriginal(item, 'USD');
   const target = item.target_days ?? null;
   const progress = target && days ? Math.min(100, (days / target) * 100) : null;
   const targetPerDay = target && paid !== null ? paid / target : null;
@@ -118,7 +130,15 @@ function OwnedDetailRoute() {
 
       {/* calc row */}
       <div className="grid grid-cols-[1fr_auto_1fr_auto_1fr] items-center rounded-[13px] border-[0.5px] border-[var(--color-rule-soft)] bg-[var(--color-surface)] px-3 py-3 text-center">
-        <Calc label="paid" value={paid !== null ? `$${paid.toLocaleString()}` : '—'} />
+        {/* #216 — `sub` is what the receipt itself said, when that is not
+            the base currency. Same rule the receipt hero follows: the
+            summable number is the big one, the printed one sits beside it,
+            and neither is shown alone. */}
+        <Calc
+          label="paid"
+          value={paidBase !== null ? formatMoney(paidBase, 'USD') : '—'}
+          sub={paidAsPrinted}
+        />
         <span className="font-display text-[15px] text-[var(--color-ink-faint)]">÷</span>
         <Calc label="days held" value={days !== null ? days.toLocaleString() : '—'} />
         <span className="font-display text-[15px] text-[var(--color-ink-faint)]">=</span>
@@ -239,7 +259,19 @@ function OwnedDetailRoute() {
   );
 }
 
-function Calc({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
+function Calc({
+  label,
+  value,
+  accent,
+  sub,
+}: {
+  label: string;
+  value: string;
+  accent?: boolean;
+  /** Optional second line — the amount as the receipt printed it, when
+   *  the figure above is a conversion (#216). */
+  sub?: string | null;
+}) {
   return (
     <div>
       <p className="font-mono text-[7.5px] uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">
@@ -253,6 +285,9 @@ function Calc({ label, value, accent }: { label: string; value: string; accent?:
       >
         {value}
       </p>
+      {sub && (
+        <p className="font-mono text-[9px] tnum text-[var(--color-ink-muted)]">{sub}</p>
+      )}
     </div>
   );
 }
