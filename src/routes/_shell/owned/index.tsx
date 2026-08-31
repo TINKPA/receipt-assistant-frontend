@@ -5,6 +5,7 @@ import { listOwnedItemsExpanded } from '../../../lib/api/things';
 import {
   ownedStatus,
   daysHeld,
+  paidBaseMinor,
   perDay,
   fmtPerDay,
   type OwnedStatus,
@@ -37,8 +38,17 @@ function OwnedRoute() {
   });
 
   const live = useMemo(() => items.filter((i) => !i.retired_at), [items]);
+  // #216 — sum the BASE-currency figure, never `paid_minor`. The latter
+  // is denominated per-line, so adding it across a CNY item and a USD one
+  // produced a number in no currency at all. Unconvertible rows drop out
+  // of the sum rather than contributing a wrong magnitude, and are counted
+  // separately so the total can say it is partial.
   const totalValueMinor = useMemo(
-    () => live.reduce((s, i) => s + (i.paid_minor ?? 0), 0),
+    () => live.reduce((s, i) => s + (paidBaseMinor(i) ?? 0), 0),
+    [live],
+  );
+  const unpricedCount = useMemo(
+    () => live.filter((i) => i.paid_minor != null && paidBaseMinor(i) == null).length,
     [live],
   );
   const dailyTotal = useMemo(
@@ -106,6 +116,17 @@ function OwnedRoute() {
         <Stat label="Daily" value={`$${dailyTotal.toFixed(2)}`} accent />
         <Stat label="Items" value={String(live.length)} />
       </div>
+      {/* #216 — a total that quietly drops rows is worse than one that
+          says it did. These are items with a recorded price the ledger
+          could never convert to the base currency (a foreign line whose
+          transaction has no fx_rate), so counting them would mean adding
+          yuan to dollars. */}
+      {unpricedCount > 0 && (
+        <p className="-mt-2 text-center font-mono text-[9px] uppercase tracking-[0.14em] text-[var(--color-amber)]">
+          {unpricedCount} {unpricedCount === 1 ? 'item' : 'items'} not in Value —
+          price recorded in another currency, no rate to convert it
+        </p>
+      )}
 
       {isLoading ? (
         <p className="py-10 text-center font-display italic text-[var(--color-ink-muted)]">

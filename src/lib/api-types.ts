@@ -5453,6 +5453,8 @@ export interface components {
             product_name?: string | null;
             item_class?: string | null;
             paid_minor?: number | null;
+            paid_currency?: string | null;
+            paid_base_minor?: number | null;
             payee?: string | null;
             merchant_brand_id?: string | null;
         };
