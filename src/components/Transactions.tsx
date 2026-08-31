@@ -940,10 +940,31 @@ function LedgerRow({
           )}
         >
           {tx.amount > 0 ? '+' : ''}
+          {/* #216 — a points-valued row's figure is an appraisal, so it
+              carries the same `≈` the detail hero does. Without it the
+              ledger shows a bare `$714.00` that reads as exact, which is
+              precisely the shape of the #184 FX bug that hid for months.
+              An amount is only ever allowed to look exact when it is. */}
+          {tx.pointsValued && (
+            <span className="mr-[0.15em] text-[var(--color-ink-muted)]" aria-hidden="true">
+              ≈
+            </span>
+          )}
           {formatMoney(Math.abs(tx.amount) * 100, tx.currency)}
         </span>
         {tx.originalCurrency && tx.originalTotalMinor !== null && (
-          <span className="font-mono text-[11px] tnum text-[var(--color-ink-muted)]">
+          <span
+            className={cn(
+              'font-mono text-[11px] tnum',
+              // An unratified valuation is flagged in the row itself, not
+              // only on the detail screen — the ledger is where totals get
+              // scanned and believed, and the scan is exactly when nobody
+              // opens the detail.
+              tx.pointsUnconfirmed
+                ? 'text-[var(--color-amber)]'
+                : 'text-[var(--color-ink-muted)]',
+            )}
+          >
             {formatMoney(Math.abs(tx.originalTotalMinor ?? 0), tx.originalCurrency)}
           </span>
         )}

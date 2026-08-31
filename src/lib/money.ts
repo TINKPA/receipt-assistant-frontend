@@ -19,7 +19,15 @@
  *     see above it; the original is what is printed on the receipt in
  *     your hand. Both matter, so both are shown, and only one of them is
  *     ever summed.
+ *
+ * #216 extended the same shape to loyalty points, which are a currency
+ * here too (backend #206) — with one trap that FX does not have: points
+ * are stored as WHOLE UNITS while cash is stored in hundredths, so the
+ * `/ 100` below is wrong for them. `formatMoney` detects a points code
+ * and delegates; the scale rule and the reasoning live in
+ * `src/lib/points.ts`.
  */
+import { formatPoints, isPointsCurrency } from './points';
 
 /** Symbols for the currencies this ledger actually sees. Anything else
  *  renders as an ISO code prefix (`SEK 1,234.00`), which is unambiguous
@@ -56,7 +64,8 @@ export function currencySymbol(currency: string): string {
  * @param minor     Amount in minor units (cents). Sign is preserved only
  *                  if `signed` is set — callers that render expenses as
  *                  positive numbers pass the absolute value themselves.
- * @param currency  ISO-4217 code.
+ * @param currency  ISO-4217 code, or a points code (see the delegation
+ *                  note below).
  * @param opts.maximumFractionDigits  Override for compact displays that
  *                  want a whole-dollar figure (headline totals).
  */
@@ -65,6 +74,21 @@ export function formatMoney(
   currency: string,
   opts: { maximumFractionDigits?: number; signed?: boolean } = {},
 ): string {
+  // #216 — a points leg reaching here is NOT an error, so this delegates
+  // rather than throwing (the backend's `getRate()` throws on a points
+  // code, but it can afford to: a blank screen is worse than a wrong
+  // symbol, and every one of this function's call sites renders user-
+  // visible text).
+  //
+  // It has to be caught HERE rather than at each call site because points
+  // and cash are indistinguishable at the point of call — both are an
+  // integer in a field named `amount_minor`, and only the currency code
+  // says which scale it is on. Twelve call sites each had to remember;
+  // now none of them do. Do not "simplify" this away: without it a
+  // 42,000-point stay renders as `HYATT_PT 420.00`.
+  if (isPointsCurrency(currency)) {
+    return formatPoints(minor, { signed: opts.signed });
+  }
   const digits = opts.maximumFractionDigits ?? 2;
   const value = minor / 100;
   const abs = Math.abs(value).toLocaleString('en-US', {

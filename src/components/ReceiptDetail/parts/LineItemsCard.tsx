@@ -7,6 +7,7 @@ import { listTransactionItems } from '../../../lib/api';
 import { listOwnedItemsExpanded } from '../../../lib/api/things';
 import { productLink, ownedItemLink } from '../../../lib/navLinks';
 import type { BackendTransactionItem } from '../../../lib/api';
+import { formatMoney } from '../../../lib/money';
 
 // Subtle background per item class — keeps the badge informative
 // without screaming. Matches the paper palette.
@@ -31,13 +32,23 @@ const ITEM_CLASS_LABEL: Record<BackendTransactionItem['item_class'], string> = {
 // guard). Individual lines can still be tapped open.
 const LARGE_RECEIPT_THRESHOLD = 12;
 
+/**
+ * Line-item amounts.
+ *
+ * This used to be a private formatter — `currency === 'USD' ? '$' : ''`
+ * over a hard `/ 100` — which meant two things went wrong at once on the
+ * first award folio (#216): a 12,000-point night rendered as a bare
+ * `120.00`, with no symbol AND off by two orders of magnitude, because
+ * points are stored as whole units rather than hundredths.
+ *
+ * It now delegates to `formatMoney`, which owns both the symbol table and
+ * the points scale rule. The `—` for a null amount is the only behaviour
+ * kept here, because it is a layout concern rather than a money one: a
+ * line with no price still occupies its row.
+ */
 function formatMinor(minor: number | null | undefined, currency: string): string {
   if (minor == null) return '—';
-  const sym = currency === 'USD' ? '$' : '';
-  const neg = minor < 0;
-  const abs = (Math.abs(minor) / 100).toFixed(2);
-  // U+2212 MINUS SIGN reads better than hyphen for signed money.
-  return `${neg ? '−' : ''}${sym}${abs}`;
+  return formatMoney(minor, currency, { signed: true });
 }
 
 /** All-in per-line amount actually charged: effective_total when the backend

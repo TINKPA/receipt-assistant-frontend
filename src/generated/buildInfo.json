@@ -1,8 +1,8 @@
 {
   "service": "receipt-assistant-frontend",
   "version": "0.0.0",
-  "gitSha": "996ad9c76d3b07d541a1c8e4f1660f475fe29a74",
-  "gitShortSha": "996ad9c",
-  "gitBranch": "fix/refund-income-display",
-  "builtAt": "2026-08-19T12:09:56.004Z"
+  "gitSha": "874b590daeba8f991071fcf389ddbd0408ddbcda",
+  "gitShortSha": "874b590",
+  "gitBranch": "main",
+  "builtAt": "2026-08-31T06:49:39.828Z"
 }
