@@ -96,6 +96,14 @@ export interface WithETag<T> {
 export interface ReceiptView {
   id: string;
   status: BackendTransaction['status'];
+  /** The TRANSACTION's own soft-delete stamp. Distinct from any
+   *  document's `deleted_at` in `documents[]`: a fold can move every
+   *  document to another transaction and then tombstone this one,
+   *  leaving `documents` empty — in which case this is the ONLY
+   *  evidence the receipt is gone. Deriving the tombstone flag from the
+   *  primary document instead is how a soft-deleted transaction
+   *  rendered as a fully live, editable receipt (#165). */
+  deletedAt: string | null;
   version: number;
   occurred_on: string;
   payee: string | null;
@@ -605,6 +613,7 @@ export function toReceiptView(t: BackendTransaction, etag: string | null = null)
   return {
     id: t.id,
     status: t.status,
+    deletedAt: t.deleted_at,
     version: t.version,
     occurred_on: t.occurred_on,
     payee: t.payee,

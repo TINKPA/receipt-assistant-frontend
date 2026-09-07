@@ -6,6 +6,7 @@ import DeletedBadge from '../../DeletedBadge';
 export function TopBar({
   onBack,
   isTombstoned,
+  canRestore,
   deletedAt,
   isProcessing,
   canEdit,
@@ -16,7 +17,17 @@ export function TopBar({
   onRestore,
 }: {
   onBack: () => void;
+  /** The record is not live — the TRANSACTION is soft-deleted, or every
+   *  document on it is (#165). Hides the actions menu. */
   isTombstoned: boolean;
+  /** A restore action actually EXISTS — i.e. there is a soft-deleted
+   *  DOCUMENT to restore. Restore is document-scoped (POST
+   *  /v1/documents/{id}/restore), so a tombstoned transaction carrying
+   *  zero documents shows the badge without a button that would
+   *  silently no-op. Reviving the transaction itself needs
+   *  restoreTransaction, which has never been called from this app —
+   *  its own issue. */
+  canRestore: boolean;
   deletedAt: string | null;
   isProcessing: boolean;
   canEdit: boolean;
@@ -49,8 +60,8 @@ export function TopBar({
         Back
       </button>
       <div className="flex items-center gap-3">
-        {isTombstoned && <DeletedBadge deletedAt={deletedAt} />}
-        {isTombstoned ? (
+        {(isTombstoned || canRestore) && <DeletedBadge deletedAt={deletedAt} />}
+        {canRestore ? (
           <button
             type="button"
             onClick={onRestore}
@@ -63,7 +74,7 @@ export function TopBar({
           >
             {restoring ? 'Restoring…' : 'Restore'}
           </button>
-        ) : (
+        ) : isTombstoned ? null : (
           !isProcessing && (
             <div ref={menuRef} className="relative">
               <button
