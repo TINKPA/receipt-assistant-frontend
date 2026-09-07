@@ -235,15 +235,31 @@ export function toDocumentEntries(docs: readonly DocumentRef[]): DocumentEntry[]
   });
 
   // Two rows can still read identically — two photos, two EMLs with no
-  // subject. Disambiguate ONLY those, so the ordinary case keeps the
-  // plain noun: a twin that already has a subtitle is distinguishable
-  // as it stands; one without gets a 1-based ordinal.
-  return entries.map((e, i) => {
-    if (e.subtitle) return e;
-    const twin = entries.some(
-      (o, j) => j !== i && o.title === e.title && o.format === e.format,
-    );
-    return twin ? { ...e, title: `${e.title} ${i + 1}` } : e;
+  // subject, or two documents that happen to share a subject line.
+  // Disambiguate ONLY those, so the ordinary case keeps the plain noun.
+  //
+  // The identity is everything the row DISPLAYS, subtitle included, and
+  // it is also what DocumentsCard composes into the iframe title — so
+  // keying on title+format alone would both renumber rows a reader can
+  // already tell apart and leave same-subtitle twins with identical
+  // frame titles.
+  //
+  // Numbering runs WITHIN the colliding group, so a group always starts
+  // at 1. Using the index in the whole list would number a group by
+  // where it happens to sit ("Receipt 2" above "Receipt 3", no 1).
+  const identity = (e: DocumentEntry) => `${e.title} ${e.format} ${e.subtitle ?? ''}`;
+  const groupSize = new Map<string, number>();
+  for (const e of entries) {
+    const k = identity(e);
+    groupSize.set(k, (groupSize.get(k) ?? 0) + 1);
+  }
+  const seen = new Map<string, number>();
+  return entries.map((e) => {
+    const k = identity(e);
+    if ((groupSize.get(k) ?? 0) < 2) return e;
+    const n = (seen.get(k) ?? 0) + 1;
+    seen.set(k, n);
+    return { ...e, title: `${e.title} ${n}` };
   });
 }
 

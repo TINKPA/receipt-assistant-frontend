@@ -10,9 +10,13 @@ import { documentPanelStyle } from './documentPanel';
  *
  * Production has 90 transactions carrying 2-4 documents whose extras
  * have never been visible: the screen picked one "primary" document and
- * dropped the rest. Rendered only for two or more — a single-document
- * transaction keeps the original OriginalReceiptCollapsible fold
- * verbatim, so the common case is unchanged.
+ * dropped the rest.
+ *
+ * Rendered for anything except exactly one LIVE document — that case
+ * keeps the original OriginalReceiptCollapsible fold verbatim, so the
+ * common case is unchanged. A lone SOFT-DELETED document comes here too:
+ * presenting a tombstone is this component's job, and the fold would
+ * give it a chevron opening a viewer that 404s.
  *
  * ┌──────────────────────────────────────────────────┐
  * │  Documents (2)                                   │
@@ -51,11 +55,16 @@ export function DocumentsCard({ entries }: { entries: DocumentEntry[] }) {
           const { doc, title, format, subtitle } = e;
 
           // #165 G — a soft-deleted document is LISTED, marked, and not
-          // opened. /content and /rendered are not guaranteed to serve a
-          // soft-deleted row, and the <img> fallback's onError hides
-          // itself, so an expandable tombstone would fail invisibly into
-          // an empty panel. Restore lives in the Ledger's "Show deleted"
-          // panel.
+          // opened. /content 404s on a soft-deleted row (verified), and
+          // the <img> fallback's onError hides itself, so an expandable
+          // tombstone would fail invisibly into an empty panel.
+          //
+          // Restore is not offered per row: it lives in the top bar,
+          // which is enabled whenever ANY document here is deleted. The
+          // Ledger's "Show deleted" panel is NOT the fallback it looks
+          // like — it reads lib/tombstones.ts, a localStorage list of
+          // ids this browser happened to delete, so it cannot enumerate
+          // a document deleted on another device.
           if (doc.deleted_at) {
             return (
               <li key={doc.id} className="px-5 py-3 flex items-start justify-between gap-4">

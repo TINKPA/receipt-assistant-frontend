@@ -136,11 +136,22 @@ export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: Re
   // is `[]`, so the loading render costs nothing.
   const entries = toDocumentEntries(receipt?.documents ?? []);
   const liveEntries = entries.filter((e) => e.doc.deleted_at == null);
-  // Re-extract targets the most-itemized LIVE document. `documentId` is
-  // unusable for this: primaryDocument() (core.ts:442-446) does not skip
+  // The document the mutating actions target. `documentId` alone is
+  // unusable: primaryDocument() (core.ts:442-446) does not skip
   // soft-deleted rows, so it can name a tombstone — invisible before
   // #165, obvious now that every document is on screen.
-  const actionDocId = liveEntries[0]?.doc.id ?? null;
+  //
+  // But it only FALLS BACK to the ordered list; it does not adopt it.
+  // `liveEntries[0]` is ordered by role rank, which disagrees with
+  // primaryDocument()'s receipt_image-then-array-order preference on
+  // transactions that have no deleted documents at all — re-pointing
+  // those would silently re-OCR a different file, which is a change
+  // #165 does not ask for.
+  const deletedDoc = entries.find((e) => e.doc.deleted_at != null)?.doc ?? null;
+  const actionDocId =
+    liveEntries.find((e) => e.doc.id === receipt?.documentId)?.doc.id ??
+    liveEntries[0]?.doc.id ??
+    null;
 
   const invalidateReceipt = () =>
     queryClient.invalidateQueries({ queryKey: qk.receipt(receiptId) });
@@ -162,10 +173,15 @@ export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: Re
     onBack();
   };
 
+  // Restore is DOCUMENT-scoped, so it must name a soft-deleted document
+  // — not `documentId`, which on a transaction with one deleted and one
+  // live document names whichever primaryDocument() preferred.
+  const restoreDocId = deletedDoc?.id ?? null;
+
   const restoreMut = useMutation({
-    mutationFn: () => restoreDocument(receipt!.documentId!),
+    mutationFn: () => restoreDocument(restoreDocId!),
     onSuccess: () => {
-      removeTombstone(receipt!.documentId!);
+      removeTombstone(restoreDocId!);
       invalidateReceipt();
       queryClient.invalidateQueries({ queryKey: qk.tombstones });
       onAfterMutation?.();
@@ -173,7 +189,7 @@ export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: Re
     onError: (err: unknown) => setRestoreError(extractProblemMessage(err)),
   });
   const handleRestore = () => {
-    if (!receipt?.documentId) return;
+    if (!restoreDocId) return;
     setRestoreError(null);
     restoreMut.mutate();
   };
@@ -278,8 +294,16 @@ export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: Re
   // changes. Restore is document-scoped, so it is offered exactly where
   // it was offered before.
   const docsAllDeleted = entries.length > 0 && liveEntries.length === 0;
-  const canRestore = docsAllDeleted && receipt.documentId != null;
-  const tombstonedAt = receipt.deletedAt ?? (docsAllDeleted ? entries[0].doc.deleted_at : null);
+  // Offered whenever SOME document is soft-deleted, not only when every
+  // one is. Requiring all of them would drop the Restore button that
+  // main showed on a transaction carrying one deleted and one live
+  // document, and the fallback the app has for that — the Ledger's
+  // "Show deleted" panel — is a localStorage list of ids this browser
+  // happened to delete (lib/tombstones.ts), so it cannot enumerate a
+  // document deleted on another device. That would leave no restore
+  // path at all.
+  const canRestore = restoreDocId != null;
+  const tombstonedAt = receipt.deletedAt ?? deletedDoc?.deleted_at ?? null;
   /** "This record is not live" — drives the struck-through hero and
    *  gates the mutating affordances. Both facts qualify. */
   const recordDeleted = isTombstoned || docsAllDeleted;
@@ -384,15 +408,21 @@ export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: Re
        *  Hidden when there are no matches (no skeleton, no placeholder). */}
 
       {/* Every document on the transaction, not just the primary one
-          (#165). One document keeps the original fold verbatim — same
-          element, same slot in this space-y-6 stack, same props, same
-          'Original email' / 'Original receipt' header. Two or more get
-          the list card. The gate is equivalent to the old
-          `receipt.documentId &&`: primaryDocument() returns documents[0]
-          whenever the array is non-empty, so `documentId == null` iff
-          `documents` is empty. */}
+          (#165). ONE LIVE document keeps the original fold verbatim —
+          same element, same slot in this space-y-6 stack, same props,
+          same 'Original email' / 'Original receipt' header.
+          Everything else goes to the list card, including the lone
+          soft-deleted document: the branch keys on liveness, not count,
+          because the card is the surface that knows how to present a
+          tombstone. Handing a deleted document to the fold instead
+          gives it a chevron that opens a viewer whose /content and
+          /rendered both 404, and the <img> fallback hides itself on
+          error — an empty panel with no explanation (#165 G).
+          The outer gate is equivalent to the old `receipt.documentId &&`:
+          primaryDocument() returns documents[0] whenever the array is
+          non-empty, so `documentId == null` iff `documents` is empty. */}
       {!isProcessing && entries.length > 0 && (
-        entries.length === 1 ? (
+        entries.length === 1 && liveEntries.length === 1 ? (
           <OriginalReceiptCollapsible
             documentId={entries[0].doc.id}
             kind={entries[0].doc.kind}
@@ -472,7 +502,7 @@ export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: Re
       <DeleteReceiptDialog
         isOpen={activeDialog === 'delete'}
         onClose={() => setActiveDialog(null)}
-        documentId={receipt.documentId}
+        documentId={actionDocId}
         transactionId={receipt.id}
         transactionEtag={receipt.etag}
         isReconciled={receipt.status === 'reconciled'}
