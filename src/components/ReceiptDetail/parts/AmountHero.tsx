@@ -48,6 +48,7 @@ export function AmountHero({
   merchantBrandId,
   category,
   occurredOn,
+  occurredTime,
   isProcessing,
   tombstoned,
   brandTo,
@@ -71,6 +72,8 @@ export function AmountHero({
   merchantBrandId: string | null;
   category: Category | null;
   occurredOn: string;
+  /** Pre-formatted time of day ("7:42 PM"), or null when unknown. */
+  occurredTime?: string | null;
   isProcessing: boolean;
   tombstoned: boolean;
   /** Link target for the merchant name → BrandPage. Undefined renders a
@@ -187,6 +190,7 @@ export function AmountHero({
       )}
       <p className="mt-1 text-[13px] text-[var(--color-ink-muted)]">
         {formatDateLong(occurredOn)}
+        {occurredTime && ` · ${occurredTime}`}
       </p>
     </div>
   );

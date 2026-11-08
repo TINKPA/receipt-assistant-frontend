@@ -26,6 +26,7 @@ import {
 import type { components, paths } from '@/lib/api-types';
 import type { Category, Transaction } from '@/types';
 import { CATEGORIES } from '@/types';
+import { formatTimeOfDay } from '@/lib/timeOfDay';
 
 export const client = createClient<paths>({ baseUrl: '/api' });
 
@@ -106,6 +107,8 @@ export interface ReceiptView {
   deletedAt: string | null;
   version: number;
   occurred_on: string;
+  /** Raw `occurred_at` timestamp (UTC). Null when no time was extracted. */
+  occurredAt: string | null;
   payee: string | null;
   narration: string | null;
   /** Workspace base currency — the unit `total_minor` / `total` are in,
@@ -616,6 +619,7 @@ export function toReceiptView(t: BackendTransaction, etag: string | null = null)
     deletedAt: t.deleted_at,
     version: t.version,
     occurred_on: t.occurred_on,
+    occurredAt: t.occurred_at ?? null,
     payee: t.payee,
     narration: t.narration,
     currency,
@@ -666,6 +670,7 @@ export function mapTransaction(t: BackendTransaction): Transaction {
     category: classification.category,
     transactionType,
     date: rv.occurred_on,
+    time: formatTimeOfDay(rv.occurredAt, t.place?.time_zone),
     paymentMethod: rv.paymentMethod ?? null,
     // UI convention: expenses render as negative; income stays positive.
     // Always the BASE-currency figure — this is what every total, group
