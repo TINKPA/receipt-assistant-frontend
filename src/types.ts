@@ -32,6 +32,9 @@ export interface Transaction {
   category: Category | null;
   transactionType: TransactionType;
   date: string;
+  /** Time of day, already formatted ("7:42 PM") in the merchant's time
+   *  zone. Null when the receipt carried no time. */
+  time: string | null;
   /** Null when the receipt's OCR didn't extract a payment method
    *  (e.g. cash, illegible, missing footer). UI views fall back to
    *  `placeCity` or category in that case. */

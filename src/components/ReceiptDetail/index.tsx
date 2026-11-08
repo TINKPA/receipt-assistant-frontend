@@ -32,6 +32,7 @@ import { LineItemsCard } from './parts/LineItemsCard';
 import { ExtractionDetailsCollapsible } from './parts/ExtractionDetailsCollapsible';
 import { ProcessingNote } from './parts/ProcessingNote';
 import { Banner, ReExtractBanner } from './parts/banners';
+import { formatTimeOfDay } from '@/lib/timeOfDay';
 
 interface ReceiptDetailProps {
   receiptId: string;
@@ -342,6 +343,7 @@ export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: Re
         merchantBrandId={receipt.merchantBrandId}
         category={receipt.category as Category | null}
         occurredOn={receipt.occurred_on}
+        occurredTime={formatTimeOfDay(receipt.occurredAt, receipt.place?.time_zone)}
         isProcessing={isProcessing}
         tombstoned={recordDeleted}
         brandTo={

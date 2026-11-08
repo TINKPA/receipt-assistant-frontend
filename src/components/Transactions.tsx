@@ -885,7 +885,7 @@ function LedgerRow({
               {tx.description}
             </p>
             <p className="mt-0.5 font-mono text-[9.5px] tracking-[0.04em] uppercase text-[var(--color-ink-muted)] truncate">
-              {rowLabelPrefix(tx)}{formatDay(tx.date)}
+              {rowLabelPrefix(tx)}{formatDay(tx.date)}{tx.time && ` · ${tx.time}`}
               {badge && (
                 <span
                   className={cn(
