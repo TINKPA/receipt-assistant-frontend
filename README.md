@@ -42,7 +42,15 @@ The backend ships an **OpenAPI 3.1 spec** at [`openapi/openapi.json`](https://gi
 npm run api:types   # regenerates src/lib/api-types.ts from the backend spec
 ```
 
+That script reads the spec from the backend's `main` on GitHub. To generate against a backend checkout that is not pushed yet (a branch that will deploy together with a frontend change), point the same tool at the file:
+
+```bash
+npx openapi-typescript ../receipt-assistant/openapi/openapi.json -o src/lib/api-types.ts
+```
+
 `src/lib/api.ts` wraps [`openapi-fetch`](https://openapi-ts.dev/openapi-fetch/) with ergonomic helpers (compression on upload, `ETag` extraction on GET, `Idempotency-Key` on POST `/v1/transactions`, `If-Match` on PATCH / DELETE / POST `.../void`). When the spec changes, regenerate and the type-checker surfaces breakage at the call site.
+
+One kind of breakage it does **not** surface: a query parameter the spec dropped. openapi-fetch's types reject an unknown query key only when it is the sole key in the object, so `{ from, to, currency }` keeps compiling after `currency` is gone from the spec (and the server ignores it). When a parameter is removed, grep the wrappers in `src/lib/api/` for it.
 
 ## Quick Start
 
@@ -246,6 +254,10 @@ subscribeToBatch(id, onEvent)     // EventSource on /v1/batches/:id/stream
 // Documents — receipt images + other attachments
 uploadDocument(file, kind)        // POST /v1/documents (sha256-idempotent)
 documentContentUrl(docId)         // URL for <img src>
+cascadeDeleteDocument(id, { hard }) // DELETE ?cascade=true → CascadeDeleteReport.
+                                  // A transaction another live document still
+                                  // supports is KEPT: read `transactions_kept`
+                                  // before treating the receipt as gone
 
 // Reports
 getSummaryReport({ from, to, groupBy })
@@ -257,7 +269,7 @@ getCashflowReport({ from, to })
 extractProblemMessage(err)        // pull a human-readable string out of a Problem Details payload
 ```
 
-Backend errors come back as `application/problem+json` per RFC 7807 — every helper funnels them through `extractProblemMessage` so callers only deal with readable strings.
+Backend errors come back as `application/problem+json` per RFC 7807 — every helper funnels them through `extractProblemMessage` so callers only deal with readable strings. To branch on *which* error it was, use `parseProblem(err).code` (`'cascade-blocked-reconciled'`, …): the `type` field itself is an absolute URI, `https://receipts.dev/errors/<code>`, and comparing it to a bare `errors/<code>` never matches.
 
 ## Data fetching & state
 
@@ -265,6 +277,7 @@ All **server state** goes through **TanStack Query** (React Query v5) — **ever
 
 - **Reads** — call a `src/lib/api.ts` helper as the `queryFn` of a `useQuery` / `useInfiniteQuery` in the component. Do **not** fetch in a `useEffect` and stash the result in `useState`. The shared `queryClient` singleton and its defaults (`staleTime 30s`, `gcTime 5m`, no refetch-on-focus) live in `src/lib/queryClient.ts`.
 - **Query keys** — build every key from the central factory **`qk` in `src/lib/queryKeys.ts`** (e.g. `qk.transactions.list(args)`, `qk.receipt(id)`, `qk.batch(id)`, `qk.merchant(id)`, `qk.place(id)`, `qk.brand(id)`, `qk.product(id)`, `qk.monthlyReview(…)`, `qk.buildInfo`). Never inline `['…']` literals. Invalidate by **prefix** (e.g. `qk.transactions.all`) so arg-tails don't have to match. The single `['batch', id]` key is shared by BatchDetail, the upload toast, and the inline cards, so a batch is polled once no matter how many surfaces watch it.
+- **A transaction is always read from the server** — `getTransaction` passes `cache: 'no-store'`. Its ETag is the row's `version`, which exists for `If-Match` and does not move when a linked document is deleted or restored; left to the browser's HTTP cache, a refetch revalidates, gets `304`, and returns the old body. TanStack Query is the only cache for it. After anything that changes a receipt's documents, invalidate `qk.receipt(id)` (or `qk.receiptsAll` when the receipt is not known).
 - **Writes** — every mutation goes through **`useMutation`** (uniform). On success, refresh the affected surfaces by calling **`invalidateLedgerSurfaces()`** (`src/lib/queryClient.ts` — invalidates `transactions` + `summary` + `batches`) and/or the specific detail key. This replaced the old `refreshKey` / `bumpRefresh` whole-tree remount counter — screens stay **mounted** (no `key={…}` remount). **ETag-guarded writes** (PATCH/void on a transaction) must write the response's fresh ETag straight into the cache via `setQueryData`, not invalidate-and-refetch — otherwise a rapid second edit sends a stale `If-Match` and 412s (see `ReceiptDetail.handleUpdated`).
 - **Polling / streaming** — for live status, use a conditional `refetchInterval` (e.g. ReceiptDetail polls only while `draft`/`error`) or an SSE subscription that calls `invalidateQueries` on each event (BatchDetail). Don't hand-roll `setInterval(fetch)`.
 - **Scroll restoration** — enabled via `createRouter({ scrollRestoration: true })` in `src/main.tsx`. It works precisely *because* screens stay mounted and cached pages rehydrate the list to full height synchronously on Back.

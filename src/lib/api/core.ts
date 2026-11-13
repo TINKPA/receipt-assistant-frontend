@@ -63,6 +63,13 @@ export type BackendNetWorthReport = components['schemas']['NetWorthReport'];
 export type BackendCashflowReport = components['schemas']['CashflowReport'];
 /** #216 — the points block every /v1/reports/* payload carries. */
 export type BackendPointsDisclosure = components['schemas']['PointsDisclosure'];
+/** The `fx` block every /v1/reports/* payload carries: foreign-currency
+ *  postings in scope that were never converted, and are therefore in the
+ *  totals at face value. */
+export type BackendFxDisclosure = components['schemas']['FxDisclosure'];
+/** What a cascade delete did to each transaction the document was linked
+ *  to. `transactions_kept` non-empty means a receipt is NOT gone. */
+export type CascadeDeleteReport = components['schemas']['CascadeDeleteReport'];
 export type BackendProblemDetails = components['schemas']['ProblemDetails'];
 export type NewPosting = components['schemas']['NewPosting'];
 export type UpdateTransactionRequest = components['schemas']['UpdateTransactionRequest'];
@@ -714,18 +721,38 @@ export async function compressImage(file: File): Promise<File> {
 
 // ── Error helpers (RFC 7807) ───────────────────────────────────
 
-/** Known backend problem types — extend as the backend adds more.
- *  Code consuming `parseProblem` should switch on `.type` so unknown
+/** Problem codes this app branches on — extend as it learns more.
+ *  Code consuming `parseProblem` should switch on `.code` so unknown
  *  values fall through to a generic error path. */
-export type ProblemErrorType =
-  | 'errors/cascade-blocked-reconciled'
-  | 'errors/cannot-delete-reconciled'
-  | 'errors/document-has-links'
-  | 'errors/precondition-failed'
+export type ProblemCode =
+  | 'cascade-blocked-reconciled'
+  | 'cannot-delete-reconciled'
+  | 'document-has-links'
   | (string & {});
 
+/**
+ * The short code of a problem `type`.
+ *
+ * The backend sends `type` as an absolute URI,
+ * `https://receipts.dev/errors/cascade-blocked-reconciled`. Comparing it
+ * to `'errors/cascade-blocked-reconciled'` never matched, so the delete
+ * dialog's three dedicated "blocked" explanations never appeared and the
+ * user got the generic banner instead. The code is everything after the
+ * last `errors/`, so the relative form is accepted too.
+ */
+export function problemCode(type: string | undefined): ProblemCode | undefined {
+  if (!type) return undefined;
+  const marker = 'errors/';
+  const at = type.lastIndexOf(marker);
+  const code = at === -1 ? type : type.slice(at + marker.length);
+  return code || undefined;
+}
+
 export interface ParsedProblem {
-  type?: ProblemErrorType;
+  /** The problem `type` exactly as sent (an absolute URI). */
+  type?: string;
+  /** `type` reduced to its short code — the thing to compare against. */
+  code?: ProblemCode;
   title?: string;
   detail?: string;
   status?: number;
@@ -745,7 +772,10 @@ export function parseProblem(err: unknown): ParsedProblem {
   if (!candidate || typeof candidate !== 'object') return empty;
   const body = candidate as Record<string, unknown>;
   const out: ParsedProblem = { extensions: {} };
-  if (typeof body.type === 'string') out.type = body.type as ProblemErrorType;
+  if (typeof body.type === 'string') {
+    out.type = body.type;
+    out.code = problemCode(body.type);
+  }
   if (typeof body.title === 'string') out.title = body.title;
   if (typeof body.detail === 'string') out.detail = body.detail;
   if (typeof body.status === 'number') out.status = body.status;
@@ -850,16 +880,18 @@ export async function listPostableAccounts(): Promise<BackendAccount[]> {
   return all.filter((a) => a.parent_id !== null && !parents.has(a.id));
 }
 
+/** An account's balance, always in the workspace base currency (named by
+ *  `currency` in the response). There is no parameter to ask for another
+ *  one: the old `currency` option only relabelled the same figure. */
 export async function getAccountBalance(
   id: string,
-  opts: { asOf?: string; currency?: string; includeChildren?: boolean } = {},
+  opts: { asOf?: string; includeChildren?: boolean } = {},
 ): Promise<BackendAccountBalance> {
   const { data, error, response } = await client.GET('/v1/accounts/{id}/balance', {
     params: {
       path: { id },
       query: {
         as_of: opts.asOf,
-        currency: opts.currency,
         include_children: opts.includeChildren,
       },
     },

@@ -88,9 +88,10 @@ function moneyMinor(meta: Metadata, field: 'tax' | 'tip'): number | undefined {
  *
  * Functional surface is unchanged from the previous Material-3 version:
  *   - Auto-polls every 5s while status is draft/error.
- *   - Edit / Delete / Restore actions kept (the mockup shows just
- *     Edit + Delete; Restore is a conditional flow that shows up
- *     for posted/reconciled and tombstoned receipts respectively).
+ *   - Edit / Delete in the actions menu for as long as the TRANSACTION
+ *     is live; Restore beside it whenever one of its documents is
+ *     soft-deleted. The two are independent: deleting a document does
+ *     not delete the transaction it supports.
  *   - Renders line items, location map, raw OCR text, extraction quality
  *     when those metadata sub-objects exist.
  *
@@ -168,10 +169,26 @@ export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: Re
 
   const handleDeleted = () => {
     setActiveDialog(null);
+    // The cached view still lists the document as live. Mark it stale so
+    // the next visit reads the current state ("Remove document only"
+    // leaves the receipt in the ledger, one tap away), but do not refetch
+    // now: this screen is about to unmount, and after a hard delete the
+    // refetch would be a 404.
+    queryClient.invalidateQueries({ queryKey: qk.receipt(receiptId), refetchType: 'none' });
     // A delete soft-tombstones the document; refresh the tombstone list too.
     queryClient.invalidateQueries({ queryKey: qk.tombstones });
     onAfterMutation?.();
     onBack();
+  };
+
+  // A cascade deleted the document and the server KEPT the transaction,
+  // because another document still supports it. The receipt is not
+  // gone, so stay on it and show what is left.
+  const handleKept = () => {
+    setActiveDialog(null);
+    invalidateReceipt();
+    queryClient.invalidateQueries({ queryKey: qk.tombstones });
+    onAfterMutation?.();
   };
 
   // Restore is DOCUMENT-scoped, so it must name a soft-deleted document
@@ -289,28 +306,26 @@ export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: Re
   // normal live one with edit and delete enabled.
   const isTombstoned = receipt.deletedAt != null;
 
-  // The DOCUMENT-level fact — a different thing, and the one that drove
-  // the old behaviour. For a one-document receipt this is exactly the
-  // old `primaryDoc.deleted_at != null`, so nothing about that path
-  // changes. Restore is document-scoped, so it is offered exactly where
-  // it was offered before.
-  const docsAllDeleted = entries.length > 0 && liveEntries.length === 0;
-  // Offered whenever SOME document is soft-deleted, not only when every
-  // one is. Requiring all of them would drop the Restore button that
-  // main showed on a transaction carrying one deleted and one live
-  // document, and the fallback the app has for that — the Ledger's
-  // "Show deleted" panel — is a localStorage list of ids this browser
-  // happened to delete (lib/tombstones.ts), so it cannot enumerate a
-  // document deleted on another device. That would leave no restore
-  // path at all.
+  // The DOCUMENT-level fact is a different thing, and it does not make
+  // the record any less live. A document can be soft-deleted while its
+  // transaction stays in the ledger and in every total: "Remove document
+  // only" does it, and so does a cascade on a transaction that another
+  // document still supports (the server keeps it). This screen used to
+  // fold the two together — every document deleted meant a struck-out
+  // hero, and ANY deleted document swapped the actions menu for Restore
+  // — which left a live transaction with no way to edit or delete it.
+  //
+  // Restore is document-scoped and offered whenever SOME document is
+  // soft-deleted, not only when every one is. The fallback the app has —
+  // the Ledger's "Show deleted" panel — is a localStorage list of ids
+  // this browser happened to delete (lib/tombstones.ts), so it cannot
+  // enumerate a document deleted on another device. The deleted document
+  // itself is marked, with its date, in the documents card below.
   const canRestore = restoreDocId != null;
-  const tombstonedAt = receipt.deletedAt ?? deletedDoc?.deleted_at ?? null;
-  /** "This record is not live" — drives the struck-through hero and
-   *  gates the mutating affordances. Both facts qualify. */
-  const recordDeleted = isTombstoned || docsAllDeleted;
 
-  const canDelete = !recordDeleted;
-  const canEdit = !recordDeleted;
+  // Edit and delete follow the transaction, and nothing else.
+  const canDelete = !isTombstoned;
+  const canEdit = !isTombstoned;
 
   const badge = statusBadge(receipt.status);
   const lowConfidence = confidence != null && confidence < 0.6;
@@ -321,7 +336,7 @@ export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: Re
         onBack={onBack}
         isTombstoned={isTombstoned}
         canRestore={canRestore}
-        deletedAt={tombstonedAt}
+        deletedAt={receipt.deletedAt}
         isProcessing={isProcessing}
         canEdit={canEdit}
         canDelete={canDelete}
@@ -345,7 +360,7 @@ export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: Re
         occurredOn={receipt.occurred_on}
         occurredTime={formatTimeOfDay(receipt.occurredAt, receipt.place?.time_zone)}
         isProcessing={isProcessing}
-        tombstoned={recordDeleted}
+        tombstoned={isTombstoned}
         brandTo={
           // Merchant name in the hero → BrandPage (brand-level rollup
           // across all locations). The per-location detail is reachable
@@ -439,7 +454,7 @@ export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: Re
       {/* Re-extract affordance. Only on active (non-deleted) receipts
           that have a linked document. Wall-time is ~30-60s for vision
           OCR, so we make the pending state visible. */}
-      {!isProcessing && actionDocId && !recordDeleted && (
+      {!isProcessing && actionDocId && !isTombstoned && (
           <div className="space-y-2">
             <button
               type="button"
@@ -509,6 +524,7 @@ export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: Re
         transactionEtag={receipt.etag}
         isReconciled={receipt.status === 'reconciled'}
         onDeleted={handleDeleted}
+        onKept={handleKept}
       />
     </div>
   );

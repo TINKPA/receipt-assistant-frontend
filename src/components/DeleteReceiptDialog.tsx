@@ -6,6 +6,7 @@ import { cn } from '../lib/utils';
 import {
   softDeleteDocument,
   cascadeDeleteDocument,
+  getTransaction,
   hardDeleteTransaction,
   parseProblem,
   type ParsedProblem,
@@ -36,7 +37,38 @@ interface DeleteReceiptDialogProps {
   /** Called once the delete completes and the parent should refresh /
    *  navigate away. */
   onDeleted: () => void;
+  /** Called when the dialog is dismissed after a cascade that deleted a
+   *  document but KEPT the transaction (another document still supports
+   *  it). The receipt is not gone, so the parent should stay on it and
+   *  refetch rather than navigate away. */
+  onKept: () => void;
 }
+
+/** What the mutation was asked to do: the option the user picked, or the
+ *  follow-up offered after a cascade kept the transaction. */
+type Step =
+  | { step: 'first'; mode: Mode }
+  | { step: 'remaining'; hard: boolean };
+
+/**
+ * A cascade went through and the transaction is still in the ledger.
+ *
+ * The backend keeps a transaction for as long as another non-deleted
+ * document is linked to it (an invoice and a payment confirmation both
+ * document one purchase), and says so in `transactions_kept`. Treating
+ * that 200 as "deleted" is what made a two-document receipt look
+ * undeletable: the sheet closed, the app went back to the ledger, and
+ * the receipt was still there.
+ */
+interface KeptState {
+  /** The cascade was a hard one, so the follow-up is too. */
+  hard: boolean;
+  /** Live documents still on the transaction. Null when the count could
+   *  not be read back; the copy then stays generic. */
+  remaining: number | null;
+}
+
+type Outcome = { kind: 'done' } | ({ kind: 'kept' } & KeptState);
 
 interface ResultState {
   kind: 'idle' | 'working' | 'error' | 'block-cascade-reconciled' | 'block-cannot-delete-reconciled' | 'block-document-has-links';
@@ -65,14 +97,14 @@ const OPTION_DESCRIPTIONS: Record<
     tier: 'cascade',
     tag: 'reversible',
     title: 'Document + transaction',
-    help: 'Cascade soft-delete · soft-deletes the linked transaction (drafts are hard-deleted). A tombstone shows in the Ledger, restorable anytime.',
+    help: 'Cascade soft-delete · soft-deletes the linked transaction (drafts are hard-deleted), unless another document still supports it. A tombstone shows in the Ledger, restorable anytime.',
   },
   'cascade-hard': {
     glyph: '✕',
     tier: 'hard',
     tag: 'permanent',
     title: 'Hard delete everything',
-    help: 'File, document row, every linked transaction and their postings · gone from the books.',
+    help: 'File, document row, and every linked transaction no other document supports, with their postings · gone from the books.',
   },
   'hard-txn': {
     glyph: '✕',
@@ -103,11 +135,13 @@ export default function DeleteReceiptDialog({
   transactionEtag,
   isReconciled,
   onDeleted,
+  onKept,
 }: DeleteReceiptDialogProps) {
   const initialMode: Mode = documentId ? 'soft' : 'hard-txn';
   const [mode, setMode] = React.useState<Mode>(initialMode);
   const [confirmHardOk, setConfirmHardOk] = React.useState(false);
   const [state, setState] = React.useState<ResultState>({ kind: 'idle' });
+  const [kept, setKept] = React.useState<KeptState | null>(null);
   const [unreconcileTarget, setUnreconcileTarget] = React.useState<string | null>(null);
 
   React.useEffect(() => {
@@ -115,13 +149,19 @@ export default function DeleteReceiptDialog({
       setMode(initialMode);
       setConfirmHardOk(false);
       setState({ kind: 'idle' });
+      setKept(null);
       setUnreconcileTarget(null);
     }
   }, [isOpen, initialMode]);
 
+  // Once a cascade has kept the transaction, the document is already
+  // deleted: leaving the sheet is not a cancel, and the parent has to
+  // show the receipt as it now is.
+  const handleClose = () => (kept ? onKept() : onClose());
+
   const handleProblem = (problem: ParsedProblem): boolean => {
     const ext = problem.extensions ?? {};
-    if (problem.type === 'errors/cascade-blocked-reconciled') {
+    if (problem.code === 'cascade-blocked-reconciled') {
       const ids = Array.isArray(ext.reconciled_transaction_ids)
         ? (ext.reconciled_transaction_ids as unknown[]).filter(
             (x): x is string => typeof x === 'string',
@@ -134,14 +174,14 @@ export default function DeleteReceiptDialog({
       });
       return true;
     }
-    if (problem.type === 'errors/cannot-delete-reconciled') {
+    if (problem.code === 'cannot-delete-reconciled') {
       setState({
         kind: 'block-cannot-delete-reconciled',
         message: problem.detail ?? problem.title,
       });
       return true;
     }
-    if (problem.type === 'errors/document-has-links') {
+    if (problem.code === 'document-has-links') {
       const linkCount = typeof ext.link_count === 'number' ? ext.link_count : undefined;
       setState({
         kind: 'block-document-has-links',
@@ -153,34 +193,76 @@ export default function DeleteReceiptDialog({
     return false;
   };
 
+  /** The documents still live on this transaction, read from the server
+   *  rather than from whatever the page had cached when it opened. */
+  const liveDocumentIds = async (): Promise<string[]> => {
+    const { data } = await getTransaction(transactionId);
+    return data.documents.filter((d) => d.deleted_at == null).map((d) => d.id);
+  };
+
+  /** The cascade is done and cannot be taken back, so failing to read
+   *  the count must not turn into an error: say "kept" without a number. */
+  const keptOutcome = async (hard: boolean): Promise<Outcome> => {
+    const remaining = await liveDocumentIds().then(
+      (ids) => ids.length,
+      () => null,
+    );
+    return { kind: 'kept', hard, remaining };
+  };
+
+  const cascade = async (docId: string, hard: boolean): Promise<boolean> => {
+    const report = await cascadeDeleteDocument(docId, { hard });
+    // A hard cascade removes the document row, so there is nothing to
+    // restore and no tombstone to remember.
+    if (!hard) addTombstone(docId);
+    return report.transactions_kept.includes(transactionId);
+  };
+
   const deleteMut = useMutation({
-    mutationFn: async (chosen: Mode) => {
-      switch (chosen) {
+    mutationFn: async (v: Step): Promise<Outcome> => {
+      if (v.step === 'remaining') {
+        // The follow-up: cascade each document that still supports the
+        // transaction. The one that is its last live evidence takes the
+        // transaction with it, and the report says when that happened.
+        for (const docId of await liveDocumentIds()) {
+          const stillKept = await cascade(docId, v.hard);
+          if (!stillKept) return { kind: 'done' };
+        }
+        return keptOutcome(v.hard);
+      }
+      switch (v.mode) {
         case 'soft':
           if (!documentId) throw new Error('No document linked');
           await softDeleteDocument(documentId);
           addTombstone(documentId);
-          break;
+          return { kind: 'done' };
         case 'cascade-soft':
+        case 'cascade-hard': {
           if (!documentId) throw new Error('No document linked');
-          await cascadeDeleteDocument(documentId, { hard: false });
-          addTombstone(documentId);
-          break;
-        case 'cascade-hard':
-          if (!documentId) throw new Error('No document linked');
-          await cascadeDeleteDocument(documentId, { hard: true });
-          // Hard cascade kills the doc too, so no tombstone — the row
-          // is gone for good.
-          break;
+          const hard = v.mode === 'cascade-hard';
+          const stillKept = await cascade(documentId, hard);
+          return stillKept ? keptOutcome(hard) : { kind: 'done' };
+        }
         case 'hard-txn':
           if (!transactionEtag) throw new Error('Missing ETag — refresh and retry.');
           await hardDeleteTransaction(transactionId, transactionEtag);
-          break;
+          return { kind: 'done' };
       }
     },
     onMutate: () => setState({ kind: 'working' }),
-    onSuccess: () => onDeleted(),
-    onError: (err: unknown) => {
+    onSuccess: (outcome) => {
+      if (outcome.kind === 'done') {
+        onDeleted();
+        return;
+      }
+      setKept({ hard: outcome.hard, remaining: outcome.remaining });
+      setState({ kind: 'idle' });
+    },
+    onError: (err: unknown, v) => {
+      // A follow-up that stopped part-way has deleted some of the
+      // documents it was counting; drop the number rather than show a
+      // stale one.
+      if (v.step === 'remaining') setKept((k) => (k ? { ...k, remaining: null } : k));
       const problem = parseProblem(err);
       const handled = handleProblem(problem);
       if (!handled) {
@@ -192,9 +274,15 @@ export default function DeleteReceiptDialog({
     },
   });
 
+  /** Run (or re-run) whichever step the sheet is on. */
+  const runDelete = () =>
+    deleteMut.mutate(
+      kept ? { step: 'remaining', hard: kept.hard } : { step: 'first', mode },
+    );
+
   const handleConfirm = () => {
-    if (mode === 'cascade-hard' && !confirmHardOk) return;
-    deleteMut.mutate(mode);
+    if (!kept && mode === 'cascade-hard' && !confirmHardOk) return;
+    runDelete();
   };
 
   const renderOptions = () => (
@@ -230,12 +318,97 @@ export default function DeleteReceiptDialog({
           />
           <span className="text-sm text-error">
             I understand this is irreversible — receipt file, document row, and every linked
-            transaction will be permanently destroyed.
+            transaction that no other document supports will be permanently destroyed.
           </span>
         </label>
       )}
     </div>
   );
+
+  // After a kept cascade "back" returns to the kept panel: the options
+  // are for a document that is already deleted.
+  const backLabel = kept ? 'Back' : 'Back to options';
+
+  const renderKept = (k: KeptState) => {
+    const working = state.kind === 'working';
+    const n = k.remaining;
+    const others =
+      n === null ? 'another document' : n === 1 ? 'another document' : `${n} other documents`;
+    const target =
+      n === null
+        ? 'the remaining documents'
+        : n === 1
+          ? 'the other document'
+          : `the other ${n} documents`;
+    return (
+      <div className="space-y-4">
+        <div className="flex items-start gap-3 rounded-xl bg-[color:rgba(188,134,36,0.12)] p-4">
+          <AlertTriangle className="mt-0.5 flex-shrink-0 text-[var(--color-amber)]" size={20} />
+          <div>
+            <p className="text-sm font-semibold text-[var(--color-ink)]">
+              {k.hard ? 'Document permanently deleted' : 'Document deleted'} · the transaction
+              was kept
+            </p>
+            {n === 0 ? (
+              <p className="mt-1 text-xs text-on-surface-variant">
+                The transaction is still in your ledger and has no document left to delete. To
+                remove it, choose Delete… on the receipt again and delete the transaction
+                itself.
+              </p>
+            ) : (
+              <p className="mt-1 text-xs text-on-surface-variant">
+                It is still in your ledger because {others} still support
+                {n !== null && n > 1 ? '' : 's'} it. Deleting one file never deletes a purchase
+                that another file documents. To remove the transaction as well, delete {target}{' '}
+                too.
+              </p>
+            )}
+          </div>
+        </div>
+
+        {state.kind === 'error' && (
+          <div className="flex items-start gap-3 p-4 rounded-xl bg-surface-container-lowest">
+            <AlertCircle className="text-error flex-shrink-0 mt-0.5" size={20} />
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-[var(--color-ink)]">Couldn't complete</p>
+              <p className="text-xs text-error mt-1">{state.message}</p>
+            </div>
+          </div>
+        )}
+
+        <div className="flex gap-3 pt-2">
+          <button
+            onClick={onKept}
+            disabled={working}
+            data-testid="delete-kept-keep"
+            className="flex-1 rounded-[var(--radius-pill)] border-[0.5px] border-[var(--color-rule)] bg-[var(--color-paper-deep)] py-3 font-display text-[13.5px] font-medium text-[var(--color-ink-soft)] transition-colors hover:text-[var(--color-ink)] disabled:opacity-40"
+          >
+            {n === 0 ? 'Done' : 'Keep the transaction'}
+          </button>
+          {n !== 0 && (
+            <button
+              onClick={runDelete}
+              disabled={working}
+              data-testid="delete-kept-remaining"
+              className={cn(
+                'flex-[1.4] py-3 px-3 rounded-xl text-[13.5px] font-bold leading-tight transition-all flex items-center justify-center gap-2 bg-error text-on-error hover:scale-[1.02] active:scale-95',
+                working && 'opacity-50 cursor-not-allowed hover:scale-100',
+              )}
+            >
+              {working ? (
+                <>
+                  <Loader2 className="animate-spin" size={18} />
+                  Deleting...
+                </>
+              ) : (
+                `${k.hard ? 'Permanently delete' : 'Delete'} ${target} too`
+              )}
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  };
 
   const renderBlockCascadeReconciled = () => (
     <div className="space-y-4">
@@ -244,7 +417,7 @@ export default function DeleteReceiptDialog({
         className="flex items-center gap-2 text-sm text-primary hover:opacity-80 transition-opacity"
       >
         <ArrowLeft size={16} />
-        Back to options
+        {backLabel}
       </button>
 
       <div className="flex items-start gap-3 p-4 rounded-xl bg-error/10">
@@ -300,7 +473,7 @@ export default function DeleteReceiptDialog({
         className="flex items-center gap-2 text-sm text-primary hover:opacity-80 transition-opacity"
       >
         <ArrowLeft size={16} />
-        Back to options
+        {backLabel}
       </button>
 
       <div className="flex items-start gap-3 p-4 rounded-xl bg-error/10">
@@ -329,7 +502,7 @@ export default function DeleteReceiptDialog({
         className="flex items-center gap-2 text-sm text-primary hover:opacity-80 transition-opacity"
       >
         <ArrowLeft size={16} />
-        Back to options
+        {backLabel}
       </button>
 
       <div className="flex items-start gap-3 p-4 rounded-xl bg-error/10">
@@ -349,7 +522,7 @@ export default function DeleteReceiptDialog({
         onClick={() => {
           setMode('cascade-hard');
           setConfirmHardOk(true);
-          deleteMut.mutate('cascade-hard');
+          deleteMut.mutate({ step: 'first', mode: 'cascade-hard' });
         }}
         className="w-full py-3 rounded-xl bg-error text-on-error font-bold hover:scale-[1.02] active:scale-95 transition-all"
       >
@@ -362,8 +535,8 @@ export default function DeleteReceiptDialog({
     setUnreconcileTarget(null);
     if (state.kind === 'block-cannot-delete-reconciled') {
       // The receipt's own transaction was unreconciled — retry the
-      // user's last chosen mode.
-      deleteMut.mutate(mode);
+      // step that was blocked.
+      runDelete();
       return;
     }
     if (state.kind === 'block-cascade-reconciled') {
@@ -373,7 +546,7 @@ export default function DeleteReceiptDialog({
         (x) => x !== unreconcileTarget,
       );
       if (remaining.length === 0) {
-        deleteMut.mutate(mode);
+        runDelete();
       } else {
         setState({ ...state, reconciledTxnIds: remaining });
       }
@@ -389,7 +562,7 @@ export default function DeleteReceiptDialog({
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              onClick={state.kind === 'working' ? undefined : onClose}
+              onClick={state.kind === 'working' ? undefined : handleClose}
               className="absolute inset-0 bg-[color:rgba(26,22,18,0.38)]"
             />
 
@@ -408,14 +581,20 @@ export default function DeleteReceiptDialog({
               <div className="flex items-start gap-4 px-5 pb-1">
                 <div className="min-w-0">
                   <h2 className="font-display text-[19px] font-medium tracking-tight">
-                    Delete this receipt<em className="italic text-[var(--color-accent)]">?</em>
+                    {kept ? (
+                      'Transaction kept'
+                    ) : (
+                      <>
+                        Delete this receipt<em className="italic text-[var(--color-accent)]">?</em>
+                      </>
+                    )}
                   </h2>
                   <p className="mt-0.5 truncate font-mono text-[9px] tracking-[0.04em] text-[var(--color-ink-muted)]">
                     {documentId ? `doc_${documentId.slice(0, 8)} · ` : ''}tx_{transactionId.slice(0, 8)} · double-entry
                   </p>
                 </div>
                 <button
-                  onClick={onClose}
+                  onClick={handleClose}
                   disabled={state.kind === 'working'}
                   aria-label="Close"
                   className="ml-auto flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-[var(--color-ink-muted)] transition-colors hover:text-[var(--color-ink)] disabled:opacity-40"
@@ -429,7 +608,11 @@ export default function DeleteReceiptDialog({
                 {state.kind === 'block-cannot-delete-reconciled' && renderBlockCannotDeleteReconciled()}
                 {state.kind === 'block-document-has-links' && renderBlockDocumentHasLinks()}
 
-                {(state.kind === 'idle' || state.kind === 'working' || state.kind === 'error') && (
+                {kept &&
+                  (state.kind === 'idle' || state.kind === 'working' || state.kind === 'error') &&
+                  renderKept(kept)}
+
+                {!kept && (state.kind === 'idle' || state.kind === 'working' || state.kind === 'error') && (
                   <>
                     <p className="text-sm text-on-surface-variant">
                       Three tiers — pick how far this goes.

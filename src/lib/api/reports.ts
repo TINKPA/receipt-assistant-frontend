@@ -2,6 +2,13 @@
  * Reports resource — summary / trends / net-worth / cashflow, plus the
  * legacy-summary shim the existing Dashboard consumes.
  *
+ * Every report is in the workspace base currency, named by `currency` in
+ * the response. None takes a currency parameter: the one these wrappers
+ * used to pass only wrote the requested code next to the same
+ * base-currency figures. (The type checker does not catch a leftover
+ * `currency` in a query object — it only rejects an unknown key when it
+ * is the sole one — so do not rely on the build to find it.)
+ *
  * Imports shared things from `./core` only.
  */
 import { client, unwrap } from './core';
@@ -16,7 +23,6 @@ export async function getSummaryReport(opts: {
   from?: string;
   to?: string;
   groupBy?: 'category' | 'account' | 'payee';
-  currency?: string;
 } = {}): Promise<BackendSummaryReport> {
   const { data, error, response } = await client.GET('/v1/reports/summary', {
     params: {
@@ -24,7 +30,6 @@ export async function getSummaryReport(opts: {
         from: opts.from,
         to: opts.to,
         group_by: opts.groupBy,
-        currency: opts.currency,
       },
     },
   });
@@ -36,7 +41,6 @@ export async function getTrendsReport(opts: {
   to?: string;
   period?: 'month' | 'year';
   groupBy?: 'category' | 'total';
-  currency?: string;
 } = {}): Promise<BackendTrendsReport> {
   const { data, error, response } = await client.GET('/v1/reports/trends', {
     params: {
@@ -45,7 +49,6 @@ export async function getTrendsReport(opts: {
         to: opts.to,
         period: opts.period,
         group_by: opts.groupBy,
-        currency: opts.currency,
       },
     },
   });
@@ -54,10 +57,9 @@ export async function getTrendsReport(opts: {
 
 export async function getNetWorthReport(opts: {
   asOf?: string;
-  currency?: string;
 } = {}): Promise<BackendNetWorthReport> {
   const { data, error, response } = await client.GET('/v1/reports/net_worth', {
-    params: { query: { as_of: opts.asOf, currency: opts.currency } },
+    params: { query: { as_of: opts.asOf } },
   });
   return unwrap('getNetWorthReport', data, error, response.status);
 }
@@ -65,11 +67,10 @@ export async function getNetWorthReport(opts: {
 export async function getCashflowReport(opts: {
   from?: string;
   to?: string;
-  currency?: string;
 } = {}): Promise<BackendCashflowReport> {
   const { data, error, response } = await client.GET('/v1/reports/cashflow', {
     params: {
-      query: { from: opts.from, to: opts.to, currency: opts.currency },
+      query: { from: opts.from, to: opts.to },
     },
   });
   return unwrap('getCashflowReport', data, error, response.status);

@@ -209,8 +209,9 @@ export async function submitManualEntry(
         item_class: 'durable',
         // Empty, not `{source:'manual'}` — the server stamps a real
         // `source` column and #183 Phase 3 says read that, not a metadata
-        // sentinel. Sent explicitly because OpenAPI's `default: {}` comes
-        // through openapi-typescript as required (same as createTransaction).
+        // sentinel. Sent explicitly because the create schema's
+        // `default: {}` comes through openapi-typescript as required (same
+        // as createTransaction; true of create bodies only, not of PATCH).
         metadata: {},
       });
       productId = product.id;
@@ -231,7 +232,8 @@ export async function submitManualEntry(
     quantity: 1,
     unit_price_minor: item.lineTotalMinor,
     confidence: 'high',
-    // See the createProduct call above — `default: {}` renders as required.
+    // See the createProduct call above — on a create body `default: {}`
+    // renders as required.
     metadata: {},
   };
   if (item.taxMinor != null) line.tax_minor = item.taxMinor;

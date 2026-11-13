@@ -81,7 +81,12 @@ export default function EditReceiptModal({
     setError(null);
 
     // Only send fields that actually changed; PATCH is merge-patch.
-    const patch: UpdateTransactionRequest = { metadata: {} };
+    // `metadata` is deliberately absent: this form edits none of it, and
+    // the server keeps what it has (it merges, and stamps
+    // `metadata.user_edited` itself). This used to send `metadata: {}`
+    // because the generated type demanded the key, and a backend that
+    // replaced rather than merged wiped every stored key on each save.
+    const patch: UpdateTransactionRequest = {};
     if (payee !== (receipt.payee ?? '')) patch.payee = payee || null;
     if (narration !== (receipt.narration ?? '')) patch.narration = narration || null;
     if (occurredOn !== receipt.occurred_on) patch.occurred_on = occurredOn;

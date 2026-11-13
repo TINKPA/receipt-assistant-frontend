@@ -355,6 +355,9 @@ export default function Transactions({
       // Restore re-adds the row to the main list and removes the tombstone.
       queryClient.invalidateQueries({ queryKey: qk.transactions.all });
       queryClient.invalidateQueries({ queryKey: qk.tombstones });
+      // It also changes the documents of whichever receipt this file is
+      // on, and a cached receipt page would go on listing it as deleted.
+      queryClient.invalidateQueries({ queryKey: qk.receiptsAll });
     } catch (err: unknown) {
       setRowError(extractProblemMessage(err));
     }
