@@ -22,9 +22,7 @@ export async function fetchPlace(id: string): Promise<PlaceFull> {
 
 /**
  * Update the user-overridable `custom_name` on a place. Pass `null`
- * to clear. The field was renamed from `custom_name_zh` in #79 —
- * the backend still accepts the old key as a deprecated alias for
- * one release, but new callers should use `custom_name`.
+ * to clear.
  */
 export async function patchPlace(
   id: string,
@@ -66,10 +64,7 @@ export async function postRefreshPlace(id: string): Promise<RefreshPlaceResult> 
 
 /**
  * Fallback chain for rendering a place's name in the UI:
- *   custom_name      → user override (always wins; renamed from
- *                      `custom_name_zh` in #79 — backward-compat
- *                      handled by `displayName()` and the backend's
- *                      one-release dual emit)
+ *   custom_name      → user override (always wins)
  *   display_name_zh  → Google v1 zh-CN call or photo-OCR fallback
  *   display_name_en  → English fallback (never disappears)
  *
@@ -83,9 +78,7 @@ export function placeName(p: PlaceFull | null | undefined): {
   alternate: string | null;
 } | null {
   if (!p) return null;
-  // Prefer the new `custom_name`; the deprecated `custom_name_zh`
-  // alias is still emitted by the backend for one release window.
-  const override = p.custom_name ?? p.custom_name_zh ?? null;
+  const override = p.custom_name ?? null;
   const zh = override ?? pickCjk(p.display_name_zh);
   const en = p.display_name_en ?? p.formatted_address ?? null;
   if (!zh && !en) return null;
