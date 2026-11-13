@@ -87,8 +87,8 @@ export interface paths {
         get: {
             parameters: {
                 query?: {
-                    flat?: boolean | null;
-                    include_closed?: boolean | null;
+                    flat?: boolean;
+                    include_closed?: boolean;
                 };
                 header?: never;
                 path?: never;
@@ -105,6 +105,7 @@ export interface paths {
                         "application/json": components["schemas"]["Account"][];
                     };
                 };
+                400: components["responses"]["BadRequest"];
             };
         };
         put?: never;
@@ -133,6 +134,7 @@ export interface paths {
                         "application/json": components["schemas"]["Account"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Parent account not found */
                 404: {
                     headers: {
@@ -195,6 +197,7 @@ export interface paths {
                     };
                     content?: never;
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Account not found */
                 404: {
                     headers: {
@@ -227,6 +230,7 @@ export interface paths {
                     };
                     content?: never;
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Account not found */
                 404: {
                     headers: {
@@ -267,7 +271,10 @@ export interface paths {
         };
         options?: never;
         head?: never;
-        /** Patch account (rename / re-parent / close) */
+        /**
+         * Patch account (rename / re-parent / close)
+         * @description JSON Merge Patch (RFC 7396). `metadata` merges into the stored object rather than replacing it (`null` removes a key, `{}` changes nothing). `parent_id` may not be the account itself or any of its descendants.
+         */
         patch: {
             parameters: {
                 query?: never;
@@ -293,6 +300,7 @@ export interface paths {
                         "application/json": components["schemas"]["Account"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Account not found */
                 404: {
                     headers: {
@@ -340,13 +348,15 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Account balance as of a date */
+        /**
+         * Account balance as of a date
+         * @description The balance is the sum of the account's postings in the workspace base currency, named by `currency` in the response. There is no parameter to ask for another currency.
+         */
         get: {
             parameters: {
                 query?: {
                     as_of?: string;
-                    currency?: string;
-                    include_children?: boolean | null;
+                    include_children?: boolean;
                 };
                 header?: never;
                 path: {
@@ -365,8 +375,18 @@ export interface paths {
                         "application/json": components["schemas"]["AccountBalance"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Account not found */
                 404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+                /** @description `currency` is not the workspace base currency */
+                422: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -391,13 +411,16 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Register (checkbook view) with running balance */
+        /**
+         * Register (checkbook view) with running balance
+         * @description `running_balance_after_minor` is the account's balance after that posting, counted from the account's first posting. `from` limits which rows are returned, not what the balance includes.
+         */
         get: {
             parameters: {
                 query?: {
                     from?: string;
                     to?: string;
-                    include_deleted?: boolean | null;
+                    include_deleted?: boolean;
                     cursor?: string;
                     limit?: number;
                 };
@@ -419,6 +442,7 @@ export interface paths {
                         "application/json": components["schemas"]["AccountRegister"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Account not found */
                 404: {
                     headers: {
@@ -458,8 +482,8 @@ export interface paths {
                     q?: string;
                     status?: "draft" | "posted" | "reconciled" | "error";
                     trip_id?: string;
-                    has_document?: boolean | null;
-                    include_deleted?: boolean | null;
+                    has_document?: boolean;
+                    include_deleted?: boolean;
                     source_ingest_id?: string;
                     flagged?: "near_dup";
                     sort?: "occurred_on" | "amount" | "created_at";
@@ -485,6 +509,7 @@ export interface paths {
                         };
                     };
                 };
+                400: components["responses"]["BadRequest"];
             };
         };
         put?: never;
@@ -513,6 +538,7 @@ export interface paths {
                         "application/json": components["schemas"]["Transaction"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Idempotency conflict */
                 409: {
                     headers: {
@@ -583,6 +609,7 @@ export interface paths {
                     };
                     content?: never;
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Not Found */
                 404: {
                     headers: {
@@ -622,6 +649,7 @@ export interface paths {
                     };
                     content?: never;
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Transaction is reconciled — unreconcile first. */
                 409: {
                     headers: {
@@ -635,7 +663,18 @@ export interface paths {
         };
         options?: never;
         head?: never;
-        /** Patch transaction head fields */
+        /**
+         * Patch transaction head fields
+         * @description JSON Merge Patch (RFC 7396). A field the body does not name is left alone.
+         *
+         *     **`metadata` merges, it does not replace.** Objects merge recursively, a `null` value removes that key, any other value replaces it, and `metadata: {}` changes nothing. Send only the keys you mean to change.
+         *
+         *     **Server-owned metadata keys cannot be changed here.** These are provenance and bookkeeping the server maintains: `user_edited`, `extraction`, `extraction_history`, `re_extracted_at`, `source`, `source_ingest_id`, `classification`, `ocr_audit`, `allocation_audit`, `enrichment_skipped`, `photo_ocr`, `receipt_ocr_zh`, `items`, `merge_audit`, `near_dup_check`, `fx`, `points`. A patch that would change or remove one is refused with 422 (violation code `server_owned`); echoing a key back with its current value is a no-op and is accepted, so a client may GET the object, change its own keys and PATCH the whole object back.
+         *
+         *     Patching `payee`, `occurred_on` or `occurred_at` sets `metadata.user_edited.<field>`, which keeps re-extract from overwriting the value.
+         *
+         *     A patch that changes nothing returns 200 without bumping `version`.
+         */
         patch: {
             parameters: {
                 query?: never;
@@ -662,8 +701,18 @@ export interface paths {
                         "application/json": components["schemas"]["Transaction"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Version mismatch */
                 412: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+                /** @description Validation failed, or the patch would change a server-owned metadata key */
+                422: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -719,6 +768,7 @@ export interface paths {
                         "application/json": components["schemas"]["Transaction"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Not found / not deleted */
                 404: {
                     headers: {
@@ -770,6 +820,7 @@ export interface paths {
                         "application/json": components["schemas"]["NearDupReviewResponse"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Not found or not flagged */
                 404: {
                     headers: {
@@ -819,6 +870,7 @@ export interface paths {
                         "application/json": components["schemas"]["Transaction"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
             };
         };
         delete?: never;
@@ -866,6 +918,7 @@ export interface paths {
                         "application/json": components["schemas"]["Transaction"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Transaction is not in reconciled state */
                 409: {
                     headers: {
@@ -933,6 +986,7 @@ export interface paths {
                         "application/json": components["schemas"]["BulkResponse"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
             };
         };
         delete?: never;
@@ -950,7 +1004,17 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Add a posting to a transaction */
+        /**
+         * Add a posting to a transaction
+         * @description Refused with 409 while the transaction is `reconciled` (`errors/transaction-reconciled` — unreconcile first) or soft-deleted (`errors/transaction-deleted` — restore first).
+         *
+         *     `amount_minor` and `amount_base_minor` are kept consistent:
+         *     - **Base-currency posting** — the server sets `amount_base_minor = amount_minor` and `fx_rate = null`. Omit both; a different `amount_base_minor` is a 422.
+         *     - **Foreign-cash posting** — `fx_rate` and `amount_base_minor` are required together.
+         *     - **Points posting** — supply both, or neither to apply the programme valuation.
+         *
+         *     `amount_base_minor` must not have the opposite sign to `amount_minor`.
+         */
         post: {
             parameters: {
                 query?: never;
@@ -977,7 +1041,17 @@ export interface paths {
                         "application/json": components["schemas"]["Posting"];
                     };
                 };
-                /** @description Imbalance */
+                400: components["responses"]["BadRequest"];
+                /** @description Transaction is reconciled or soft-deleted */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+                /** @description Imbalance, unknown account, or inconsistent amounts */
                 422: {
                     headers: {
                         [name: string]: unknown;
@@ -1039,6 +1113,7 @@ export interface paths {
                         "application/json": components["schemas"]["AddTransactionItemsResponse"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Transaction not found */
                 404: {
                     headers: {
@@ -1106,6 +1181,16 @@ export interface paths {
                     };
                     content?: never;
                 };
+                400: components["responses"]["BadRequest"];
+                /** @description Transaction is reconciled or soft-deleted */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
                 /** @description Would leave <2 postings */
                 422: {
                     headers: {
@@ -1119,7 +1204,19 @@ export interface paths {
         };
         options?: never;
         head?: never;
-        /** Update a posting */
+        /**
+         * Update a posting
+         * @description Refused with 409 while the transaction is `reconciled` (`errors/transaction-reconciled` — unreconcile first) or soft-deleted (`errors/transaction-deleted` — restore first).
+         *
+         *     `amount_minor` and `amount_base_minor` are kept consistent:
+         *     - **Base-currency posting** — the server sets `amount_base_minor = amount_minor` and `fx_rate = null`. Omit both; a different `amount_base_minor` is a 422.
+         *     - **Foreign-cash posting** — `fx_rate` and `amount_base_minor` are required together.
+         *     - **Points posting** — supply both, or neither to apply the programme valuation.
+         *
+         *     `amount_base_minor` must not have the opposite sign to `amount_minor`.
+         *
+         *     A patch that names any of `amount_minor`, `currency`, `fx_rate` or `amount_base_minor` restates the whole pair under the rules above, so the native amount cannot change while the base amount stays behind. A patch of only `memo` and/or `account_id` leaves the amounts alone; `account_id` must be an account in this workspace. A patch that changes nothing returns 200 without bumping `version`.
+         */
         patch: {
             parameters: {
                 query?: never;
@@ -1145,6 +1242,25 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["Posting"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                /** @description Transaction is reconciled or soft-deleted */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+                /** @description Imbalance, unknown account, or inconsistent amounts */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
                     };
                 };
             };
@@ -1222,7 +1338,7 @@ export interface paths {
                     brand_id?: string;
                     merchant_id?: string;
                     q?: string;
-                    include_retired?: boolean | null;
+                    include_retired?: boolean;
                     cursor?: string;
                     limit?: number;
                 };
@@ -1244,6 +1360,7 @@ export interface paths {
                         };
                     };
                 };
+                400: components["responses"]["BadRequest"];
             };
         };
         put?: never;
@@ -1290,6 +1407,7 @@ export interface paths {
                         "application/json": components["schemas"]["Product"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Validation failed (bad item_class, unknown merchant_id) */
                 422: {
                     headers: {
@@ -1335,6 +1453,7 @@ export interface paths {
                         "application/json": components["schemas"]["Product"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Not Found */
                 404: {
                     headers: {
@@ -1377,6 +1496,7 @@ export interface paths {
                         "application/json": components["schemas"]["Product"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Not Found */
                 404: {
                     headers: {
@@ -1419,6 +1539,7 @@ export interface paths {
                     };
                     content?: never;
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Product or image unavailable */
                 404: {
                     headers: {
@@ -1469,6 +1590,7 @@ export interface paths {
                         };
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Not Found */
                 404: {
                     headers: {
@@ -1518,6 +1640,7 @@ export interface paths {
                         "application/json": components["schemas"]["ProductAsset"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Product not found */
                 404: {
                     headers: {
@@ -1574,6 +1697,7 @@ export interface paths {
                     };
                     content?: never;
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Not Found */
                 404: {
                     headers: {
@@ -1711,6 +1835,7 @@ export interface paths {
                         };
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Not Found */
                 404: {
                     headers: {
@@ -1737,14 +1862,14 @@ export interface paths {
         };
         /**
          * List owned physical-instance items
-         * @description With `expand=product`, rows are OwnedItemExpanded — catalog name/class plus paid amount, payee, and brand from the linked transaction item.
+         * @description With `expand=product`, rows are OwnedItemExpanded — catalog name/class plus paid amount, payee, and brand from the linked transaction item. `paid_minor`, `paid_currency` and `paid_base_minor` appear ONLY under `expand=product`: the plain list and `GET /v1/owned-items/{id}` omit them, so a correctly linked item looks unlinked without it.
          */
         get: {
             parameters: {
                 query?: {
                     product_id?: string;
                     location?: string;
-                    include_retired?: boolean | null;
+                    include_retired?: boolean;
                     expand?: "product";
                     cursor?: string;
                     limit?: number;
@@ -1767,6 +1892,7 @@ export interface paths {
                         };
                     };
                 };
+                400: components["responses"]["BadRequest"];
             };
         };
         put?: never;
@@ -1793,6 +1919,7 @@ export interface paths {
                         "application/json": components["schemas"]["OwnedItem"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Validation failed */
                 422: {
                     headers: {
@@ -1838,6 +1965,7 @@ export interface paths {
                         "application/json": components["schemas"]["OwnedItem"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Not Found */
                 404: {
                     headers: {
@@ -1870,6 +1998,7 @@ export interface paths {
                     };
                     content?: never;
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Not Found */
                 404: {
                     headers: {
@@ -1883,7 +2012,10 @@ export interface paths {
         };
         options?: never;
         head?: never;
-        /** Patch serial / location / warranty / condition / notes */
+        /**
+         * Patch serial / location / warranty / condition / notes
+         * @description JSON Merge Patch (RFC 7396). `metadata` merges into the stored object rather than replacing it (`null` removes a key, `{}` changes nothing).
+         */
         patch: {
             parameters: {
                 query?: never;
@@ -1909,6 +2041,7 @@ export interface paths {
                         "application/json": components["schemas"]["OwnedItem"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Not Found */
                 404: {
                     headers: {
@@ -1956,6 +2089,7 @@ export interface paths {
                         };
                     };
                 };
+                400: components["responses"]["BadRequest"];
             };
         };
         put?: never;
@@ -1982,6 +2116,7 @@ export interface paths {
                         "application/json": components["schemas"]["WishItem"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Validation failed */
                 422: {
                     headers: {
@@ -2027,6 +2162,7 @@ export interface paths {
                         "application/json": components["schemas"]["WishItem"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Not Found */
                 404: {
                     headers: {
@@ -2059,6 +2195,7 @@ export interface paths {
                     };
                     content?: never;
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Not Found */
                 404: {
                     headers: {
@@ -2072,7 +2209,10 @@ export interface paths {
         };
         options?: never;
         head?: never;
-        /** Patch a wish (fields, urgency, snooze, convert / decline) */
+        /**
+         * Patch a wish (fields, urgency, snooze, convert / decline)
+         * @description JSON Merge Patch (RFC 7396). `metadata` merges into the stored object rather than replacing it (`null` removes a key, `{}` changes nothing).
+         */
         patch: {
             parameters: {
                 query?: never;
@@ -2098,6 +2238,7 @@ export interface paths {
                         "application/json": components["schemas"]["WishItem"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Not Found */
                 404: {
                     headers: {
@@ -2139,6 +2280,7 @@ export interface paths {
                         };
                     };
                 };
+                400: components["responses"]["BadRequest"];
             };
         };
         put?: never;
@@ -2177,6 +2319,7 @@ export interface paths {
                         "application/json": components["schemas"]["RefreshInsightsResponse"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
             };
         };
         delete?: never;
@@ -2215,6 +2358,7 @@ export interface paths {
                         "application/json": components["schemas"]["Insight"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Not Found */
                 404: {
                     headers: {
@@ -2243,7 +2387,7 @@ export interface paths {
         put?: never;
         /**
          * Ask a natural-language question against the whole ledger
-         * @description Synchronous; the claude worker answers in ~10-60s with a read-only SQL session. The session_id is the Langfuse trace key.
+         * @description Synchronous; the claude worker answers in ~10-60s with a read-only SQL session. The session_id names the Claude Code session transcript (JSONL) for this answer.
          */
         post: {
             parameters: {
@@ -2267,6 +2411,7 @@ export interface paths {
                         "application/json": components["schemas"]["AskResponse"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Validation failed */
                 422: {
                     headers: {
@@ -2314,6 +2459,7 @@ export interface paths {
                         };
                     };
                 };
+                400: components["responses"]["BadRequest"];
             };
         };
         put?: never;
@@ -2352,6 +2498,7 @@ export interface paths {
                         "application/json": components["schemas"]["BrandPartySummary"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
             };
         };
         put?: never;
@@ -2391,6 +2538,7 @@ export interface paths {
                         };
                     };
                 };
+                400: components["responses"]["BadRequest"];
             };
         };
         put?: never;
@@ -2429,6 +2577,7 @@ export interface paths {
                         "application/json": components["schemas"]["Brand"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Not Found */
                 404: {
                     headers: {
@@ -2471,6 +2620,7 @@ export interface paths {
                         "application/json": components["schemas"]["Brand"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Not Found */
                 404: {
                     headers: {
@@ -2515,6 +2665,7 @@ export interface paths {
                         };
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Not Found */
                 404: {
                     headers: {
@@ -2564,6 +2715,7 @@ export interface paths {
                         "application/json": components["schemas"]["BrandAsset"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Brand not found */
                 404: {
                     headers: {
@@ -2620,6 +2772,7 @@ export interface paths {
                     };
                     content?: never;
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Not Found */
                 404: {
                     headers: {
@@ -2668,6 +2821,7 @@ export interface paths {
                     };
                     content?: never;
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Brand or icon unavailable */
                 404: {
                     headers: {
@@ -2718,6 +2872,7 @@ export interface paths {
                         "application/json": components["schemas"]["BrandRollup"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Brand not found */
                 404: {
                     headers: {
@@ -2773,6 +2928,7 @@ export interface paths {
                         };
                     };
                 };
+                400: components["responses"]["BadRequest"];
             };
         };
         put?: never;
@@ -2811,6 +2967,7 @@ export interface paths {
                         "application/json": components["schemas"]["Posting"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Not Found */
                 404: {
                     headers: {
@@ -2873,6 +3030,7 @@ export interface paths {
                         "application/json": components["schemas"]["Document"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Validation failed */
                 422: {
                     headers: {
@@ -2928,6 +3086,7 @@ export interface paths {
                     };
                     content?: never;
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Not found */
                 404: {
                     headers: {
@@ -2943,7 +3102,7 @@ export interface paths {
         post?: never;
         /**
          * Delete a document. Soft-deletes by default; ?hard=true removes the row and quarantines the file under .trash/; ?cascade=true also handles linked transactions.
-         * @description Default: soft delete (sets deleted_at). ?hard=true: hard delete (row removed; file moved to <uploads_dir>/.trash/<timestamp>__<basename>, NOT unlinked); requires no remaining links unless ?cascade=true is also set. ?cascade=true: linked posted transactions are soft-deleted, draft/error transactions are hard-deleted, already-deleted transactions are left intact, reconciled transactions abort the operation with 409. ?cascade=true&hard=true: every linked transaction is hard-deleted (postings cascade), the document row is removed, and the image file is moved to .trash/ (never unlinked). Reconciled transactions always block hard cascades — unreconcile first.
+         * @description Default: soft delete (sets deleted_at). ?hard=true: hard delete (row removed; file moved to <uploads_dir>/.trash/<timestamp>__<basename>, NOT unlinked); requires no remaining links unless ?cascade=true is also set. ?cascade=true: also deletes each linked transaction for which this document is the LAST LIVE EVIDENCE. A transaction that another non-deleted document still supports is kept — deleting one of an invoice + payment-confirmation pair does not delete the purchase. Of the transactions that are not kept: posted ones are soft-deleted, draft/error ones are hard-deleted, already-deleted ones are left intact, and a reconciled one aborts the whole operation with 409 (unreconcile first). The document itself is soft-deleted and its link rows stay, so restoring it restores the association. ?cascade=true&hard=true: the transactions that are not kept are hard-deleted (postings cascade); kept transactions are only unlinked from this document (a `document_unlinked` event records it). The document row is removed and the image file is moved to .trash/ (never unlinked). A cascade answers 200 with a report of what happened to each linked transaction; check `transactions_kept` before telling a user the receipt is gone.
          */
         delete: {
             parameters: {
@@ -2959,13 +3118,23 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Deleted */
+                /** @description Cascade (`?cascade=true`) done. The body says which linked transactions were deleted and which were kept. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CascadeDeleteReport"];
+                    };
+                };
+                /** @description Deleted (no cascade requested) */
                 204: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content?: never;
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Not found */
                 404: {
                     headers: {
@@ -2975,7 +3144,7 @@ export interface paths {
                         "application/problem+json": components["schemas"]["ProblemDetails"];
                     };
                 };
-                /** @description Hard delete refused because document has links (use cascade), or cascade refused because a linked transaction is reconciled. */
+                /** @description Hard delete refused because document has links (use cascade), or cascade refused because a transaction it would delete is reconciled. */
                 409: {
                     headers: {
                         [name: string]: unknown;
@@ -3019,6 +3188,7 @@ export interface paths {
                         "application/octet-stream": string;
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Not found */
                 404: {
                     headers: {
@@ -3066,6 +3236,7 @@ export interface paths {
                         "text/html": string;
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Not found / no file / empty render */
                 404: {
                     headers: {
@@ -3126,6 +3297,7 @@ export interface paths {
                     };
                     content?: never;
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Document or transaction not found */
                 404: {
                     headers: {
@@ -3182,6 +3354,7 @@ export interface paths {
                     };
                     content?: never;
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Link not found */
                 404: {
                     headers: {
@@ -3228,6 +3401,7 @@ export interface paths {
                         "application/json": components["schemas"]["Document"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Document not found or not deleted */
                 404: {
                     headers: {
@@ -3280,6 +3454,7 @@ export interface paths {
                         "application/json": components["schemas"]["ReExtractDocumentResponse"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Document not found or soft-deleted */
                 404: {
                     headers: {
@@ -3339,6 +3514,7 @@ export interface paths {
                         "application/json": components["schemas"]["CreateBatchResponse"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description No files / validation failed */
                 422: {
                     headers: {
@@ -3389,6 +3565,7 @@ export interface paths {
                         };
                     };
                 };
+                400: components["responses"]["BadRequest"];
             };
         };
         put?: never;
@@ -3427,6 +3604,7 @@ export interface paths {
                         "application/json": components["schemas"]["Batch"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Batch not found */
                 404: {
                     headers: {
@@ -3474,6 +3652,7 @@ export interface paths {
                         "text/event-stream": string;
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Batch not found */
                 404: {
                     headers: {
@@ -3527,6 +3706,7 @@ export interface paths {
                         };
                     };
                 };
+                400: components["responses"]["BadRequest"];
             };
         };
         put?: never;
@@ -3570,6 +3750,7 @@ export interface paths {
                         };
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Unknown status token in filter */
                 422: {
                     headers: {
@@ -3617,6 +3798,7 @@ export interface paths {
                         "application/json": components["schemas"]["Ingest"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Ingest not found */
                 404: {
                     headers: {
@@ -3667,6 +3849,7 @@ export interface paths {
                         "application/json": components["schemas"]["RetryIngestResponse"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Ingest not found */
                 404: {
                     headers: {
@@ -3730,6 +3913,7 @@ export interface paths {
                         "application/json": components["schemas"]["ReconcileResult"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Batch not found */
                 404: {
                     headers: {
@@ -3776,6 +3960,7 @@ export interface paths {
                         "application/json": components["schemas"]["ReconcileResult"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Batch not found */
                 404: {
                     headers: {
@@ -3811,7 +3996,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Apply one or more reconcile proposals. For dedup proposals this voids the duplicate via the ledger service. */
+        /** Apply one or more reconcile proposals. For a dedup proposal this moves the duplicate's document links to the surviving transaction and soft-deletes the duplicate, in one database transaction, and records which links moved so the apply can be undone. Refused (listed under `skipped`) when either transaction is no longer live, when the duplicate is reconciled, or when the two moved money in opposite directions. */
         post: {
             parameters: {
                 query?: never;
@@ -3836,6 +4021,7 @@ export interface paths {
                         "application/json": components["schemas"]["ApplyResult"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Batch not found */
                 404: {
                     headers: {
@@ -3896,6 +4082,68 @@ export interface paths {
                         "application/json": components["schemas"]["RejectResult"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
+                /** @description Batch not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+                /** @description Validation failed */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/batches/{id}/reconcile/undo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Undo one or more applied dedup proposals. Restores the duplicate transaction and moves the document links the apply took back to it, in one database transaction; the proposal becomes `reverted`. Skipped, with nothing changed, when the proposal was never applied, when the transaction was deleted again for another reason, when an old proposal left no trace of which documents moved, or when the surviving transaction has since been folded into another by a later apply (`survivor_folded`: undo that proposal first). */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["UndoRequest"];
+                };
+            };
+            responses: {
+                /** @description Per-id undo/skip outcomes */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UndoResult"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
                 /** @description Batch not found */
                 404: {
                     headers: {
@@ -3929,14 +4177,16 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Spend aggregated by category / account / payee */
+        /**
+         * Spend aggregated by category / account / payee
+         * @description Every amount is in the workspace base currency, named by `currency` in the response; there is no parameter to convert the report into another one. The `points` and `fx` blocks say how loyalty points and any unconverted foreign-currency postings affect the totals.
+         */
         get: {
             parameters: {
                 query?: {
                     from?: string;
                     to?: string;
                     group_by?: "category" | "account" | "payee";
-                    currency?: string;
                 };
                 header?: never;
                 path?: never;
@@ -3953,6 +4203,7 @@ export interface paths {
                         "application/json": components["schemas"]["SummaryReport"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Workspace not found */
                 404: {
                     headers: {
@@ -3979,7 +4230,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Time-series trend (MoM / YoY) of expense spend */
+        /**
+         * Time-series trend (MoM / YoY) of expense spend
+         * @description Every amount is in the workspace base currency, named by `currency` in the response; there is no parameter to convert the report into another one. The `points` and `fx` blocks say how loyalty points and any unconverted foreign-currency postings affect the totals.
+         */
         get: {
             parameters: {
                 query?: {
@@ -3987,7 +4241,6 @@ export interface paths {
                     from?: string;
                     to?: string;
                     group_by?: "category" | "total";
-                    currency?: string;
                 };
                 header?: never;
                 path?: never;
@@ -4004,6 +4257,7 @@ export interface paths {
                         "application/json": components["schemas"]["TrendsReport"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Workspace not found */
                 404: {
                     headers: {
@@ -4030,12 +4284,14 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Assets - liabilities at a point in time */
+        /**
+         * Assets - liabilities at a point in time
+         * @description Every amount is in the workspace base currency, named by `currency` in the response; there is no parameter to convert the report into another one. The `points` and `fx` blocks say how loyalty points and any unconverted foreign-currency postings affect the totals.
+         */
         get: {
             parameters: {
                 query?: {
                     as_of?: string;
-                    currency?: string;
                 };
                 header?: never;
                 path?: never;
@@ -4052,6 +4308,7 @@ export interface paths {
                         "application/json": components["schemas"]["NetWorthReport"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Workspace not found */
                 404: {
                     headers: {
@@ -4078,13 +4335,15 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Inflows vs outflows over a range, bucketed by month */
+        /**
+         * Inflows vs outflows over a range, bucketed by month
+         * @description Every amount is in the workspace base currency, named by `currency` in the response; there is no parameter to convert the report into another one. The `points` and `fx` blocks say how loyalty points and any unconverted foreign-currency postings affect the totals.
+         */
         get: {
             parameters: {
                 query?: {
                     from?: string;
                     to?: string;
-                    currency?: string;
                 };
                 header?: never;
                 path?: never;
@@ -4101,6 +4360,7 @@ export interface paths {
                         "application/json": components["schemas"]["CashflowReport"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Workspace not found */
                 404: {
                     headers: {
@@ -4151,6 +4411,7 @@ export interface paths {
                         "application/json": components["schemas"]["MerchantDetail"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Merchant not found */
                 404: {
                     headers: {
@@ -4249,6 +4510,7 @@ export interface paths {
                         "image/jpeg": string;
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Merchant or photo not found */
                 404: {
                     headers: {
@@ -4299,6 +4561,7 @@ export interface paths {
                         "application/json": components["schemas"]["MerchantTransactionsResponse"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Merchant not found */
                 404: {
                     headers: {
@@ -4327,7 +4590,7 @@ export interface paths {
         };
         /**
          * Get a place by id (full multilingual record).
-         * @description Returns the place row with all multilingual columns plus refs to any cached photos. Photo bytes are streamed separately via /v1/places/{id}/photos/{rank}/content.
+         * @description `{id}` is the place's UUID or its Google place id. Returns the place row with all multilingual columns plus refs to any cached photos. Photo bytes are streamed separately via /v1/places/{id}/photos/{rank}/content.
          */
         get: {
             parameters: {
@@ -4349,6 +4612,7 @@ export interface paths {
                         "application/json": components["schemas"]["Place"] & Record<string, never>;
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Not found */
                 404: {
                     headers: {
@@ -4393,6 +4657,7 @@ export interface paths {
                         "application/json": components["schemas"]["Place"] & Record<string, never>;
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Not found */
                 404: {
                     headers: {
@@ -4439,6 +4704,7 @@ export interface paths {
                         "application/json": components["schemas"]["ReDerivePlaceResponse"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Place not found */
                 404: {
                     headers: {
@@ -4498,6 +4764,7 @@ export interface paths {
                         "application/json": components["schemas"]["RefreshPlaceResponse"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Place not found */
                 404: {
                     headers: {
@@ -4653,6 +4920,7 @@ export interface paths {
                         "image/jpeg": string;
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Not found */
                 404: {
                     headers: {
@@ -4705,6 +4973,7 @@ export interface paths {
                         "application/json": components["schemas"]["ReDeriveBatchResponse"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 /** @description Invalid scope */
                 422: {
                     headers: {
@@ -4867,11 +5136,8 @@ export interface components {
             parent_id?: string | null;
             /** Format: date-time */
             closed_at?: string | null;
-            /**
-             * @description User-defined JSON object; not schema-validated.
-             * @default {}
-             */
-            metadata: {
+            /** @description JSON Merge Patch (RFC 7396) applied to the stored metadata object: objects merge recursively, a `null` value removes that key, any other value replaces it, and keys the patch does not name are kept. `{}` changes nothing. A value sent back exactly as stored is left untouched (including nulls nested inside it), so GET → change one key → PATCH the whole object back is safe. */
+            metadata?: {
                 [key: string]: unknown;
             };
         };
@@ -4891,7 +5157,10 @@ export interface components {
              * @example 14723
              */
             balance_minor: number;
-            /** @example USD */
+            /**
+             * @description The workspace base currency. `balance_minor` is a sum of base amounts, whatever currency the account itself is denominated in (a CNY or points account still reports its balance in this one).
+             * @example USD
+             */
             currency: string;
             posting_count: number;
             includes_children: boolean;
@@ -4988,6 +5257,10 @@ export interface components {
             amount_minor: number;
             /** @example USD */
             currency: string;
+            /**
+             * @description Decimal string: the multiplier from this posting's minor units to base-currency minor units, so that `amount_base_minor = round(amount_minor × fx_rate)`. Null on a base-currency posting. It equals the published exchange rate only when both currencies have the same number of decimals (CNY→USD 0.14658). Against a two-decimal base, a zero-decimal currency stores the published rate × 100 (JPY→USD published at 0.0065 is `0.65`, cents per yen) and a three-decimal one the published rate ÷ 10 (KWD→USD 3.25 is `0.325`). On a points posting it is the programme's value per point in base minor units. The rate as published is in the transaction's `metadata.fx.rates[].rate`.
+             * @example 0.65
+             */
             fx_rate: string | null;
             /**
              * @description Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.
@@ -5030,7 +5303,6 @@ export interface components {
             display_name_zh_source: "google_text" | "photo_ocr" | "receipt_ocr" | "user_override" | null;
             display_name_zh_is_native: boolean | null;
             custom_name: string | null;
-            custom_name_zh: string | null;
             primary_type: string | null;
             primary_type_display_zh: string | null;
             maps_type_label_zh: string | null;
@@ -5466,6 +5738,7 @@ export interface components {
             product_id: string;
             /**
              * Format: uuid
+             * @description The purchase line this item came from. Pass it whenever the purchase is known: `paid_minor` and the $/day figure derive from the linked line, so an item created without it has both permanently null. Omit only for items with no purchase (gifts, inherited).
              * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
              */
             transaction_item_id?: string;
@@ -5751,10 +6024,15 @@ export interface components {
         BrandRollupStats: {
             location_count: number;
             transaction_count: number;
+            /** @description In the workspace base currency (`currency`), summed from the postings' base amounts. A receipt in another currency counts at the rate it was converted at, and a loyalty-points leg at its programme valuation, exactly as in `/v1/reports/summary`. */
             lifetime_spend_minor: number;
+            /** @description In the workspace base currency (`currency`), summed from the postings' base amounts. A receipt in another currency counts at the rate it was converted at, and a loyalty-points leg at its programme valuation, exactly as in `/v1/reports/summary`. */
             current_month_spend_minor: number;
             last_transaction_date: string | null;
+            /** @description The workspace base currency. Always an ISO 4217 code, never a points-programme code. */
             currency: string;
+            /** @description Transactions counted above whose expense legs include a foreign-currency posting that was never converted (the rate source was unreachable, or does not publish that currency or date). Their native amount is in the spend figures at face value, so the figures are true base-currency amounts only when this is 0. The `fx` block of `/v1/reports/summary` lists the same postings per currency. */
+            unconverted_transaction_count: number;
         };
         Merchant: {
             /**
@@ -5788,10 +6066,15 @@ export interface components {
         };
         MerchantStats: {
             transaction_count: number;
+            /** @description In the workspace base currency (`currency`), summed from the postings' base amounts. A receipt in another currency counts at the rate it was converted at, and a loyalty-points leg at its programme valuation, exactly as in `/v1/reports/summary`. */
             lifetime_spend_minor: number;
+            /** @description In the workspace base currency (`currency`), summed from the postings' base amounts. A receipt in another currency counts at the rate it was converted at, and a loyalty-points leg at its programme valuation, exactly as in `/v1/reports/summary`. */
             current_month_spend_minor: number;
             last_transaction_date: string | null;
+            /** @description The workspace base currency. Always an ISO 4217 code, never a points-programme code. */
             currency: string;
+            /** @description Transactions counted above whose expense legs include a foreign-currency posting that was never converted (the rate source was unreachable, or does not publish that currency or date). Their native amount is in the spend figures at face value, so the figures are true base-currency amounts only when this is 0. The `fx` block of `/v1/reports/summary` lists the same postings per currency. */
+            unconverted_transaction_count: number;
         };
         BrandRollupLocation: {
             merchant: components["schemas"]["Merchant"];
@@ -5807,8 +6090,12 @@ export interface components {
             payee: string | null;
             /** @enum {string} */
             status: "draft" | "posted" | "reconciled" | "error";
+            /** @description Signed expense total (negative for a refund). In the workspace base currency (`currency`), summed from the postings' base amounts. A receipt in another currency counts at the rate it was converted at, and a loyalty-points leg at its programme valuation, exactly as in `/v1/reports/summary`. */
             total_minor: number;
+            /** @description The workspace base currency. Always an ISO 4217 code, never a points-programme code. */
             currency: string;
+            /** @description True when `total_minor` includes a foreign-currency posting that was never converted: that part is the receipt's native amount, not a base-currency amount. */
+            unconverted: boolean;
             /**
              * Format: uuid
              * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
@@ -6117,7 +6404,7 @@ export interface components {
             proposals_total: number;
         };
         /** @enum {string} */
-        ReconcileProposalStatus: "proposed" | "auto_applied" | "user_applied" | "rejected";
+        ReconcileProposalStatus: "proposed" | "auto_applied" | "user_applied" | "rejected" | "reverted" | "stale";
         ReconcileProposal: {
             /**
              * Format: uuid
@@ -6180,6 +6467,42 @@ export interface components {
                 reason: string;
             }[];
         };
+        UndoRequest: {
+            proposal_ids: string[];
+        };
+        UndoneProposal: {
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            id: string;
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            transaction_id: string;
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            canonical_id: string;
+            restored: boolean;
+            documents_relinked: string[];
+            documents_removed_from_canonical: string[];
+            /** @enum {string} */
+            links_source: "recorded" | "inferred";
+        };
+        UndoResult: {
+            reverted: components["schemas"]["UndoneProposal"][];
+            skipped: {
+                /**
+                 * Format: uuid
+                 * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+                 */
+                id: string;
+                reason: string;
+            }[];
+        };
         SummaryItem: {
             key: string;
             count: number;
@@ -6226,6 +6549,27 @@ export interface components {
             unvalued_transaction_count: number;
             programmes: components["schemas"]["PointsProgrammeTotal"][];
         };
+        FxUnconvertedCurrency: {
+            /** @example TWD */
+            currency: string;
+            /**
+             * @description The unconverted legs, summed in that currency's own minor units (yen, fen, fils).
+             * @example 14723
+             */
+            amount_minor: number;
+            /**
+             * @description What the report's totals contain for those legs today: their native amount read as base-currency minor units. The totals are wrong by the difference between this and the real converted value.
+             * @example 14723
+             */
+            counted_base_minor: number;
+            transaction_count: number;
+        };
+        FxDisclosure: {
+            policy: string;
+            /** @description Transactions in the report's scope with at least one foreign-currency posting that was never converted. 0 means every amount in the report is a true base-currency amount. */
+            unconverted_transaction_count: number;
+            unconverted: components["schemas"]["FxUnconvertedCurrency"][];
+        };
         SummaryReport: {
             /**
              * Format: date
@@ -6239,7 +6583,10 @@ export interface components {
             to: string | null;
             /** @enum {string} */
             group_by: "category" | "account" | "payee";
-            /** @example USD */
+            /**
+             * @description The workspace base currency. Every amount in the report is in it; there is no parameter to ask for another.
+             * @example USD
+             */
             currency: string;
             items: components["schemas"]["SummaryItem"][];
             /**
@@ -6248,6 +6595,7 @@ export interface components {
              */
             grand_total_minor: number;
             points: components["schemas"]["PointsDisclosure"];
+            fx: components["schemas"]["FxDisclosure"];
         };
         TrendsItem: {
             key: string;
@@ -6282,10 +6630,14 @@ export interface components {
             period: "month" | "year";
             /** @enum {string} */
             group_by: "category" | "total";
-            /** @example USD */
+            /**
+             * @description The workspace base currency. Every amount in the report is in it; there is no parameter to ask for another.
+             * @example USD
+             */
             currency: string;
             buckets: components["schemas"]["TrendsBucket"][];
             points: components["schemas"]["PointsDisclosure"];
+            fx: components["schemas"]["FxDisclosure"];
         };
         NetWorthAccount: {
             /**
@@ -6308,7 +6660,10 @@ export interface components {
              * @example 2026-04-19
              */
             as_of: string;
-            /** @example USD */
+            /**
+             * @description The workspace base currency. Every amount in the report is in it; there is no parameter to ask for another.
+             * @example USD
+             */
             currency: string;
             /**
              * @description Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.
@@ -6332,6 +6687,7 @@ export interface components {
             net_worth_minor: number;
             by_account: components["schemas"]["NetWorthAccount"][];
             points: components["schemas"]["PointsDisclosure"];
+            fx: components["schemas"]["FxDisclosure"];
         };
         CashflowBucket: {
             month: string;
@@ -6362,7 +6718,10 @@ export interface components {
              * @example 2026-04-19
              */
             to: string | null;
-            /** @example USD */
+            /**
+             * @description The workspace base currency. Every amount in the report is in it; there is no parameter to ask for another.
+             * @example USD
+             */
             currency: string;
             /**
              * @description Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.
@@ -6381,6 +6740,7 @@ export interface components {
             net_minor: number;
             buckets: components["schemas"]["CashflowBucket"][];
             points: components["schemas"]["PointsDisclosure"];
+            fx: components["schemas"]["FxDisclosure"];
         };
         MerchantDetail: {
             merchant: components["schemas"]["Merchant"];
@@ -6396,8 +6756,12 @@ export interface components {
             payee: string | null;
             /** @enum {string} */
             status: "draft" | "posted" | "reconciled" | "error";
+            /** @description Signed expense total (negative for a refund). In the workspace base currency (`currency`), summed from the postings' base amounts. A receipt in another currency counts at the rate it was converted at, and a loyalty-points leg at its programme valuation, exactly as in `/v1/reports/summary`. */
             total_minor: number;
+            /** @description The workspace base currency. Always an ISO 4217 code, never a points-programme code. */
             currency: string;
+            /** @description True when `total_minor` includes a foreign-currency posting that was never converted: that part is the receipt's native amount, not a base-currency amount. */
+            unconverted: boolean;
             /**
              * Format: uuid
              * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
@@ -6424,9 +6788,13 @@ export interface components {
             amount_minor: number;
             /** @example USD */
             currency?: string;
+            /**
+             * @description Decimal string: the multiplier from this posting's minor units to base-currency minor units, so that `amount_base_minor = round(amount_minor × fx_rate)`. Null on a base-currency posting. It equals the published exchange rate only when both currencies have the same number of decimals (CNY→USD 0.14658). Against a two-decimal base, a zero-decimal currency stores the published rate × 100 (JPY→USD published at 0.0065 is `0.65`, cents per yen) and a three-decimal one the published rate ÷ 10 (KWD→USD 3.25 is `0.325`). On a points posting it is the programme's value per point in base minor units. The rate as published is in the transaction's `metadata.fx.rates[].rate`. Required, together with `amount_base_minor`, on a foreign-currency cash posting: the pair is stored as sent and is not checked against a published rate, so send the minor-unit multiplier, not the quoted rate. Omit both on a points posting to have the server apply the programme valuation.
+             * @example 0.65
+             */
             fx_rate?: string;
             /**
-             * @description Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.
+             * @description This posting in the workspace base currency, in that currency's minor unit: `round(amount_minor × fx_rate)`. ¥5,000 at a published 0.0065 USD per yen is 3250 (US cents), not 33. Defaults to `amount_minor` on a base-currency posting.
              * @example 14723
              */
             amount_base_minor?: number;
@@ -6474,11 +6842,8 @@ export interface components {
              * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
              */
             trip_id?: string | null;
-            /**
-             * @description User-defined JSON object; not schema-validated.
-             * @default {}
-             */
-            metadata: {
+            /** @description JSON Merge Patch (RFC 7396) applied to the stored metadata object: objects merge recursively, a `null` value removes that key, any other value replaces it, and keys the patch does not name are kept. `{}` changes nothing. A value sent back exactly as stored is left untouched (including nulls nested inside it), so GET → change one key → PATCH the whole object back is safe. */
+            metadata?: {
                 [key: string]: unknown;
             };
         };
@@ -6534,13 +6899,34 @@ export interface components {
             amount_minor?: number;
             /** @example USD */
             currency?: string;
+            /**
+             * @description Decimal string: the multiplier from this posting's minor units to base-currency minor units, so that `amount_base_minor = round(amount_minor × fx_rate)`. Null on a base-currency posting. It equals the published exchange rate only when both currencies have the same number of decimals (CNY→USD 0.14658). Against a two-decimal base, a zero-decimal currency stores the published rate × 100 (JPY→USD published at 0.0065 is `0.65`, cents per yen) and a three-decimal one the published rate ÷ 10 (KWD→USD 3.25 is `0.325`). On a points posting it is the programme's value per point in base minor units. The rate as published is in the transaction's `metadata.fx.rates[].rate`. Stored as sent and not checked against a published rate, so send the minor-unit multiplier, not the quoted rate.
+             * @example 0.65
+             */
             fx_rate?: string;
             /**
-             * @description Signed integer in the currency's minor unit (cents for USD, 1 for JPY, satoshi for BTC). Never store money as float.
+             * @description This posting in the workspace base currency, in that currency's minor unit: `round(amount_minor × fx_rate)`. ¥5,000 at a published 0.0065 USD per yen is 3250 (US cents), not 33. Defaults to `amount_minor` on a base-currency posting.
              * @example 14723
              */
             amount_base_minor?: number;
             memo?: string | null;
+        };
+        CascadeDeleteReport: {
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            document_id: string;
+            /** @description true: the document row was removed (`?hard=true`). false: it was soft-deleted. */
+            hard: boolean;
+            /** @description Linked transactions left in the ledger because another non-deleted document still supports them. Non-empty means the receipt is NOT gone: delete the remaining document(s) with cascade, or the transaction itself, to remove it. */
+            transactions_kept: string[];
+            /** @description Posted transactions this call soft-deleted (restorable). */
+            transactions_soft_deleted: string[];
+            /** @description Transactions this call removed for good: every non-kept one under `?hard=true`, and draft/error ones in soft mode. */
+            transactions_hard_deleted: string[];
+            /** @description Soft mode only: transactions that were already soft-deleted and were left as they were. */
+            transactions_skipped: string[];
         };
         ReExtractDocumentResponse: {
             /**
@@ -6573,7 +6959,6 @@ export interface components {
         };
         UpdatePlaceRequest: {
             custom_name?: string | null;
-            custom_name_zh?: string | null;
         };
         ReDerivePlaceResponse: {
             /**
@@ -6620,7 +7005,17 @@ export interface components {
             ran_at: string;
         };
     };
-    responses: never;
+    responses: {
+        /** @description Malformed request: an id in the path or query string is not a UUID (`errors/invalid-id`), the body is not valid JSON (`errors/malformed-body`), the cursor is not one this endpoint issued (`errors/invalid-cursor`), a value cannot be read as its type (`errors/invalid-parameter`), or the `Idempotency-Key` is too long (`errors/invalid-idempotency-key`). */
+        BadRequest: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["ProblemDetails"];
+            };
+        };
+    };
     parameters: never;
     requestBodies: never;
     headers: never;
