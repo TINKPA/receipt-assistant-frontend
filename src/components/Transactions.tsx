@@ -314,7 +314,25 @@ export default function Transactions({
   // it off the data rather than hard-coding '$' the way this file used
   // to — that assumption is exactly what let ¥13,948.80 be displayed and
   // summed as $13,948.80.
-  const baseCurrency = filteredTransactions[0]?.currency ?? 'USD';
+  //
+  // The commonest currency, not the first row's. A receipt the backend
+  // could not convert arrives in its OWN currency, and when it happened
+  // to be the newest row it relabelled the header and every day total.
+  // With amounts formatted by their currency's own decimals, a dollar
+  // total relabelled as yen would also read a hundred times too large.
+  const baseCurrency = useMemo(() => {
+    const seen = new Map<string, number>();
+    for (const tx of filteredTransactions) seen.set(tx.currency, (seen.get(tx.currency) ?? 0) + 1);
+    let best = 'USD';
+    let bestCount = 0;
+    for (const [currency, n] of seen) {
+      if (n > bestCount) {
+        best = currency;
+        bestCount = n;
+      }
+    }
+    return best;
+  }, [filteredTransactions]);
 
   // Group by period: ISO weeks for the recent stretch (this/last week),
   // calendar months for everything older — keeps history calm instead of
@@ -649,7 +667,10 @@ function Header({
           TOTAL
         </p>
         <p className="mt-1 font-mono text-xl font-semibold tracking-tight tnum">
-          {formatMoney(Math.round(total) * 100, currency, { maximumFractionDigits: 0 })}
+          {/* Hundredths in, whole units out: rounding is the formatter's
+              job, so the figure stays exact in a currency that has no
+              hundredths to round away. */}
+          {formatMoney(Math.round(total * 100), currency, { maximumFractionDigits: 0 })}
         </p>
         <p className="font-mono text-[10px] text-[var(--color-ink-muted)]">
           {count} {count === 1 ? 'entry' : 'entries'}
@@ -788,7 +809,7 @@ function PeriodGroup({
           {group.txs.length} {group.txs.length === 1 ? 'entry' : 'entries'}
         </span>
         <span className="ml-auto font-mono text-[11px] font-medium tnum text-[var(--color-ink-soft)]">
-          {formatMoney(Math.round(Math.abs(group.total)) * 100, currency, {
+          {formatMoney(Math.round(Math.abs(group.total) * 100), currency, {
             maximumFractionDigits: 0,
           })}
         </span>

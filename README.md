@@ -271,6 +271,14 @@ extractProblemMessage(err)        // pull a human-readable string out of a Probl
 
 Backend errors come back as `application/problem+json` per RFC 7807 — every helper funnels them through `extractProblemMessage` so callers only deal with readable strings. To branch on *which* error it was, use `parseProblem(err).code` (`'cascade-blocked-reconciled'`, …): the `type` field itself is an absolute URI, `https://receipts.dev/errors/<code>`, and comparing it to a bare `errors/<code>` never matches.
 
+### Money
+
+An amount from the API is an integer in **its own currency's minor unit**: cents for USD, fen for CNY, whole yen for JPY, fils for KWD, whole points for a loyalty programme. `formatMoney(minor, currency)` in `src/lib/money.ts` divides by the right power of ten; the ISO 4217 exponent table it uses (`currencyExponent`) is a copy of the backend's `src/ledger/money.ts`, because the API does not send the exponent. Never write `minor / 100` for an amount that is not in the base currency.
+
+Two numbers describe a converted posting and they are not interchangeable. `postings.fx_rate` is the multiplier between **minor** units (0.65 cents per yen). The exchange rate a person recognises (0.0065 dollars per yen) is in the transaction's `metadata.fx.rates[].rate`, and that is the one the receipt page shows.
+
+A foreign posting the backend could not convert stays in every total at face value. The API flags it (`fx` on each report, `unconverted_transaction_count` on merchant and brand stats, `unconverted` on their rows), and `src/components/FxDisclosureNote.tsx` renders those flags; it shows nothing when there is nothing to flag.
+
 ## Data fetching & state
 
 All **server state** goes through **TanStack Query** (React Query v5) — **every** screen, with no bespoke fetch-in-`useEffect` data layer (that pattern was fully removed: it lost scroll position, dropped loaded pages on navigation, and triggered cascading refetches on every mutation). Conventions for new code:

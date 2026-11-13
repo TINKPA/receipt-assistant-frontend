@@ -14,6 +14,7 @@ import { qk } from '../lib/queryKeys';
 import { MerchantIcon } from './MerchantIcon';
 import { categoryLedgerLink, dateRangeLedgerLink, receiptLink } from '../lib/navLinks';
 import { PointsDisclosureNote } from './PointsDisclosureNote';
+import { FxDisclosureNote } from './FxDisclosureNote';
 
 /**
  * Monthly review — board screen 22 (Insights lane, tracking
@@ -218,6 +219,15 @@ export default function MonthlyReview({ month }: { month?: string }) {
         <PointsDisclosureNote
           points={cashflow?.points}
           currency={cashflow?.currency ?? 'USD'}
+        />
+        {/* A foreign receipt the backend could not convert is in SPENT at
+            face value. Read from this month's summary, not the cashflow
+            call: that one spans last month too, and would flag this
+            month's figure for a receipt that is not in it. Renders
+            nothing when every conversion went through. */}
+        <FxDisclosureNote
+          fx={data?.thisMonth?.fx}
+          currency={data?.thisMonth?.currency ?? 'USD'}
         />
       </div>
 

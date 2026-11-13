@@ -22,10 +22,18 @@
  *
  * #216 extended the same shape to loyalty points, which are a currency
  * here too (backend #206) — with one trap that FX does not have: points
- * are stored as WHOLE UNITS while cash is stored in hundredths, so the
- * `/ 100` below is wrong for them. `formatMoney` detects a points code
- * and delegates; the scale rule and the reasoning live in
- * `src/lib/points.ts`.
+ * are stored as WHOLE UNITS, so dividing them like cash is wrong.
+ * `formatMoney` detects a points code and delegates; the scale rule and
+ * the reasoning live in `src/lib/points.ts`.
+ *
+ * ## Minor units are per currency
+ *
+ * An amount arrives as an integer count of ITS OWN currency's minor
+ * unit: cents for USD, fen for CNY, whole yen for JPY (the yen has no
+ * subunit), fils for KWD (a dinar is 1000 of them). `currencyExponent`
+ * below says how many decimals that is, and `formatMoney` divides by it.
+ * Until the backend respected exponents this module divided everything
+ * by 100, so a ¥5,000 receipt printed as ¥50.00.
  */
 import { formatPoints, isPointsCurrency } from './points';
 
@@ -45,14 +53,62 @@ const SYMBOLS: Record<string, string> = {
   AUD: 'A$',
 };
 
-// Deliberately NO zero-decimal currency table (JPY/KRW/…). This ledger
-// stores every amount as hundredths regardless of currency — the ingest
-// prompt says "money is ALWAYS integer minor units", `toReceiptView`
-// computes `total = minor / 100` unconditionally, and the backend's FX
-// conversion multiplies through that same scale. A formatter that
-// divided JPY by 1 instead of 100 would disagree with every other number
-// on the page. If real zero-decimal support is ever wanted it has to
-// start at the schema, not here.
+/** ISO 4217 minor-unit exponent of every currency not listed below. */
+const DEFAULT_CURRENCY_EXPONENT = 2;
+
+/**
+ * ISO 4217 minor-unit exponents that are not 2.
+ *
+ * A copy of `ISO_4217_EXPONENTS` in the backend's `src/ledger/money.ts`,
+ * which is what decides the unit of every `amount_minor` the API serves;
+ * the API does not send the exponent, so the table has to live on both
+ * sides. Keep the two identical. `Intl.NumberFormat` is NOT a substitute:
+ * its digits come from CLDR, which follows cash practice and disagrees
+ * with ISO 4217 on a number of codes (forint and rupiah have two
+ * decimals by ISO and none by CLDR; the Iraqi dinar three and none), and
+ * the backend stores by ISO.
+ */
+const CURRENCY_EXPONENTS: Readonly<Record<string, number>> = {
+  // No subunit in use.
+  BIF: 0,
+  CLP: 0,
+  DJF: 0,
+  GNF: 0,
+  ISK: 0,
+  JPY: 0,
+  KMF: 0,
+  KRW: 0,
+  PYG: 0,
+  RWF: 0,
+  UGX: 0,
+  UYI: 0,
+  VND: 0,
+  VUV: 0,
+  XAF: 0,
+  XOF: 0,
+  XPF: 0,
+  // Thousandths.
+  BHD: 3,
+  IQD: 3,
+  JOD: 3,
+  KWD: 3,
+  LYD: 3,
+  OMR: 3,
+  TND: 3,
+  // Ten-thousandths (units of account).
+  CLF: 4,
+  UYW: 4,
+};
+
+/**
+ * How many decimal places separate a currency's minor unit from its
+ * whole unit: 2 for USD, 0 for JPY, 3 for KWD. A points programme has no
+ * subunit, so its exponent is 0.
+ */
+export function currencyExponent(currency: string): number {
+  if (isPointsCurrency(currency)) return 0;
+  return CURRENCY_EXPONENTS[currency] ?? DEFAULT_CURRENCY_EXPONENT;
+}
 
 export function currencySymbol(currency: string): string {
   return SYMBOLS[currency] ?? '';
@@ -61,13 +117,15 @@ export function currencySymbol(currency: string): string {
 /**
  * Format a minor-unit integer in `currency`.
  *
- * @param minor     Amount in minor units (cents). Sign is preserved only
- *                  if `signed` is set — callers that render expenses as
- *                  positive numbers pass the absolute value themselves.
+ * @param minor     Amount in `currency`'s OWN minor unit (cents, fen,
+ *                  whole yen, fils). Sign is preserved only if `signed`
+ *                  is set — callers that render expenses as positive
+ *                  numbers pass the absolute value themselves.
  * @param currency  ISO-4217 code, or a points code (see the delegation
  *                  note below).
  * @param opts.maximumFractionDigits  Override for compact displays that
- *                  want a whole-dollar figure (headline totals).
+ *                  want a whole-unit figure (headline totals). It can
+ *                  only shorten: a yen amount never grows decimals.
  */
 export function formatMoney(
   minor: number,
@@ -89,8 +147,9 @@ export function formatMoney(
   if (isPointsCurrency(currency)) {
     return formatPoints(minor, { signed: opts.signed });
   }
-  const digits = opts.maximumFractionDigits ?? 2;
-  const value = minor / 100;
+  const exponent = currencyExponent(currency);
+  const digits = Math.min(opts.maximumFractionDigits ?? exponent, exponent);
+  const value = minor / 10 ** exponent;
   const abs = Math.abs(value).toLocaleString('en-US', {
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
@@ -104,6 +163,14 @@ export function formatMoney(
 /**
  * The "as printed on the receipt" line shown under a converted amount,
  * e.g. `¥13,948.80 · 0.14658 @ Apr 17`.
+ *
+ * `fx.rate` is the exchange rate AS PUBLISHED — one whole unit of the
+ * receipt's currency in whole units of the base currency, from the
+ * transaction's `metadata.fx.rates[].rate`. Never pass
+ * `postings.fx_rate`: that is the multiplier between MINOR units, and
+ * equals the published rate only when both currencies have the same
+ * number of decimals (yen to dollars is published at 0.0065 and stored
+ * as 0.65, cents per yen).
  *
  * Returns null when there is nothing to disclose — same currency as the
  * base, or no conversion recorded — so a caller can render it

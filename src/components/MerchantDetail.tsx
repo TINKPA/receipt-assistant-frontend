@@ -20,6 +20,7 @@ import { cn } from '../lib/utils';
 import { CategoryIcon } from './CategoryIcon';
 import { statusBadge } from '../lib/transactionStatus';
 import { receiptLink, brandLink } from '../lib/navLinks';
+import { UnconvertedCountNote, UnconvertedTag } from './FxDisclosureNote';
 
 interface MerchantDetailProps {
   /** Either a merchant row UUID (preferred) or a kebab-case brand_id
@@ -293,6 +294,13 @@ export default function MerchantDetail({ merchantId, onBack, onSelectReceipt, on
         lifetimeMinor={detail.stats.lifetime_spend_minor}
         count={detail.stats.transaction_count}
         currency={detail.stats.currency}
+      />
+      {/* Silent unless a receipt here was never converted: then the two
+          spend figures above contain its own number, not a base amount. */}
+      <UnconvertedCountNote
+        count={detail.stats.unconverted_transaction_count}
+        currency={detail.stats.currency}
+        className="-mt-3"
       />
 
       {/* Address (when enriched and no place block already shows it) */}
@@ -578,12 +586,13 @@ function MerchantTxnRow({
           )}
         </p>
       </div>
-      <span className="font-display italic font-medium text-[17px] tnum">
+      <span className="text-right font-display italic font-medium text-[17px] tnum">
         {(tx.total_minor / 100).toLocaleString(undefined, {
           style: 'currency',
           currency: tx.currency,
           maximumFractionDigits: 2,
         })}
+        {tx.unconverted && <UnconvertedTag />}
       </span>
     </>
   );

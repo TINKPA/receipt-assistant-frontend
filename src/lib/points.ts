@@ -6,7 +6,7 @@
  * valuation pass fills `amount_base_minor` from a rate the owner supplies.
  * This module owns the two things the frontend has to know about that.
  *
- * ## 1. Points are stored as WHOLE UNITS, cash as hundredths
+ * ## 1. Points are stored as WHOLE UNITS, cash in its minor unit
  *
  * This is the part that bites, and it is invisible in the API response —
  * both arrive as an integer in a field called `amount_minor`:
@@ -14,12 +14,16 @@
  *   cash    4200  ->  $42.00      (hundredths)
  *   points 42000  ->  42,000 pts  (whole points)
  *
- * `formatMoney` divides by 100 unconditionally, because for cash that is
+ * `formatMoney` divided by 100 unconditionally, because for cash that was
  * always right. Handed a points leg it renders a real 42,000-point award
  * stay as "HYATT_PT 420.00" — understated by two orders of magnitude,
  * still shaped like a plausible number, and therefore believed. Measured
  * on the live Kissel Uptown Oakland folio (txn 5b47cfbe), which is in
  * production today.
+ *
+ * (Cash is not all hundredths either. `formatMoney` now divides by each
+ * currency's own decimals — `currencyExponent` in `src/lib/money.ts` —
+ * and points keep the separate path described here.)
  *
  * Points are also inherently integral. There is no such thing as 0.5 of a
  * Hyatt point, so a trailing `.00` is not merely noise — it implies a

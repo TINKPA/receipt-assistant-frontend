@@ -23,7 +23,7 @@ export function FieldsGrid({
   isProcessing,
 }: {
   payment: string | null;
-  /** Tax as printed on the receipt, in minor units (cents). Undefined
+  /** Tax as printed on the receipt, in `currency`'s minor unit. Undefined
    *  when the receipt carried no tax line. */
   taxMinor: number | undefined;
   /** Tip as printed on the receipt, in minor units. */
