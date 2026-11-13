@@ -117,7 +117,7 @@ export default function MerchantDetail({ merchantId, onBack, onSelectReceipt, on
   const onEditPlaceName = () => {
     if (!place) return;
     const current =
-      place.custom_name ?? place.custom_name_zh ?? pickCjk(place.display_name_zh) ?? '';
+      place.custom_name ?? pickCjk(place.display_name_zh) ?? '';
     const next = window.prompt(
       'Override the name FOR THIS LOCATION only (clear to remove):',
       current,
@@ -235,10 +235,9 @@ export default function MerchantDetail({ merchantId, onBack, onSelectReceipt, on
             // no Chinese yet, offer an "+ add" affordance so the user
             // can supply one. Either path opens an inline prompt.
             if (!place) return null;
-            // `custom_name` (post-#79 rename) wins, fall back to the
-            // deprecated `custom_name_zh` alias during the transition
-            // window, then to the derived `display_name_zh`.
-            const override = place.custom_name ?? place.custom_name_zh ?? null;
+            // The user's `custom_name` wins, then the derived
+            // `display_name_zh`.
+            const override = place.custom_name ?? null;
             const zh = override ?? pickCjk(place.display_name_zh);
             if (zh && zh === m.canonical_name) return null;
             // Provenance label: a user override wins, then the two OCR

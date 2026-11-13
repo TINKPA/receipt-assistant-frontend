@@ -322,9 +322,6 @@ export function displayName(
   place:
     | {
         custom_name?: string | null;
-        /** @deprecated Use `custom_name`. Read as a fallback for one
-         *  release while the backend dual-emits both keys. */
-        custom_name_zh?: string | null;
         display_name_zh?: string | null;
         display_name_zh_is_native?: boolean | null;
         display_name_en?: string | null;
@@ -381,9 +378,6 @@ export function displayName(
   // Layer-3 cascade per #79: per-place override → brand-level override
   // → derived (Google/OCR) → fallback.
   if (place?.custom_name) return place.custom_name;
-  // Backward-compat fallback while the deprecated alias is still
-  // emitted by the backend (#79 transition window).
-  if (place?.custom_name_zh) return place.custom_name_zh;
   if (merchant?.custom_name) return merchant.custom_name;
   for (const lang of userLangs) {
     if (lang === 'zh') {
