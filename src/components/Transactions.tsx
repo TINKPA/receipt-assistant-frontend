@@ -315,12 +315,19 @@ export default function Transactions({
   // to — that assumption is exactly what let ¥13,948.80 be displayed and
   // summed as $13,948.80.
   //
-  // The commonest currency, not the first row's. A receipt the backend
-  // could not convert arrives in its OWN currency, and when it happened
-  // to be the newest row it relabelled the header and every day total.
-  // With amounts formatted by their currency's own decimals, a dollar
-  // total relabelled as yen would also read a hundred times too large.
+  // Not simply the first row's. A receipt the backend could not convert
+  // arrives in its OWN currency, and when it happened to be the newest
+  // row it relabelled the header and every day total. With amounts
+  // formatted by their currency's own decimals, a dollar total relabelled
+  // as yen would also read a hundred times too large.
+  //
+  // A converted row settles it: its amount was converted INTO the base,
+  // so its currency is the base by definition. Only a view with no
+  // converted row falls back to the commonest currency, which can still
+  // pick a foreign one when unconverted rows outnumber the base rows.
   const baseCurrency = useMemo(() => {
+    const converted = filteredTransactions.find((tx) => tx.originalCurrency != null);
+    if (converted) return converted.currency;
     const seen = new Map<string, number>();
     for (const tx of filteredTransactions) seen.set(tx.currency, (seen.get(tx.currency) ?? 0) + 1);
     let best = 'USD';
