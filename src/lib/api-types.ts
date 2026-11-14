@@ -581,7 +581,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get a transaction */
+        /**
+         * Get a transaction
+         * @description The response `ETag` is `W/"<version>-<documents tag>"`. It changes when `version` does and also when the transaction's `documents` do — one is linked, unlinked, soft-deleted or restored — which `version` alone does not record. Treat it as opaque and send it back as `If-Match` on a write. `If-Match` compares the version part only, so an edit made after a document change is applied rather than refused, and the bare `W/"<version>"` form (built from the body's `version`) is accepted as well. The exception is DELETE, which compares the whole tag when it is sent whole (see that operation).
+         */
         get: {
             parameters: {
                 query?: never;
@@ -596,13 +599,14 @@ export interface paths {
                 /** @description OK */
                 200: {
                     headers: {
+                        ETag?: string;
                         [name: string]: unknown;
                     };
                     content: {
                         "application/json": components["schemas"]["Transaction"];
                     };
                 };
-                /** @description Not Modified */
+                /** @description Not Modified (`If-None-Match` named the current ETag) */
                 304: {
                     headers: {
                         [name: string]: unknown;
@@ -626,6 +630,8 @@ export interface paths {
         /**
          * Delete a transaction
          * @description Default: reversible soft delete (sets deleted_at; the row drops out of every money query but is restorable via POST /:id/restore). ?hard=true forces a physical delete (postings + document_links cascade; irreversible). Reconciled transactions reject either way — unreconcile first.
+         *
+         *     Unlike the other writes, a delete sent with the whole ETag (`W/"<version>-<documents tag>"`) must match it whole: if a document was linked, unlinked, deleted or restored since the tag was issued, the answer is 412 and nothing is deleted, so a delete cannot silently undo a receipt attached in the meantime. The bare `W/"<version>"` form is held to the version only.
          */
         delete: {
             parameters: {
@@ -650,8 +656,44 @@ export interface paths {
                     content?: never;
                 };
                 400: components["responses"]["BadRequest"];
+                /** @description Not found (or, for a soft delete, already deleted) */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
                 /** @description Transaction is reconciled — unreconcile first. */
                 409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+                /** @description `If-Match` is stale: the version moved, or (whole tag only) the transaction's documents changed since it was issued. Re-fetch and retry. */
+                412: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+                /** @description `hard` is not one of `true`, `1`, `false`, `0`. */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+                /** @description If-Match required */
+                428: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -2850,7 +2892,7 @@ export interface paths {
         };
         /**
          * Brand-level rollup — locations, recent transactions, sibling brands
-         * @description Aggregates across every merchant row sharing this brand_id within the workspace. Powers the BrandPage UI (#XXX). Voided transactions excluded from money sums. Sibling brands (same parent_id) included for the Costco-style grouped-brand callout.
+         * @description Aggregates across every merchant row sharing this brand_id within the workspace. Powers the BrandPage UI (#XXX). Only live transactions (posted or reconciled, not deleted) are counted in the stats or listed in recent_transactions. Sibling brands (same parent_id) included for the Costco-style grouped-brand callout.
          */
         get: {
             parameters: {
@@ -3102,7 +3144,7 @@ export interface paths {
         post?: never;
         /**
          * Delete a document. Soft-deletes by default; ?hard=true removes the row and quarantines the file under .trash/; ?cascade=true also handles linked transactions.
-         * @description Default: soft delete (sets deleted_at). ?hard=true: hard delete (row removed; file moved to <uploads_dir>/.trash/<timestamp>__<basename>, NOT unlinked); requires no remaining links unless ?cascade=true is also set. ?cascade=true: also deletes each linked transaction for which this document is the LAST LIVE EVIDENCE. A transaction that another non-deleted document still supports is kept — deleting one of an invoice + payment-confirmation pair does not delete the purchase. Of the transactions that are not kept: posted ones are soft-deleted, draft/error ones are hard-deleted, already-deleted ones are left intact, and a reconciled one aborts the whole operation with 409 (unreconcile first). The document itself is soft-deleted and its link rows stay, so restoring it restores the association. ?cascade=true&hard=true: the transactions that are not kept are hard-deleted (postings cascade); kept transactions are only unlinked from this document (a `document_unlinked` event records it). The document row is removed and the image file is moved to .trash/ (never unlinked). A cascade answers 200 with a report of what happened to each linked transaction; check `transactions_kept` before telling a user the receipt is gone.
+         * @description Default: soft delete (sets deleted_at). ?hard=true: hard delete (row removed; file moved to <uploads_dir>/.trash/<timestamp>__<basename>, NOT unlinked); requires no remaining links unless ?cascade=true is also set. ?cascade=true: also deletes each linked transaction for which this document is the LAST LIVE EVIDENCE. A transaction that another non-deleted document still supports is kept — deleting one of an invoice + payment-confirmation pair does not delete the purchase. A transaction that is already soft-deleted is left as it is and reported under `transactions_skipped`, whatever other documents it has; it is never reported as kept. Of the remaining transactions that are not kept: posted ones are soft-deleted, draft/error ones are hard-deleted, and a reconciled one aborts the whole operation with 409 (unreconcile first). The document itself is soft-deleted and its link rows stay, so restoring it restores the association. ?cascade=true&hard=true: the transactions no other non-deleted document supports are hard-deleted (postings cascade), soft-deleted ones included; kept transactions, and soft-deleted ones another document supports, are only unlinked from this document (a `document_unlinked` event records it). The document row is removed and the image file is moved to .trash/ (never unlinked). A cascade answers 200 with a report of what happened to each linked transaction; check `transactions_kept` before telling a user the receipt is gone.
          */
         delete: {
             parameters: {
@@ -3144,8 +3186,17 @@ export interface paths {
                         "application/problem+json": components["schemas"]["ProblemDetails"];
                     };
                 };
-                /** @description Hard delete refused because document has links (use cascade), or cascade refused because a transaction it would delete is reconciled. */
+                /** @description `document-has-links`: hard delete refused because the document has links (use cascade). `cascade-blocked-reconciled`: cascade refused because a transaction it would delete is reconciled. `concurrent-update`: the cascade collided with another request changing the same records; nothing was changed, retry after `Retry-After`. */
                 409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+                /** @description `hard` or `cascade` is not one of `true`, `1`, `false`, `0`. */
+                422: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -3515,7 +3566,7 @@ export interface paths {
                     };
                 };
                 400: components["responses"]["BadRequest"];
-                /** @description No files / validation failed */
+                /** @description No files, or `auto_reconcile` is not one of true / 1 / false / 0 */
                 422: {
                     headers: {
                         [name: string]: unknown;
@@ -4118,7 +4169,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Undo one or more applied dedup proposals. Restores the duplicate transaction and moves the document links the apply took back to it, in one database transaction; the proposal becomes `reverted`. Skipped, with nothing changed, when the proposal was never applied, when the transaction was deleted again for another reason, when an old proposal left no trace of which documents moved, or when the surviving transaction has since been folded into another by a later apply (`survivor_folded`: undo that proposal first). */
+        /** Undo one or more applied dedup proposals. Restores the duplicate transaction and moves the document links the apply took back to it, in one database transaction; the proposal becomes `reverted`. Skipped, with nothing changed, when the proposal was never applied, when the transaction was deleted again for another reason, when an old proposal left no trace of which documents moved, when every document the apply moved has since been deleted (`no_live_document`: a transaction is not restored without live evidence; restore a document first), when the surviving transaction's own documents have all been deleted since, so that taking the moved ones back would leave it in the ledger with no live document (`survivor_no_live_document`: restore one of its own documents, or delete it, first), or when the surviving transaction has since been folded into another by a later apply (`survivor_folded`: undo that proposal first). */
         post: {
             parameters: {
                 query?: never;
@@ -6120,6 +6171,7 @@ export interface components {
             brand: components["schemas"]["Brand"];
             stats: components["schemas"]["BrandRollupStats"];
             locations: components["schemas"]["BrandRollupLocation"][];
+            /** @description The 20 most recent live transactions across the brand's merchants (posted or reconciled, not deleted), drawn from the set the stats count. */
             recent_transactions: components["schemas"]["BrandRollupRecentRow"][];
             sibling_brands: components["schemas"]["BrandRollupSibling"][];
         };
@@ -6334,7 +6386,8 @@ export interface components {
         };
         CreateBatchForm: {
             files?: string[];
-            auto_reconcile?: boolean | ("true" | "false");
+            /** @description Whether to run reconcile for the batch once every file has been extracted. Sent as text: `true` / `1` / `false` / `0`, in any case. On when the field is absent or empty; any other value is a 422. */
+            auto_reconcile?: boolean;
         };
         CreateBatchResponse: {
             /**
@@ -6500,6 +6553,7 @@ export interface components {
                  * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
                  */
                 id: string;
+                /** @description Why nothing was changed for this proposal. Starts with one of: `not_found`, `already_reverted`, `not_applied`, `malformed_payload`, `duplicate_missing`, `not_deleted_by_this_proposal`, `no_link_record`, `no_live_document` (every document the apply moved has since been deleted, so restoring the transaction would leave it without evidence), `survivor_no_live_document` (the surviving transaction's own documents have all been deleted since, so taking the moved ones back would leave it in the ledger with no live document; restore one of its own, or delete it, then undo again), `survivor_folded`, or `undo_failed`. */
                 reason: string;
             }[];
         };
@@ -6919,13 +6973,13 @@ export interface components {
             document_id: string;
             /** @description true: the document row was removed (`?hard=true`). false: it was soft-deleted. */
             hard: boolean;
-            /** @description Linked transactions left in the ledger because another non-deleted document still supports them. Non-empty means the receipt is NOT gone: delete the remaining document(s) with cascade, or the transaction itself, to remove it. */
+            /** @description Linked transactions left in the ledger because another non-deleted document still supports them. Non-empty means the receipt is NOT gone: delete the remaining document(s) with cascade, or the transaction itself, to remove it. Never a transaction that was already soft-deleted; those are under `transactions_skipped`. */
             transactions_kept: string[];
             /** @description Posted transactions this call soft-deleted (restorable). */
             transactions_soft_deleted: string[];
             /** @description Transactions this call removed for good: every non-kept one under `?hard=true`, and draft/error ones in soft mode. */
             transactions_hard_deleted: string[];
-            /** @description Soft mode only: transactions that were already soft-deleted and were left as they were. */
+            /** @description Transactions that were already soft-deleted before this call and stay that way, whatever other documents they have. In soft mode that is every such transaction. Under `?hard=true` it is the ones another non-deleted document still supports (they lose only the link to this document); the rest are in `transactions_hard_deleted`. */
             transactions_skipped: string[];
         };
         ReExtractDocumentResponse: {
