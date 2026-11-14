@@ -13,6 +13,7 @@ import { getBrandPartySummary } from '../lib/api/parties';
 import { brandLink, merchantLink, receiptLink } from '../lib/navLinks';
 import { MerchantIcon } from './MerchantIcon';
 import { statusBadge } from '../lib/transactionStatus';
+import { UnconvertedCountNote, UnconvertedTag } from './FxDisclosureNote';
 
 interface BrandPageProps {
   brandId: string;
@@ -96,6 +97,14 @@ export default function BrandPage({
         locationCount={stats.location_count}
         transactionCount={stats.transaction_count}
         currency={stats.currency}
+      />
+      {/* Silent unless a receipt under this brand was never converted:
+          then the two spend figures above contain its own number, not a
+          base amount. */}
+      <UnconvertedCountNote
+        count={stats.unconverted_transaction_count}
+        currency={stats.currency}
+        className="-mt-3"
       />
 
       <PartySummarySection brandId={brand.brand_id} />
@@ -487,13 +496,14 @@ function RecentRow({
         </p>
       </div>
       <span
-        className="font-display italic font-medium text-[16px] tnum"
+        className="text-right font-display italic font-medium text-[16px] tnum"
       >
         {(row.total_minor / 100).toLocaleString(undefined, {
           style: 'currency',
           currency: row.currency,
           maximumFractionDigits: 2,
         })}
+        {row.unconverted && <UnconvertedTag />}
       </span>
     </>
   );
@@ -503,10 +513,13 @@ function RecentRow({
   );
   // Real <a href> via <Link> for native browser affordances; falls back to
   // a non-interactive <div> when no navigate handler is provided.
+  // No `block` here: tailwind-merge lets it override `grid`, which put the
+  // amount (and its "not converted" tag) on a line of its own under the
+  // payee instead of in the right-hand column.
   return onSelectReceipt ? (
     <Link
       {...receiptLink(row.id)}
-      className={cn(baseClass, 'block hover:bg-[var(--color-paper-deep)]/30 cursor-pointer')}
+      className={cn(baseClass, 'hover:bg-[var(--color-paper-deep)]/30 cursor-pointer')}
     >
       {body}
     </Link>

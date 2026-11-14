@@ -41,6 +41,11 @@ export const qk = {
    *  (ProcessingCardList) so both collapse onto one cache entry per batch. */
   batch: (id: string) => ['batch', id] as const,
   receipt: (id: string) => ['receipt', id] as const,
+  /** Prefix of every cached receipt, for a change whose receipt is not
+   *  known at the call site (restoring a document from the Ledger's
+   *  deleted panel: the document does not say which transaction it is
+   *  on). */
+  receiptsAll: ['receipt'] as const,
   merchant: (id: string) => ['merchant', id] as const,
   place: (id: string) => ['place', id] as const,
   brands: ['brands'] as const,

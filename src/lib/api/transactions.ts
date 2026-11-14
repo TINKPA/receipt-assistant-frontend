@@ -112,9 +112,23 @@ export async function fetchTransactionsPage(
   return { items: items.map(mapTransaction), nextCursor };
 }
 
+/**
+ * One transaction with its ETag, always read from the server.
+ *
+ * `cache: 'no-store'` is deliberate. The ETag exists for `If-Match` on
+ * writes, and on the wave-0 backend it is the transaction's `version`
+ * alone, which does not move when a linked document is soft-deleted,
+ * restored or unlinked. The browser's own revalidation (`If-None-Match`)
+ * then gets 304 and hands back the body it stored: the receipt page kept
+ * listing a deleted document as live after "refetching". A backend that
+ * folds the documents into the tag closes that, but TanStack Query is
+ * the cache for this resource either way; the HTTP cache underneath it
+ * can only make a refetch lie. Treat the tag as opaque.
+ */
 export async function getTransaction(id: string): Promise<WithETag<BackendTransaction>> {
   const { data, error, response } = await client.GET('/v1/transactions/{id}', {
     params: { path: { id } },
+    cache: 'no-store',
   });
   return {
     data: unwrap('getTransaction', data, error, response.status),
@@ -145,9 +159,11 @@ export async function createTransaction(input: {
   const body: CreateTransactionRequest = {
     occurred_on: input.occurred_on,
     postings: input.postings,
-    // Always include metadata — OpenAPI marks it with a default, which
-    // openapi-typescript renders as required even though the server
-    // accepts empty.
+    // Always include metadata on this POST — the create schema gives it
+    // `default: {}`, which openapi-typescript renders as required even
+    // though the server accepts an absent one. (Only the create bodies
+    // are like this. On PATCH `metadata` is optional and merged; see
+    // `patchTransaction`.)
     metadata: input.metadata ?? {},
   };
   if (input.status) body.status = input.status;
@@ -163,6 +179,17 @@ export async function createTransaction(input: {
   return unwrap('createTransaction', data, error, response.status);
 }
 
+/**
+ * JSON Merge Patch on a transaction (`If-Match` required).
+ *
+ * Send only what changes. `metadata` is OPTIONAL and the server MERGES
+ * it into the stored object (`null` removes a key, absent keys are kept,
+ * `{}` changes nothing), so leave it out unless a metadata key is being
+ * edited. The server owns the provenance keys (`extraction`, `fx`,
+ * `points`, `user_edited`, …) and answers 422 to a patch that would
+ * change one; it sets `metadata.user_edited.<field>` itself when
+ * `payee`, `occurred_on` or `occurred_at` is patched.
+ */
 export async function patchTransaction(
   id: string,
   patch: UpdateTransactionRequest,
@@ -224,12 +251,17 @@ export async function hardDeleteTransaction(id: string, etag: string): Promise<v
 }
 
 /** Pure state flip `reconciled → posted`. Required before any hard
- *  delete on a reconciled row. */
+ *  delete on a reconciled row.
+ *
+ *  The flip bumps the transaction's version, so any ETag read before it
+ *  is now stale. The response carries the new one: a caller that goes
+ *  on to write (the delete an unreconcile was for) must send that, not
+ *  the tag it held before. */
 export async function unreconcileTransaction(
   id: string,
   reason: string | undefined,
   etag: string,
-): Promise<BackendTransaction> {
+): Promise<WithETag<BackendTransaction>> {
   const { data, error, response } = await client.POST(
     '/v1/transactions/{id}/unreconcile',
     {
@@ -240,7 +272,10 @@ export async function unreconcileTransaction(
       body: reason ? { reason } : {},
     },
   );
-  return unwrap('unreconcileTransaction', data, error, response.status);
+  return {
+    data: unwrap('unreconcileTransaction', data, error, response.status),
+    etag: etagFrom(response),
+  };
 }
 
 export type NewTransactionItem = components['schemas']['NewTransactionItem'];

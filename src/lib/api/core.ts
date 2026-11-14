@@ -63,6 +63,13 @@ export type BackendNetWorthReport = components['schemas']['NetWorthReport'];
 export type BackendCashflowReport = components['schemas']['CashflowReport'];
 /** #216 — the points block every /v1/reports/* payload carries. */
 export type BackendPointsDisclosure = components['schemas']['PointsDisclosure'];
+/** The `fx` block every /v1/reports/* payload carries: foreign-currency
+ *  postings in scope that were never converted, and are therefore in the
+ *  totals at face value. */
+export type BackendFxDisclosure = components['schemas']['FxDisclosure'];
+/** What a cascade delete did to each transaction the document was linked
+ *  to. `transactions_kept` non-empty means a receipt is NOT gone. */
+export type CascadeDeleteReport = components['schemas']['CascadeDeleteReport'];
 export type BackendProblemDetails = components['schemas']['ProblemDetails'];
 export type NewPosting = components['schemas']['NewPosting'];
 export type UpdateTransactionRequest = components['schemas']['UpdateTransactionRequest'];
@@ -120,8 +127,13 @@ export interface ReceiptView {
    *  the base currency. Null otherwise. Display only — never summed. */
   originalTotalMinor: number | null;
   originalCurrency: string | null;
-  /** Rate applied (original → base) and the publication date it came
-   *  from, for the disclosure line under a converted amount. */
+  /** The exchange rate AS PUBLISHED (one whole unit of the original
+   *  currency in whole units of the base) and the publication date it
+   *  came from, for the disclosure line under a converted amount. Read
+   *  from `metadata.fx.rates[]`; null when the backend recorded none.
+   *  Not `postings.fx_rate`, which multiplies MINOR units and is a
+   *  different number whenever the two currencies differ in decimals
+   *  (yen to dollars: published 0.0065, stored 0.65). */
   fxRate: number | null;
   fxAsOfActual: string | null;
   /** #216 — points valuation provenance, when the base figure came from
@@ -472,17 +484,16 @@ interface PostingsTotal {
   minor: number;
   /** The base currency the `minor` figure is expressed in. */
   currency: string;
-  /** As printed on the receipt, when that differs from the base. */
+  /** As printed on the receipt, when that differs from the base. In
+   *  that currency's own minor unit (whole yen, fen, fils). */
   original: { minor: number; currency: string } | null;
-  /** Rate actually applied, for the disclosure line. */
-  fxRate: number | null;
 }
 
 function totalMinorFromPostings(
   postings: BackendPosting[],
   baseCurrency: string,
 ): PostingsTotal {
-  const none: PostingsTotal = { minor: 0, currency: baseCurrency, original: null, fxRate: null };
+  const none: PostingsTotal = { minor: 0, currency: baseCurrency, original: null };
   if (!postings || postings.length === 0) return none;
 
   // Pick the leg that carries the MEANING of the transaction — the
@@ -528,10 +539,15 @@ function totalMinorFromPostings(
   // currency has to come from outside it (caller resolves it — see
   // `fxFromMetadata`). `fx_rate` being set is the signal that a
   // conversion happened and there is an original worth disclosing.
+  //
+  // That is ALL `fx_rate` is used for here. Its value is the multiplier
+  // from this posting's minor units to base minor units, not the
+  // exchange rate a person would recognise; the rate to show comes from
+  // `metadata.fx.rates[]` (see `toReceiptView`).
   const leg = (chosen.length > 0 ? chosen : postings)[0];
 
   if (leg.fx_rate == null) {
-    return { minor, currency: leg.currency, original: null, fxRate: null };
+    return { minor, currency: leg.currency, original: null };
   }
   const originalMinor = chosen.length > 0
     ? chosen.reduce((s, p) => s + (p.account_type === 'income' ? -p.amount_minor : p.amount_minor), 0)
@@ -540,7 +556,6 @@ function totalMinorFromPostings(
     minor,
     currency: baseCurrency,
     original: { minor: originalMinor, currency: leg.currency },
-    fxRate: Number(leg.fx_rate),
   };
 }
 
@@ -555,10 +570,21 @@ function totalMinorFromPostings(
  */
 const DEFAULT_BASE_CURRENCY = 'USD';
 
-interface FxProvenance {
-  baseCurrency: string;
+/** One entry of `metadata.fx.rates[]`: the rate the backend's FX pass
+ *  applied to one currency of the transaction. */
+interface FxRateRecord {
+  currency: string;
+  /** As the rate source published it: one whole unit of `currency` in
+   *  whole units of the base currency. This is the number to show. (The
+   *  entry's `posting_fx_rate`, and `postings.fx_rate`, are the same rate
+   *  between MINOR units — shifted by the difference in decimals.) */
   rate: number | null;
   asOfActual: string | null;
+}
+
+interface FxProvenance {
+  baseCurrency: string;
+  rates: FxRateRecord[];
 }
 
 function fxFromMetadata(md: Record<string, unknown>): FxProvenance | null {
@@ -566,13 +592,25 @@ function fxFromMetadata(md: Record<string, unknown>): FxProvenance | null {
   if (!fx || typeof fx !== 'object') return null;
   const rec = fx as Record<string, unknown>;
   const rates = Array.isArray(rec.rates) ? (rec.rates as Record<string, unknown>[]) : [];
-  const first = rates[0];
   return {
     baseCurrency:
       typeof rec.base_currency === 'string' ? rec.base_currency : DEFAULT_BASE_CURRENCY,
-    rate: typeof first?.rate === 'number' ? first.rate : null,
-    asOfActual: typeof first?.as_of_actual === 'string' ? first.as_of_actual : null,
+    rates: rates
+      .filter((r) => r && typeof r === 'object' && typeof r.currency === 'string')
+      .map((r) => ({
+        currency: r.currency as string,
+        rate: typeof r.rate === 'number' ? r.rate : null,
+        asOfActual: typeof r.as_of_actual === 'string' ? r.as_of_actual : null,
+      })),
   };
+}
+
+/** The published rate recorded for `currency`. A transaction carries one
+ *  entry per foreign currency, so `rates[0]` is only right when it
+ *  happens to be the one asked for. */
+function fxRateFor(fx: FxProvenance | null, currency: string | null): FxRateRecord | null {
+  if (!fx || !currency) return null;
+  return fx.rates.find((r) => r.currency === currency) ?? null;
 }
 
 /**
@@ -600,10 +638,11 @@ export function toReceiptView(t: BackendTransaction, etag: string | null = null)
   const md = (t.metadata ?? {}) as Record<string, unknown>;
   const fx = fxFromMetadata(md);
   const points = pointsFromMetadata(md);
-  const { minor, currency, original, fxRate } = totalMinorFromPostings(
+  const { minor, currency, original } = totalMinorFromPostings(
     t.postings,
     baseCurrencyFromMetadata(md),
   );
+  const fxRate = fxRateFor(fx, original?.currency ?? null);
   const doc = primaryDocument(t);
   const merchant = merchantFromTxn(t);
   const paymentMethod = typeof md.payment_method === 'string' ? md.payment_method : null;
@@ -618,13 +657,21 @@ export function toReceiptView(t: BackendTransaction, etag: string | null = null)
     narration: t.narration,
     currency,
     total_minor: minor,
+    // Hundredths, because `minor` is a base-currency figure and every
+    // total in the app is built from this number on that scale. (A leg
+    // the backend never converted reaches here in its own currency with
+    // its own minor amount; `formatMoney(total * 100, currency)` still
+    // prints it right, since that hands the same integer back.)
     total: minor / 100,
     // #184 — what the receipt itself says, when that differs from the
     // base-currency figure above. Null for same-currency receipts.
     originalTotalMinor: original?.minor ?? null,
     originalCurrency: original?.currency ?? null,
-    fxRate: fxRate ?? fx?.rate ?? null,
-    fxAsOfActual: fx?.asOfActual ?? null,
+    // The PUBLISHED rate for the receipt's currency. `postings.fx_rate`
+    // used to be read here first; since the backend started respecting
+    // currency decimals that is cents-per-yen, not dollars-per-yen.
+    fxRate: fxRate?.rate ?? null,
+    fxAsOfActual: fxRate?.asOfActual ?? null,
     // #216 — the provenance of the base figure when it came from a
     // points valuation rather than a published FX rate. Null for every
     // cash-only transaction, which is almost all of them.
@@ -714,18 +761,38 @@ export async function compressImage(file: File): Promise<File> {
 
 // ── Error helpers (RFC 7807) ───────────────────────────────────
 
-/** Known backend problem types — extend as the backend adds more.
- *  Code consuming `parseProblem` should switch on `.type` so unknown
+/** Problem codes this app branches on — extend as it learns more.
+ *  Code consuming `parseProblem` should switch on `.code` so unknown
  *  values fall through to a generic error path. */
-export type ProblemErrorType =
-  | 'errors/cascade-blocked-reconciled'
-  | 'errors/cannot-delete-reconciled'
-  | 'errors/document-has-links'
-  | 'errors/precondition-failed'
+export type ProblemCode =
+  | 'cascade-blocked-reconciled'
+  | 'cannot-delete-reconciled'
+  | 'document-has-links'
   | (string & {});
 
+/**
+ * The short code of a problem `type`.
+ *
+ * The backend sends `type` as an absolute URI,
+ * `https://receipts.dev/errors/cascade-blocked-reconciled`. Comparing it
+ * to `'errors/cascade-blocked-reconciled'` never matched, so the delete
+ * dialog's three dedicated "blocked" explanations never appeared and the
+ * user got the generic banner instead. The code is everything after the
+ * last `errors/`, so the relative form is accepted too.
+ */
+export function problemCode(type: string | undefined): ProblemCode | undefined {
+  if (!type) return undefined;
+  const marker = 'errors/';
+  const at = type.lastIndexOf(marker);
+  const code = at === -1 ? type : type.slice(at + marker.length);
+  return code || undefined;
+}
+
 export interface ParsedProblem {
-  type?: ProblemErrorType;
+  /** The problem `type` exactly as sent (an absolute URI). */
+  type?: string;
+  /** `type` reduced to its short code — the thing to compare against. */
+  code?: ProblemCode;
   title?: string;
   detail?: string;
   status?: number;
@@ -745,7 +812,10 @@ export function parseProblem(err: unknown): ParsedProblem {
   if (!candidate || typeof candidate !== 'object') return empty;
   const body = candidate as Record<string, unknown>;
   const out: ParsedProblem = { extensions: {} };
-  if (typeof body.type === 'string') out.type = body.type as ProblemErrorType;
+  if (typeof body.type === 'string') {
+    out.type = body.type;
+    out.code = problemCode(body.type);
+  }
   if (typeof body.title === 'string') out.title = body.title;
   if (typeof body.detail === 'string') out.detail = body.detail;
   if (typeof body.status === 'number') out.status = body.status;
@@ -850,16 +920,18 @@ export async function listPostableAccounts(): Promise<BackendAccount[]> {
   return all.filter((a) => a.parent_id !== null && !parents.has(a.id));
 }
 
+/** An account's balance, always in the workspace base currency (named by
+ *  `currency` in the response). There is no parameter to ask for another
+ *  one: the old `currency` option only relabelled the same figure. */
 export async function getAccountBalance(
   id: string,
-  opts: { asOf?: string; currency?: string; includeChildren?: boolean } = {},
+  opts: { asOf?: string; includeChildren?: boolean } = {},
 ): Promise<BackendAccountBalance> {
   const { data, error, response } = await client.GET('/v1/accounts/{id}/balance', {
     params: {
       path: { id },
       query: {
         as_of: opts.asOf,
-        currency: opts.currency,
         include_children: opts.includeChildren,
       },
     },

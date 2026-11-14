@@ -14,6 +14,7 @@ import {
 } from './core';
 import type {
   BackendDocument,
+  CascadeDeleteReport,
   WithETag,
   DocumentKind,
 } from './core';
@@ -58,25 +59,51 @@ export async function softDeleteDocument(id: string): Promise<void> {
   if (error) unwrap('softDeleteDocument', undefined, error, response.status);
 }
 
-/** Cascade delete: also handles linked transactions (posted → voided
- *  mirror, draft/error → hard-deleted, voided → left alone). Reconciled
- *  links abort the whole op with 409 `errors/cascade-blocked-reconciled`.
- *  With `hard=true`, every linked txn is hard-deleted (postings cascade)
- *  and the document file is removed too. */
+/**
+ * Cascade delete: the document, and each linked transaction this
+ * document was the LAST LIVE EVIDENCE of.
+ *
+ * A transaction that another non-deleted document still supports is
+ * KEPT — an invoice and a payment confirmation both document one
+ * purchase, and deleting either file must not delete the purchase. So a
+ * success here does not mean the receipt is gone: read
+ * `transactions_kept` in the returned report before saying so.
+ *
+ * The transactions that are not kept go the usual way: posted →
+ * soft-deleted, draft/error → hard-deleted, already soft-deleted → left
+ * alone. With `hard`, they are hard-deleted (postings cascade), the
+ * document row is removed, and a kept transaction only loses its link.
+ * A reconciled transaction that would be deleted aborts the whole call
+ * with 409 `cascade-blocked-reconciled`.
+ */
 export async function cascadeDeleteDocument(
   id: string,
   opts: { hard?: boolean } = {},
-): Promise<void> {
+): Promise<CascadeDeleteReport> {
   const query: Record<string, 'true'> = { cascade: 'true' };
   if (opts.hard) query.hard = 'true';
-  const { error, response } = await client.DELETE('/v1/documents/{id}', {
+  const { data, error, response } = await client.DELETE('/v1/documents/{id}', {
     params: { path: { id }, query },
   });
   if (error) unwrap('cascadeDeleteDocument', undefined, error, response.status);
+  // A backend from before the keep rule answers a cascade with 204 and
+  // no body. It deleted every linked transaction, so "nothing kept" is
+  // the true report; throwing here would tell the user a delete that
+  // went through had failed.
+  return (
+    data ?? {
+      document_id: id,
+      hard: opts.hard === true,
+      transactions_kept: [],
+      transactions_soft_deleted: [],
+      transactions_hard_deleted: [],
+      transactions_skipped: [],
+    }
+  );
 }
 
 /** Hard-delete a document with no linked transactions (file + row gone).
- *  Returns 409 `errors/document-has-links` if links exist — caller should
+ *  Returns 409 `document-has-links` if links exist — caller should
  *  switch to `cascadeDeleteDocument`. */
 export async function hardDeleteDocument(id: string): Promise<void> {
   const { error, response } = await client.DELETE('/v1/documents/{id}', {

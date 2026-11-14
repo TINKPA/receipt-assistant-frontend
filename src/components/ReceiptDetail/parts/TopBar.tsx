@@ -17,8 +17,10 @@ export function TopBar({
   onRestore,
 }: {
   onBack: () => void;
-  /** The record is not live — the TRANSACTION is soft-deleted, or every
-   *  document on it is (#165). Hides the actions menu. */
+  /** The TRANSACTION is soft-deleted (#165). Shows the badge and hides
+   *  the actions menu. A deleted DOCUMENT does neither: the transaction
+   *  it supported is still in the ledger, and still has to be editable
+   *  and deletable. */
   isTombstoned: boolean;
   /** A restore action actually EXISTS — i.e. there is a soft-deleted
    *  DOCUMENT to restore. Restore is document-scoped (POST
@@ -28,6 +30,7 @@ export function TopBar({
    *  restoreTransaction, which has never been called from this app —
    *  its own issue. */
   canRestore: boolean;
+  /** When the transaction was soft-deleted. Null while it is live. */
   deletedAt: string | null;
   isProcessing: boolean;
   canEdit: boolean;
@@ -60,8 +63,8 @@ export function TopBar({
         Back
       </button>
       <div className="flex items-center gap-3">
-        {(isTombstoned || canRestore) && <DeletedBadge deletedAt={deletedAt} />}
-        {canRestore ? (
+        {isTombstoned && <DeletedBadge deletedAt={deletedAt} />}
+        {canRestore && (
           <button
             type="button"
             onClick={onRestore}
@@ -72,52 +75,57 @@ export function TopBar({
               'transition-colors disabled:opacity-50 disabled:cursor-not-allowed',
             )}
           >
-            {restoring ? 'Restoring…' : 'Restore'}
+            {/* On a live transaction, say WHAT comes back: the receipt
+                itself was never deleted. */}
+            {restoring ? 'Restoring…' : isTombstoned ? 'Restore' : 'Restore document'}
           </button>
-        ) : isTombstoned ? null : (
-          !isProcessing && (
-            <div ref={menuRef} className="relative">
-              <button
-                type="button"
-                onClick={() => setMenuOpen((s) => !s)}
-                aria-label="Receipt actions"
+        )}
+        {/* The menu stays for as long as the transaction is live, next to
+            Restore when a document is deleted. It used to be replaced by
+            Restore, which made Edit and Delete unreachable on a receipt
+            whose transaction a cascade had kept. */}
+        {!isTombstoned && !isProcessing && (
+          <div ref={menuRef} className="relative">
+            <button
+              type="button"
+              onClick={() => setMenuOpen((s) => !s)}
+              aria-label="Receipt actions"
+              className={cn(
+                'flex h-8 w-8 items-center justify-center rounded-full',
+                'border border-[var(--color-rule)] bg-[var(--color-surface)]',
+                'hover:border-[var(--color-ink)]/30 transition-colors',
+              )}
+            >
+              <MoreHorizontal size={16} className="text-[var(--color-ink)]" />
+            </button>
+            {menuOpen && (
+              <div
                 className={cn(
-                  'flex h-8 w-8 items-center justify-center rounded-full',
-                  'border border-[var(--color-rule)] bg-[var(--color-surface)]',
-                  'hover:border-[var(--color-ink)]/30 transition-colors',
+                  'absolute right-0 z-30 mt-2 min-w-[180px] p-1',
+                  'rounded-[14px] bg-[var(--color-surface)] border border-[var(--color-rule)]',
+                  'shadow-[0_12px_32px_-10px_rgba(45,37,32,0.18)]',
                 )}
               >
-                <MoreHorizontal size={16} className="text-[var(--color-ink)]" />
-              </button>
-              {menuOpen && (
-                <div
-                  className={cn(
-                    'absolute right-0 z-30 mt-2 min-w-[180px] p-1',
-                    'rounded-[14px] bg-[var(--color-surface)] border border-[var(--color-rule)]',
-                    'shadow-[0_12px_32px_-10px_rgba(45,37,32,0.18)]',
-                  )}
-                >
-                  <MenuItem
-                    label="Edit fields"
-                    disabled={!canEdit}
-                    onClick={() => {
-                      setMenuOpen(false);
-                      onEdit();
-                    }}
-                  />
-                  <MenuItem
-                    label="Delete…"
-                    disabled={!canDelete}
-                    destructive
-                    onClick={() => {
-                      setMenuOpen(false);
-                      onDelete();
-                    }}
-                  />
-                </div>
-              )}
-            </div>
-          )
+                <MenuItem
+                  label="Edit fields"
+                  disabled={!canEdit}
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onEdit();
+                  }}
+                />
+                <MenuItem
+                  label="Delete…"
+                  disabled={!canDelete}
+                  destructive
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onDelete();
+                  }}
+                />
+              </div>
+            )}
+          </div>
         )}
       </div>
     </div>

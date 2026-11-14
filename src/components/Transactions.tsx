@@ -8,6 +8,7 @@ import {
   getDocument,
   getTransaction,
   hardDeleteTransaction,
+  parseProblem,
   restoreDocument,
   documentContentUrl,
   type BackendDocument,
@@ -314,7 +315,32 @@ export default function Transactions({
   // it off the data rather than hard-coding '$' the way this file used
   // to — that assumption is exactly what let ¥13,948.80 be displayed and
   // summed as $13,948.80.
-  const baseCurrency = filteredTransactions[0]?.currency ?? 'USD';
+  //
+  // Not simply the first row's. A receipt the backend could not convert
+  // arrives in its OWN currency, and when it happened to be the newest
+  // row it relabelled the header and every day total. With amounts
+  // formatted by their currency's own decimals, a dollar total relabelled
+  // as yen would also read a hundred times too large.
+  //
+  // A converted row settles it: its amount was converted INTO the base,
+  // so its currency is the base by definition. Only a view with no
+  // converted row falls back to the commonest currency, which can still
+  // pick a foreign one when unconverted rows outnumber the base rows.
+  const baseCurrency = useMemo(() => {
+    const converted = filteredTransactions.find((tx) => tx.originalCurrency != null);
+    if (converted) return converted.currency;
+    const seen = new Map<string, number>();
+    for (const tx of filteredTransactions) seen.set(tx.currency, (seen.get(tx.currency) ?? 0) + 1);
+    let best = 'USD';
+    let bestCount = 0;
+    for (const [currency, n] of seen) {
+      if (n > bestCount) {
+        best = currency;
+        bestCount = n;
+      }
+    }
+    return best;
+  }, [filteredTransactions]);
 
   // Group by period: ISO weeks for the recent stretch (this/last week),
   // calendar months for everything older — keeps history calm instead of
@@ -341,7 +367,22 @@ export default function Transactions({
 
   const handleHardDeleteConfirm = async () => {
     if (!hardDeleteTarget) return;
-    await hardDeleteTransaction(hardDeleteTarget.id, hardDeleteTarget.etag);
+    try {
+      await hardDeleteTransaction(hardDeleteTarget.id, hardDeleteTarget.etag);
+    } catch (err: unknown) {
+      // 412: the transaction changed after this dialog read it. A
+      // document linked, unlinked, deleted or restored since counts: the
+      // server refuses the delete rather than undo that change unseen.
+      // The tag held here can only fail again, so take the current one
+      // and let the user confirm the delete of what is there now.
+      if (parseProblem(err).status !== 412) throw err;
+      const fresh = await getTransaction(hardDeleteTarget.id);
+      if (fresh.etag) setHardDeleteTarget({ id: hardDeleteTarget.id, etag: fresh.etag });
+      queryClient.invalidateQueries({ queryKey: qk.transactions.all });
+      throw new Error(
+        'This transaction changed after the dialog opened (a document was attached, removed or restored, or it was edited). Nothing was deleted. Confirm again to delete it as it is now.',
+      );
+    }
     setHardDeleteTarget(null);
     // Hard delete drops the row from the list and creates a tombstone.
     queryClient.invalidateQueries({ queryKey: qk.transactions.all });
@@ -355,6 +396,9 @@ export default function Transactions({
       // Restore re-adds the row to the main list and removes the tombstone.
       queryClient.invalidateQueries({ queryKey: qk.transactions.all });
       queryClient.invalidateQueries({ queryKey: qk.tombstones });
+      // It also changes the documents of whichever receipt this file is
+      // on, and a cached receipt page would go on listing it as deleted.
+      queryClient.invalidateQueries({ queryKey: qk.receiptsAll });
     } catch (err: unknown) {
       setRowError(extractProblemMessage(err));
     }
@@ -646,7 +690,10 @@ function Header({
           TOTAL
         </p>
         <p className="mt-1 font-mono text-xl font-semibold tracking-tight tnum">
-          {formatMoney(Math.round(total) * 100, currency, { maximumFractionDigits: 0 })}
+          {/* Hundredths in, whole units out: rounding is the formatter's
+              job, so the figure stays exact in a currency that has no
+              hundredths to round away. */}
+          {formatMoney(Math.round(total * 100), currency, { maximumFractionDigits: 0 })}
         </p>
         <p className="font-mono text-[10px] text-[var(--color-ink-muted)]">
           {count} {count === 1 ? 'entry' : 'entries'}
@@ -785,7 +832,7 @@ function PeriodGroup({
           {group.txs.length} {group.txs.length === 1 ? 'entry' : 'entries'}
         </span>
         <span className="ml-auto font-mono text-[11px] font-medium tnum text-[var(--color-ink-soft)]">
-          {formatMoney(Math.round(Math.abs(group.total)) * 100, currency, {
+          {formatMoney(Math.round(Math.abs(group.total) * 100), currency, {
             maximumFractionDigits: 0,
           })}
         </span>

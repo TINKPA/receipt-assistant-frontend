@@ -2,6 +2,13 @@
  * Reports resource — summary / trends / net-worth / cashflow, plus the
  * legacy-summary shim the existing Dashboard consumes.
  *
+ * Every report is in the workspace base currency, named by `currency` in
+ * the response. None takes a currency parameter: the one these wrappers
+ * used to pass only wrote the requested code next to the same
+ * base-currency figures. (The type checker does not catch a leftover
+ * `currency` in a query object — it only rejects an unknown key when it
+ * is the sole one — so do not rely on the build to find it.)
+ *
  * Imports shared things from `./core` only.
  */
 import { client, unwrap } from './core';
@@ -10,13 +17,13 @@ import type {
   BackendTrendsReport,
   BackendNetWorthReport,
   BackendCashflowReport,
+  BackendFxDisclosure,
 } from './core';
 
 export async function getSummaryReport(opts: {
   from?: string;
   to?: string;
   groupBy?: 'category' | 'account' | 'payee';
-  currency?: string;
 } = {}): Promise<BackendSummaryReport> {
   const { data, error, response } = await client.GET('/v1/reports/summary', {
     params: {
@@ -24,7 +31,6 @@ export async function getSummaryReport(opts: {
         from: opts.from,
         to: opts.to,
         group_by: opts.groupBy,
-        currency: opts.currency,
       },
     },
   });
@@ -36,7 +42,6 @@ export async function getTrendsReport(opts: {
   to?: string;
   period?: 'month' | 'year';
   groupBy?: 'category' | 'total';
-  currency?: string;
 } = {}): Promise<BackendTrendsReport> {
   const { data, error, response } = await client.GET('/v1/reports/trends', {
     params: {
@@ -45,7 +50,6 @@ export async function getTrendsReport(opts: {
         to: opts.to,
         period: opts.period,
         group_by: opts.groupBy,
-        currency: opts.currency,
       },
     },
   });
@@ -54,10 +58,9 @@ export async function getTrendsReport(opts: {
 
 export async function getNetWorthReport(opts: {
   asOf?: string;
-  currency?: string;
 } = {}): Promise<BackendNetWorthReport> {
   const { data, error, response } = await client.GET('/v1/reports/net_worth', {
-    params: { query: { as_of: opts.asOf, currency: opts.currency } },
+    params: { query: { as_of: opts.asOf } },
   });
   return unwrap('getNetWorthReport', data, error, response.status);
 }
@@ -65,11 +68,10 @@ export async function getNetWorthReport(opts: {
 export async function getCashflowReport(opts: {
   from?: string;
   to?: string;
-  currency?: string;
 } = {}): Promise<BackendCashflowReport> {
   const { data, error, response } = await client.GET('/v1/reports/cashflow', {
     params: {
-      query: { from: opts.from, to: opts.to, currency: opts.currency },
+      query: { from: opts.from, to: opts.to },
     },
   });
   return unwrap('getCashflowReport', data, error, response.status);
@@ -89,18 +91,32 @@ export interface LegacySummaryItem {
   total_spent: number;
 }
 
+export interface LegacySummary {
+  items: LegacySummaryItem[];
+  /** The report's `fx` block: foreign postings in these totals that were
+   *  never converted, and so are counted at face value. Passed through so
+   *  the Dashboard can say so under its month figure. */
+  fx: BackendFxDisclosure;
+  /** The base currency the totals (and `fx.counted_base_minor`) are in. */
+  currency: string;
+}
+
 export async function fetchSummary(opts: {
   from?: string;
   to?: string;
-} = {}): Promise<LegacySummaryItem[]> {
+} = {}): Promise<LegacySummary> {
   const rep = await getSummaryReport({
     from: opts.from,
     to: opts.to,
     groupBy: 'category',
   });
-  return rep.items.map((it) => ({
-    category: it.key || 'other',
-    count: it.count,
-    total_spent: it.total_minor / 100,
-  }));
+  return {
+    items: rep.items.map((it) => ({
+      category: it.key || 'other',
+      count: it.count,
+      total_spent: it.total_minor / 100,
+    })),
+    fx: rep.fx,
+    currency: rep.currency,
+  };
 }

@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import {
   patchTransaction,
   extractProblemMessage,
+  parseProblem,
   type ReceiptView,
   type BackendTransaction,
   type UpdateTransactionRequest,
@@ -57,8 +58,16 @@ export default function EditReceiptModal({
       onClose();
     },
     onError: (err: unknown) => {
-      const problem = (err as Error & { problem?: { status?: number } })?.problem;
-      const status = problem?.status ?? 0;
+      const problem = parseProblem(err);
+      const status = problem.status ?? 0;
+      // 409 concurrent-update: the save collided with another write to the
+      // same rows and the server changed nothing. The receipt is not out
+      // of date and the tag is still current, so keep the form: Save again.
+      if (problem.code === 'concurrent-update') {
+        setState('error');
+        setError('Another change to this receipt was being saved at the same moment, so nothing was saved. Save again.');
+        return;
+      }
       // 412 → ETag stale; 409 → some other conflict. Both mean "reload".
       if (status === 412 || status === 409 || /412|409/.test(extractProblemMessage(err))) {
         setState('stale');
@@ -81,7 +90,12 @@ export default function EditReceiptModal({
     setError(null);
 
     // Only send fields that actually changed; PATCH is merge-patch.
-    const patch: UpdateTransactionRequest = { metadata: {} };
+    // `metadata` is deliberately absent: this form edits none of it, and
+    // the server keeps what it has (it merges, and stamps
+    // `metadata.user_edited` itself). This used to send `metadata: {}`
+    // because the generated type demanded the key, and a backend that
+    // replaced rather than merged wiped every stored key on each save.
+    const patch: UpdateTransactionRequest = {};
     if (payee !== (receipt.payee ?? '')) patch.payee = payee || null;
     if (narration !== (receipt.narration ?? '')) patch.narration = narration || null;
     if (occurredOn !== receipt.occurred_on) patch.occurred_on = occurredOn;

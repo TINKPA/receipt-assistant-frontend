@@ -14,6 +14,7 @@ import type { Category } from '../types';
 import { cn } from '../lib/utils';
 import { categoryLedgerLink, dateRangeLedgerLink } from '../lib/navLinks';
 import { PointsDisclosureNote } from './PointsDisclosureNote';
+import { FxDisclosureNote } from './FxDisclosureNote';
 
 /**
  * Yearly review — board screen 23 (Insights lane, tracking
@@ -216,6 +217,13 @@ export default function YearlyReview({ year }: { year?: number }) {
           dark hero. */}
       <PointsDisclosureNote
         points={data?.netWorth?.points}
+        currency={data?.netWorth?.currency ?? 'USD'}
+        className="mt-0"
+      />
+      {/* Balances include any foreign posting the backend never converted,
+          at face value. Silent unless there is one. */}
+      <FxDisclosureNote
+        fx={data?.netWorth?.fx}
         currency={data?.netWorth?.currency ?? 'USD'}
         className="mt-0"
       />
