@@ -496,6 +496,9 @@ interface ReviewFlag {
   candidateId: string | null;
   /** How many candidates the check names (0 without one). */
   candidateCount: number;
+  /** The check's verdict about those candidates: `distinct` means the
+   *  duplicate was ruled out, and the flag is about something else. */
+  verdict: string | null;
   /** The backend's own words, specific cause first. */
   reason: string | null;
 }
@@ -513,8 +516,18 @@ function readReviewFlag(metadata: unknown): ReviewFlag {
   return {
     candidateId: single ?? listed[0] ?? null,
     candidateCount: ids.length,
+    verdict: nonEmpty(check.verdict) ? check.verdict : null,
     reason: nonEmpty(check.reason) ? check.reason.trim() : null,
   };
+}
+
+/** Whether a flag asks "is this a duplicate?": the check names a candidate
+ *  and has not ruled it out. The server writer raises other flags (a
+ *  mixed tender, a date, a repair) on a row whose duplicate check already
+ *  named candidates and found them `distinct`; that flag is not about
+ *  them. */
+function isDuplicateFlag(flag: ReviewFlag): boolean {
+  return flag.candidateId !== null && flag.verdict !== 'distinct';
 }
 
 /** The applier's reasons start in lower case ("mixed tender, split not
@@ -532,14 +545,18 @@ function asSentence(s: string): string {
  * could neither rule in nor out against a candidate (#134 branch 4, or the
  * server applier's "several candidates match" / "an identifier matches but
  * the total differs"), and that flag names the candidate. The server writer
- * also flags rows that resemble nothing: a mixed tender booked whole to
- * Credit Card, a date it could not confirm, an attach made although one
- * identifier differs by a character. Those name no candidate, and a card
+ * also flags rows for reasons that are not about duplicates: a mixed tender
+ * booked whole to Credit Card, a date it could not confirm, a repair that
+ * moved the date or money, an attach made although one identifier differs
+ * by a character. Those name no candidate of their own; when the row's
+ * duplicate check had already named candidates, it keeps them with its
+ * verdict, and `distinct` there means the duplicate was ruled out. A card
  * that opened with "same amount + day as an existing transaction" told the
  * reader to look for a duplicate that does not exist. So the card says
- * "possible duplicate" only when the check names a candidate, and otherwise
- * a neutral "needs review"; either way the backend's reason, which leads
- * with the specific cause, is shown in full.
+ * "possible duplicate" only when the check names a candidate it has not
+ * ruled out (`isDuplicateFlag`), and otherwise a neutral "needs review";
+ * either way the backend's reason, which leads with the specific cause,
+ * is shown in full.
  *
  * Dismiss (`POST …/near-dup-review`, action `dismiss`) clears the flag and
  * books nothing. On a duplicate flag it means "they are distinct
@@ -568,8 +585,9 @@ function NeedsReviewSection() {
       </p>
       <div className="mt-2.5 space-y-2">
         {flagged.map((t) => {
-          const { candidateId, candidateCount, reason } = readReviewFlag(t.metadata);
-          const duplicate = candidateId !== null;
+          const flag = readReviewFlag(t.metadata);
+          const { candidateId, candidateCount, reason } = flag;
+          const duplicate = isDuplicateFlag(flag);
           return (
             <div key={t.id} className="rounded-[10px] bg-[var(--color-surface)] px-3 py-2">
               <Link
@@ -601,7 +619,7 @@ function NeedsReviewSection() {
                 )
               )}
               <div className="mt-2 flex items-center gap-2">
-                {candidateId && (
+                {duplicate && candidateId && (
                   <Link
                     {...receiptLink(candidateId)}
                     className="rounded-full bg-[var(--color-ink)] px-3 py-1 font-mono text-[8.5px] uppercase tracking-[0.06em] text-[var(--color-paper)]"
