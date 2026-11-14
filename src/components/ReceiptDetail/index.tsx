@@ -173,8 +173,9 @@ export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: Re
     // the next visit reads the current state ("Remove document only"
     // leaves the receipt in the ledger, one tap away), but do not refetch
     // now: this screen is about to unmount, and after a hard delete the
-    // refetch would be a 404.
-    queryClient.invalidateQueries({ queryKey: qk.receipt(receiptId), refetchType: 'none' });
+    // refetch would be a 404. Every cached receipt, not just this one: a
+    // cascade can also delete other transactions the file documented.
+    queryClient.invalidateQueries({ queryKey: qk.receiptsAll, refetchType: 'none' });
     // A delete soft-tombstones the document; refresh the tombstone list too.
     queryClient.invalidateQueries({ queryKey: qk.tombstones });
     onAfterMutation?.();
@@ -187,6 +188,9 @@ export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: Re
   const handleKept = () => {
     setActiveDialog(null);
     invalidateReceipt();
+    // Others the cascade deleted (the sheet named them): stale, not
+    // refetched until visited.
+    queryClient.invalidateQueries({ queryKey: qk.receiptsAll, refetchType: 'none' });
     queryClient.invalidateQueries({ queryKey: qk.tombstones });
     onAfterMutation?.();
   };
@@ -523,6 +527,7 @@ export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: Re
         transactionId={receipt.id}
         transactionEtag={receipt.etag}
         isReconciled={receipt.status === 'reconciled'}
+        hasDeletedDocument={deletedDoc != null}
         onDeleted={handleDeleted}
         onKept={handleKept}
       />

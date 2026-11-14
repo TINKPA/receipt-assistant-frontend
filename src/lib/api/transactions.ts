@@ -115,13 +115,15 @@ export async function fetchTransactionsPage(
 /**
  * One transaction with its ETag, always read from the server.
  *
- * `cache: 'no-store'` is deliberate. The ETag is the transaction's
- * `version`, and it exists for `If-Match` on writes. It does not move
- * when a linked document is soft-deleted, restored or unlinked, so the
- * browser's own revalidation (`If-None-Match`) gets 304 and hands back
- * the body it stored: the receipt page kept listing a deleted document
- * as live after "refetching". TanStack Query is the cache for this
- * resource; the HTTP cache underneath it can only make a refetch lie.
+ * `cache: 'no-store'` is deliberate. The ETag exists for `If-Match` on
+ * writes, and on the wave-0 backend it is the transaction's `version`
+ * alone, which does not move when a linked document is soft-deleted,
+ * restored or unlinked. The browser's own revalidation (`If-None-Match`)
+ * then gets 304 and hands back the body it stored: the receipt page kept
+ * listing a deleted document as live after "refetching". A backend that
+ * folds the documents into the tag closes that, but TanStack Query is
+ * the cache for this resource either way; the HTTP cache underneath it
+ * can only make a refetch lie. Treat the tag as opaque.
  */
 export async function getTransaction(id: string): Promise<WithETag<BackendTransaction>> {
   const { data, error, response } = await client.GET('/v1/transactions/{id}', {
@@ -249,12 +251,17 @@ export async function hardDeleteTransaction(id: string, etag: string): Promise<v
 }
 
 /** Pure state flip `reconciled → posted`. Required before any hard
- *  delete on a reconciled row. */
+ *  delete on a reconciled row.
+ *
+ *  The flip bumps the transaction's version, so any ETag read before it
+ *  is now stale. The response carries the new one: a caller that goes
+ *  on to write (the delete an unreconcile was for) must send that, not
+ *  the tag it held before. */
 export async function unreconcileTransaction(
   id: string,
   reason: string | undefined,
   etag: string,
-): Promise<BackendTransaction> {
+): Promise<WithETag<BackendTransaction>> {
   const { data, error, response } = await client.POST(
     '/v1/transactions/{id}/unreconcile',
     {
@@ -265,7 +272,10 @@ export async function unreconcileTransaction(
       body: reason ? { reason } : {},
     },
   );
-  return unwrap('unreconcileTransaction', data, error, response.status);
+  return {
+    data: unwrap('unreconcileTransaction', data, error, response.status),
+    etag: etagFrom(response),
+  };
 }
 
 export type NewTransactionItem = components['schemas']['NewTransactionItem'];

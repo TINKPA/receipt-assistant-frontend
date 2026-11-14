@@ -7,8 +7,11 @@ interface UnreconcileDialogProps {
   onClose: () => void;
   /** ID of the reconciled transaction to flip back to `posted`. */
   transactionId: string | null;
-  /** Called after successful unreconcile so the parent can refresh. */
-  onUnreconciled: () => void;
+  /** Called after successful unreconcile so the parent can refresh. The
+   *  argument is the transaction's ETag AFTER the flip (null if the
+   *  response had none): the flip bumps its version, so a write the
+   *  parent makes next must send this one. */
+  onUnreconciled: (etag: string | null) => void;
 }
 
 /** Reusable dialog for the `reconciled → posted` flip. Composes
@@ -31,7 +34,7 @@ export default function UnreconcileDialog({
         etag,
       );
     },
-    onSuccess: () => onUnreconciled(),
+    onSuccess: (result) => onUnreconciled(result.etag),
   });
   // ConfirmActionDialog awaits this and manages working/error UI; a rejection
   // surfaces there. Coerce to Promise<void> for its onConfirm contract.

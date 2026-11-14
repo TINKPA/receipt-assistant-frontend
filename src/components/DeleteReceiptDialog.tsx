@@ -1,5 +1,6 @@
 import React from 'react';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { Link } from '@tanstack/react-router';
 import { X, Loader2, AlertCircle, AlertTriangle, ArrowLeft } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
@@ -11,6 +12,8 @@ import {
   parseProblem,
   type ParsedProblem,
 } from '../lib/api';
+import { qk } from '../lib/queryKeys';
+import { receiptLink } from '../lib/navLinks';
 import { addTombstone } from '../lib/tombstones';
 import UnreconcileDialog from './UnreconcileDialog';
 
@@ -34,6 +37,10 @@ interface DeleteReceiptDialogProps {
   /** Whether the underlying receipt's transaction is reconciled. Used to
    *  preselect "Permanently delete everything" → unreconcile guard. */
   isReconciled?: boolean;
+  /** One of the transaction's documents is soft-deleted (and so can be
+   *  restored). With `documentId` null that means every document is: the
+   *  only delete left is the permanent one, and the sheet says so. */
+  hasDeletedDocument?: boolean;
   /** Called once the delete completes and the parent should refresh /
    *  navigate away. */
   onDeleted: () => void;
@@ -45,10 +52,31 @@ interface DeleteReceiptDialogProps {
 }
 
 /** What the mutation was asked to do: the option the user picked, or the
- *  follow-up offered after a cascade kept the transaction. */
+ *  follow-up offered after a cascade kept the transaction. `etag`
+ *  overrides the page's ETag for the hard-txn delete: after this sheet
+ *  unreconciled the transaction, the page's tag is one version behind. */
 type Step =
-  | { step: 'first'; mode: Mode }
+  | { step: 'first'; mode: Mode; etag?: string | null }
   | { step: 'remaining'; hard: boolean };
+
+/**
+ * Transactions OTHER than this receipt's that a cascade deleted.
+ *
+ * A document can be linked to more than one transaction (one order email
+ * covering two charges). The cascade deletes every linked transaction the
+ * document was the last live evidence of, so deleting "this receipt's
+ * file" can take another purchase with it. The report names them; the
+ * sheet must too, or the user never learns that a second purchase left
+ * the ledger.
+ */
+interface OthersDeleted {
+  /** Soft-deleted: still in the database, marked deleted. */
+  soft: string[];
+  /** Gone for good (a hard cascade, or a draft/error transaction). */
+  hard: string[];
+}
+
+const NO_OTHERS: OthersDeleted = { soft: [], hard: [] };
 
 /**
  * A cascade went through and the transaction is still in the ledger.
@@ -134,15 +162,28 @@ export default function DeleteReceiptDialog({
   transactionId,
   transactionEtag,
   isReconciled,
+  hasDeletedDocument,
   onDeleted,
   onKept,
 }: DeleteReceiptDialogProps) {
+  const queryClient = useQueryClient();
   const initialMode: Mode = documentId ? 'soft' : 'hard-txn';
   const [mode, setMode] = React.useState<Mode>(initialMode);
   const [confirmHardOk, setConfirmHardOk] = React.useState(false);
   const [state, setState] = React.useState<ResultState>({ kind: 'idle' });
   const [kept, setKept] = React.useState<KeptState | null>(null);
   const [unreconcileTarget, setUnreconcileTarget] = React.useState<string | null>(null);
+  // The transaction's ETag as this sheet last learned it from a write of
+  // its own (an unreconcile). Null: use the page's.
+  const [freshEtag, setFreshEtag] = React.useState<string | null>(null);
+  // Other transactions the cascades in this sheet have deleted. The ref
+  // accumulates across steps for the mutation callbacks (which may close
+  // over an older render); the state mirrors it for rendering.
+  const othersRef = React.useRef<OthersDeleted>(NO_OTHERS);
+  const [others, setOthers] = React.useState<OthersDeleted>(NO_OTHERS);
+  // This receipt is gone, but the cascade took other transactions too:
+  // say which before leaving.
+  const [finished, setFinished] = React.useState(false);
 
   React.useEffect(() => {
     if (isOpen) {
@@ -151,13 +192,27 @@ export default function DeleteReceiptDialog({
       setState({ kind: 'idle' });
       setKept(null);
       setUnreconcileTarget(null);
+      setFreshEtag(null);
+      othersRef.current = NO_OTHERS;
+      setOthers(NO_OTHERS);
+      setFinished(false);
     }
   }, [isOpen, initialMode]);
 
   // Once a cascade has kept the transaction, the document is already
   // deleted: leaving the sheet is not a cancel, and the parent has to
-  // show the receipt as it now is.
-  const handleClose = () => (kept ? onKept() : onClose());
+  // show the receipt as it now is. Once the receipt is gone, leaving is
+  // the same as the delete completing.
+  const handleClose = () => (finished ? onDeleted() : kept ? onKept() : onClose());
+
+  const recordOthers = (soft: string[], hard: string[]) => {
+    if (soft.length === 0 && hard.length === 0) return;
+    othersRef.current = {
+      soft: [...othersRef.current.soft, ...soft],
+      hard: [...othersRef.current.hard, ...hard],
+    };
+    setOthers(othersRef.current);
+  };
 
   const handleProblem = (problem: ParsedProblem): boolean => {
     const ext = problem.extensions ?? {};
@@ -193,21 +248,32 @@ export default function DeleteReceiptDialog({
     return false;
   };
 
-  /** The documents still live on this transaction, read from the server
-   *  rather than from whatever the page had cached when it opened. */
-  const liveDocumentIds = async (): Promise<string[]> => {
-    const { data } = await getTransaction(transactionId);
-    return data.documents.filter((d) => d.deleted_at == null).map((d) => d.id);
+  /** The transaction as the server has it now, rather than as the page
+   *  had it cached when the sheet opened: whether it is still live, and
+   *  which of its documents are. A 404 is an answer (someone hard-deleted
+   *  it), not a failure. */
+  const readBack = async (): Promise<{ deleted: boolean; live: string[] }> => {
+    try {
+      const { data } = await getTransaction(transactionId);
+      return {
+        deleted: data.deleted_at != null,
+        live: data.documents.filter((d) => d.deleted_at == null).map((d) => d.id),
+      };
+    } catch (err) {
+      if (parseProblem(err).status === 404) return { deleted: true, live: [] };
+      throw err;
+    }
   };
 
   /** The cascade is done and cannot be taken back, so failing to read
-   *  the count must not turn into an error: say "kept" without a number. */
+   *  the count must not turn into an error: say "kept" without a number.
+   *  But a transaction that is no longer live was not kept, whoever
+   *  deleted it: another tab's cascade can land between this one and the
+   *  read-back, and "still in your ledger" would then be false. */
   const keptOutcome = async (hard: boolean): Promise<Outcome> => {
-    const remaining = await liveDocumentIds().then(
-      (ids) => ids.length,
-      () => null,
-    );
-    return { kind: 'kept', hard, remaining };
+    const now = await readBack().catch(() => null);
+    if (now?.deleted) return { kind: 'done' };
+    return { kind: 'kept', hard, remaining: now ? now.live.length : null };
   };
 
   const cascade = async (docId: string, hard: boolean): Promise<boolean> => {
@@ -215,6 +281,10 @@ export default function DeleteReceiptDialog({
     // A hard cascade removes the document row, so there is nothing to
     // restore and no tombstone to remember.
     if (!hard) addTombstone(docId);
+    recordOthers(
+      report.transactions_soft_deleted.filter((id) => id !== transactionId),
+      report.transactions_hard_deleted.filter((id) => id !== transactionId),
+    );
     return report.transactions_kept.includes(transactionId);
   };
 
@@ -224,7 +294,9 @@ export default function DeleteReceiptDialog({
         // The follow-up: cascade each document that still supports the
         // transaction. The one that is its last live evidence takes the
         // transaction with it, and the report says when that happened.
-        for (const docId of await liveDocumentIds()) {
+        const now = await readBack();
+        if (now.deleted) return { kind: 'done' };
+        for (const docId of now.live) {
           const stillKept = await cascade(docId, v.hard);
           if (!stillKept) return { kind: 'done' };
         }
@@ -243,16 +315,24 @@ export default function DeleteReceiptDialog({
           const stillKept = await cascade(documentId, hard);
           return stillKept ? keptOutcome(hard) : { kind: 'done' };
         }
-        case 'hard-txn':
-          if (!transactionEtag) throw new Error('Missing ETag — refresh and retry.');
-          await hardDeleteTransaction(transactionId, transactionEtag);
+        case 'hard-txn': {
+          const etag = v.etag ?? transactionEtag;
+          if (!etag) throw new Error('Missing ETag — refresh and retry.');
+          await hardDeleteTransaction(transactionId, etag);
           return { kind: 'done' };
+        }
       }
     },
     onMutate: () => setState({ kind: 'working' }),
     onSuccess: (outcome) => {
       if (outcome.kind === 'done') {
-        onDeleted();
+        const o = othersRef.current;
+        if (o.soft.length === 0 && o.hard.length === 0) {
+          onDeleted();
+          return;
+        }
+        setFinished(true);
+        setState({ kind: 'idle' });
         return;
       }
       setKept({ hard: outcome.hard, remaining: outcome.remaining });
@@ -264,6 +344,20 @@ export default function DeleteReceiptDialog({
       // stale one.
       if (v.step === 'remaining') setKept((k) => (k ? { ...k, remaining: null } : k));
       const problem = parseProblem(err);
+      if (problem.status === 412) {
+        // The transaction changed after the page read it (another tab,
+        // or an unreconcile whose new tag this sheet never got). Retrying
+        // with the same tag can only fail again, so have the page read it
+        // afresh; the next attempt sends the new tag.
+        setFreshEtag(null);
+        queryClient.invalidateQueries({ queryKey: qk.receipt(transactionId) });
+        setState({
+          kind: 'error',
+          message:
+            'This receipt changed after the page loaded it. The page has been refreshed; check it, then delete again.',
+        });
+        return;
+      }
       const handled = handleProblem(problem);
       if (!handled) {
         setState({
@@ -274,10 +368,14 @@ export default function DeleteReceiptDialog({
     },
   });
 
-  /** Run (or re-run) whichever step the sheet is on. */
-  const runDelete = () =>
+  /** Run (or re-run) whichever step the sheet is on. `etag` is a tag the
+   *  caller has just been handed for this transaction, newer than the
+   *  page's. */
+  const runDelete = (etag?: string | null) =>
     deleteMut.mutate(
-      kept ? { step: 'remaining', hard: kept.hard } : { step: 'first', mode },
+      kept
+        ? { step: 'remaining', hard: kept.hard }
+        : { step: 'first', mode, etag: etag ?? freshEtag },
     );
 
   const handleConfirm = () => {
@@ -287,6 +385,17 @@ export default function DeleteReceiptDialog({
 
   const renderOptions = () => (
     <div className="space-y-3">
+      {documentId === null && hasDeletedDocument && (
+        // A live transaction whose documents are all soft-deleted. The
+        // app has no reversible delete for a transaction on its own, so
+        // the one option below is permanent; Restore document on the
+        // receipt is the way back, and the user should see both.
+        <p className="text-xs text-on-surface-variant">
+          Every document of this receipt is already deleted, so only the transaction is left,
+          and deleting it is permanent. To bring the receipt back instead, close this and
+          choose Restore document.
+        </p>
+      )}
       {documentId !== null &&
         (['soft', 'cascade-soft', 'cascade-hard'] as const).map((m) => (
           <OptionRow
@@ -329,10 +438,55 @@ export default function DeleteReceiptDialog({
   // are for a document that is already deleted.
   const backLabel = kept ? 'Back' : 'Back to options';
 
+  /** The other transactions a cascade in this sheet took with it, by short
+   *  id (the same `tx_` form as the sheet's header). A soft-deleted one
+   *  still has a receipt page, opened in a new tab so this sheet and the
+   *  page under it stay as they are. */
+  const renderOthers = () => {
+    const n = others.soft.length + others.hard.length;
+    if (n === 0) return null;
+    return (
+      <div className="flex items-start gap-3 rounded-xl bg-error/10 p-4">
+        <AlertTriangle className="mt-0.5 flex-shrink-0 text-error" size={20} />
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-[var(--color-ink)]">
+            {n === 1 ? 'Another transaction was' : `${n} other transactions were`} deleted too
+          </p>
+          <p className="mt-1 text-xs text-on-surface-variant">
+            The deleted file was also the only document of{' '}
+            {n === 1 ? 'another purchase' : `${n} other purchases`}, so the cascade removed{' '}
+            {n === 1 ? 'it' : 'them'} with it.
+          </p>
+          <ul className="mt-2 space-y-1" data-testid="delete-others">
+            {others.soft.map((id) => (
+              <li key={id} className="flex items-center gap-2 text-xs">
+                <Link
+                  {...receiptLink(id)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="font-mono text-primary underline"
+                >
+                  tx_{id.slice(0, 8)}
+                </Link>
+                <span className="text-on-surface-variant">marked deleted</span>
+              </li>
+            ))}
+            {others.hard.map((id) => (
+              <li key={id} className="flex items-center gap-2 text-xs">
+                <span className="font-mono text-on-surface-variant">tx_{id.slice(0, 8)}</span>
+                <span className="text-error">permanently deleted</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    );
+  };
+
   const renderKept = (k: KeptState) => {
     const working = state.kind === 'working';
     const n = k.remaining;
-    const others =
+    const supporters =
       n === null ? 'another document' : n === 1 ? 'another document' : `${n} other documents`;
     const target =
       n === null
@@ -350,21 +504,31 @@ export default function DeleteReceiptDialog({
               was kept
             </p>
             {n === 0 ? (
+              // Reached when the other document went between the cascade
+              // and the read-back without the transaction (a plain
+              // "Remove document only" elsewhere). What is left to do is
+              // permanent, and the sheet must not pass that off as the
+              // reversible delete the user picked.
               <p className="mt-1 text-xs text-on-surface-variant">
-                The transaction is still in your ledger and has no document left to delete. To
-                remove it, choose Delete… on the receipt again and delete the transaction
-                itself.
+                The transaction is still in your ledger and has no document left. Removing it
+                now is permanent: Delete… on the receipt, then Hard delete the transaction.
+                {k.hard
+                  ? ''
+                  : ' To undo instead, Restore document on the receipt brings the file back.'}
               </p>
             ) : (
               <p className="mt-1 text-xs text-on-surface-variant">
-                It is still in your ledger because {others} still support
+                It is still in your ledger because {supporters} still support
                 {n !== null && n > 1 ? '' : 's'} it. Deleting one file never deletes a purchase
                 that another file documents. To remove the transaction as well, delete {target}{' '}
-                too.
+                too. A file that is also the only document of another purchase takes that
+                purchase with it, and you will see which.
               </p>
             )}
           </div>
         </div>
+
+        {renderOthers()}
 
         {state.kind === 'error' && (
           <div className="flex items-start gap-3 p-4 rounded-xl bg-surface-container-lowest">
@@ -387,7 +551,7 @@ export default function DeleteReceiptDialog({
           </button>
           {n !== 0 && (
             <button
-              onClick={runDelete}
+              onClick={() => runDelete()}
               disabled={working}
               data-testid="delete-kept-remaining"
               className={cn(
@@ -531,22 +695,47 @@ export default function DeleteReceiptDialog({
     </div>
   );
 
-  const onUnreconciled = () => {
+  const renderFinished = () => (
+    <div className="space-y-4">
+      <p className="text-sm text-on-surface-variant">
+        This receipt is deleted.
+      </p>
+      {renderOthers()}
+      <button
+        onClick={onDeleted}
+        data-testid="delete-finished-done"
+        className="w-full rounded-[var(--radius-pill)] border-[0.5px] border-[var(--color-rule)] bg-[var(--color-paper-deep)] py-3 font-display text-[13.5px] font-medium text-[var(--color-ink-soft)] transition-colors hover:text-[var(--color-ink)]"
+      >
+        Done
+      </button>
+    </div>
+  );
+
+  const onUnreconciled = (etag: string | null) => {
+    const target = unreconcileTarget;
     setUnreconcileTarget(null);
+    // The flip changed that transaction's status and version. Without a
+    // refetch the receipt page goes on saying "Reconciled", keeps the
+    // cascade options disabled, and holds an ETag one version behind.
+    if (target) queryClient.invalidateQueries({ queryKey: qk.receipt(target) });
+    queryClient.invalidateQueries({ queryKey: qk.transactions.all });
+    // The retry below runs before that refetch lands, so hand it the tag
+    // the unreconcile answered with: the page's is now stale, and a hard
+    // delete sent with it is a 412 every time.
+    const ownEtag = target === transactionId ? etag : null;
+    if (ownEtag) setFreshEtag(ownEtag);
     if (state.kind === 'block-cannot-delete-reconciled') {
       // The receipt's own transaction was unreconciled — retry the
       // step that was blocked.
-      runDelete();
+      runDelete(ownEtag);
       return;
     }
     if (state.kind === 'block-cascade-reconciled') {
       // Drop the unreconciled txn from the list. If it's now empty,
       // auto-retry; otherwise wait for the user to click Retry.
-      const remaining = (state.reconciledTxnIds ?? []).filter(
-        (x) => x !== unreconcileTarget,
-      );
+      const remaining = (state.reconciledTxnIds ?? []).filter((x) => x !== target);
       if (remaining.length === 0) {
-        runDelete();
+        runDelete(ownEtag);
       } else {
         setState({ ...state, reconciledTxnIds: remaining });
       }
@@ -581,7 +770,9 @@ export default function DeleteReceiptDialog({
               <div className="flex items-start gap-4 px-5 pb-1">
                 <div className="min-w-0">
                   <h2 className="font-display text-[19px] font-medium tracking-tight">
-                    {kept ? (
+                    {finished ? (
+                      'Receipt deleted'
+                    ) : kept ? (
                       'Transaction kept'
                     ) : (
                       <>
@@ -604,19 +795,24 @@ export default function DeleteReceiptDialog({
               </div>
 
               <div className="max-h-[70vh] space-y-4 overflow-y-auto px-5 pb-6 pt-3">
-                {state.kind === 'block-cascade-reconciled' && renderBlockCascadeReconciled()}
-                {state.kind === 'block-cannot-delete-reconciled' && renderBlockCannotDeleteReconciled()}
-                {state.kind === 'block-document-has-links' && renderBlockDocumentHasLinks()}
+                {finished && renderFinished()}
 
-                {kept &&
+                {!finished && state.kind === 'block-cascade-reconciled' && renderBlockCascadeReconciled()}
+                {!finished && state.kind === 'block-cannot-delete-reconciled' && renderBlockCannotDeleteReconciled()}
+                {!finished && state.kind === 'block-document-has-links' && renderBlockDocumentHasLinks()}
+
+                {!finished &&
+                  kept &&
                   (state.kind === 'idle' || state.kind === 'working' || state.kind === 'error') &&
                   renderKept(kept)}
 
-                {!kept && (state.kind === 'idle' || state.kind === 'working' || state.kind === 'error') && (
+                {!finished && !kept && (state.kind === 'idle' || state.kind === 'working' || state.kind === 'error') && (
                   <>
-                    <p className="text-sm text-on-surface-variant">
-                      Three tiers — pick how far this goes.
-                    </p>
+                    {documentId !== null && (
+                      <p className="text-sm text-on-surface-variant">
+                        Three tiers — pick how far this goes.
+                      </p>
+                    )}
 
                     {renderOptions()}
 
