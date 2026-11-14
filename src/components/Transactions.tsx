@@ -8,6 +8,7 @@ import {
   getDocument,
   getTransaction,
   hardDeleteTransaction,
+  parseProblem,
   restoreDocument,
   documentContentUrl,
   type BackendDocument,
@@ -366,7 +367,22 @@ export default function Transactions({
 
   const handleHardDeleteConfirm = async () => {
     if (!hardDeleteTarget) return;
-    await hardDeleteTransaction(hardDeleteTarget.id, hardDeleteTarget.etag);
+    try {
+      await hardDeleteTransaction(hardDeleteTarget.id, hardDeleteTarget.etag);
+    } catch (err: unknown) {
+      // 412: the transaction changed after this dialog read it. A
+      // document linked, unlinked, deleted or restored since counts: the
+      // server refuses the delete rather than undo that change unseen.
+      // The tag held here can only fail again, so take the current one
+      // and let the user confirm the delete of what is there now.
+      if (parseProblem(err).status !== 412) throw err;
+      const fresh = await getTransaction(hardDeleteTarget.id);
+      if (fresh.etag) setHardDeleteTarget({ id: hardDeleteTarget.id, etag: fresh.etag });
+      queryClient.invalidateQueries({ queryKey: qk.transactions.all });
+      throw new Error(
+        'This transaction changed after the dialog opened (a document was attached, removed or restored, or it was edited). Nothing was deleted. Confirm again to delete it as it is now.',
+      );
+    }
     setHardDeleteTarget(null);
     // Hard delete drops the row from the list and creates a tombstone.
     queryClient.invalidateQueries({ queryKey: qk.transactions.all });

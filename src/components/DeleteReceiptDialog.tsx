@@ -185,18 +185,27 @@ export default function DeleteReceiptDialog({
   // say which before leaving.
   const [finished, setFinished] = React.useState(false);
 
+  // Start afresh each time the sheet opens. A refetch while it is open
+  // can change which options exist: after a 412 the page reads the
+  // receipt again, and a document linked meanwhile turns "Hard delete
+  // the transaction" into the three document options. Then follow the
+  // options but keep what the sheet is saying, or the explanation of the
+  // refused delete vanishes and the options just change under the user.
+  const wasOpen = React.useRef(false);
   React.useEffect(() => {
-    if (isOpen) {
-      setMode(initialMode);
-      setConfirmHardOk(false);
-      setState({ kind: 'idle' });
-      setKept(null);
-      setUnreconcileTarget(null);
-      setFreshEtag(null);
-      othersRef.current = NO_OTHERS;
-      setOthers(NO_OTHERS);
-      setFinished(false);
-    }
+    const opened = isOpen && !wasOpen.current;
+    wasOpen.current = isOpen;
+    if (!isOpen) return;
+    setMode(initialMode);
+    setConfirmHardOk(false);
+    if (!opened) return;
+    setState({ kind: 'idle' });
+    setKept(null);
+    setUnreconcileTarget(null);
+    setFreshEtag(null);
+    othersRef.current = NO_OTHERS;
+    setOthers(NO_OTHERS);
+    setFinished(false);
   }, [isOpen, initialMode]);
 
   // Once a cascade has kept the transaction, the document is already
