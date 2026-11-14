@@ -15,6 +15,7 @@ import { MerchantIcon } from './MerchantIcon';
 import { categoryLedgerLink, dateRangeLedgerLink, receiptLink } from '../lib/navLinks';
 import { PointsDisclosureNote } from './PointsDisclosureNote';
 import { FxDisclosureNote } from './FxDisclosureNote';
+import { formatMoney } from '../lib/money';
 
 /**
  * Monthly review — board screen 22 (Insights lane, tracking
@@ -305,7 +306,10 @@ export default function MonthlyReview({ month }: { month?: string }) {
                     </span>
                   </span>
                   <span className="font-mono text-[13px] font-semibold tracking-tight tnum">
-                    {tx.amount > 0 ? '+' : ''}${Math.abs(tx.amount).toFixed(2)}
+                    {/* In the row's own currency: a receipt the backend
+                        could not convert arrives in its currency. */}
+                    {tx.amount > 0 ? '+' : ''}
+                    {formatMoney(Math.abs(tx.amount) * 100, tx.currency)}
                   </span>
                 </Link>
               </li>

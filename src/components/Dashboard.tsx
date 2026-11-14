@@ -13,6 +13,8 @@ import { cn } from '../lib/utils';
 import { receiptLink } from '../lib/navLinks';
 import { qk } from '../lib/queryKeys';
 import { MerchantIcon } from './MerchantIcon';
+import { FxDisclosureNote } from './FxDisclosureNote';
+import { formatMoney } from '../lib/money';
 import ProcessingCardList from './ProcessingCard';
 import type { ProcessingItem } from './useProcessingJobs';
 
@@ -54,13 +56,13 @@ export default function Dashboard({
     queryKey: qk.transactions.recent({ limit: 4 }),
     queryFn: () => fetchTransactions({ limit: 4 }),
   });
-  const { data: summary = [], isLoading: sumLoading } = useQuery({
+  const { data: summary, isLoading: sumLoading } = useQuery({
     queryKey: qk.summary.range({ from: monthRange.from, to: monthRange.to }),
     queryFn: () => fetchSummary({ from: monthRange.from, to: monthRange.to }),
   });
   // Prior month, for the month card's "vs last month" delta. Cheap (the
   // summary endpoint aggregates server-side) and cached under its own range.
-  const { data: priorSummary = [] } = useQuery({
+  const { data: priorSummary } = useQuery({
     queryKey: qk.summary.range({ from: priorRange.from, to: priorRange.to }),
     queryFn: () => fetchSummary({ from: priorRange.from, to: priorRange.to }),
   });
@@ -77,10 +79,13 @@ export default function Dashboard({
   const loading = txLoading || sumLoading;
 
   const { total: totalSpent, count: totalCount } = useMemo(
-    () => spendingTotals(summary),
+    () => spendingTotals(summary?.items ?? []),
     [summary],
   );
-  const { total: priorSpent } = useMemo(() => spendingTotals(priorSummary), [priorSummary]);
+  const { total: priorSpent } = useMemo(
+    () => spendingTotals(priorSummary?.items ?? []),
+    [priorSummary],
+  );
 
   return (
     <div className="space-y-6">
@@ -95,6 +100,11 @@ export default function Dashboard({
         priorAmount={priorSpent}
         loading={loading}
       />
+      {/* A foreign receipt the backend could not convert is in the month
+          figure above at face value. Outside the inked card because the
+          note is drawn for paper (as on the yearly review). Renders
+          nothing when every conversion went through. */}
+      <FxDisclosureNote fx={summary?.fx} currency={summary?.currency ?? 'USD'} className="-mt-3" />
 
       <CaptureCTA />
 
@@ -488,7 +498,10 @@ function RecentList({
                 tx.amount > 0 && 'text-emerald-700',
               )}
             >
-              {tx.amount > 0 ? '+' : ''}${Math.abs(tx.amount).toFixed(2)}
+              {/* In the row's own currency: a receipt the backend could not
+                  convert arrives in its currency, not the base one. */}
+              {tx.amount > 0 ? '+' : ''}
+              {formatMoney(Math.abs(tx.amount) * 100, tx.currency)}
             </span>
           </li>
         );

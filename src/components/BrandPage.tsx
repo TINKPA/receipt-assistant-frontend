@@ -513,10 +513,13 @@ function RecentRow({
   );
   // Real <a href> via <Link> for native browser affordances; falls back to
   // a non-interactive <div> when no navigate handler is provided.
+  // No `block` here: tailwind-merge lets it override `grid`, which put the
+  // amount (and its "not converted" tag) on a line of its own under the
+  // payee instead of in the right-hand column.
   return onSelectReceipt ? (
     <Link
       {...receiptLink(row.id)}
-      className={cn(baseClass, 'block hover:bg-[var(--color-paper-deep)]/30 cursor-pointer')}
+      className={cn(baseClass, 'hover:bg-[var(--color-paper-deep)]/30 cursor-pointer')}
     >
       {body}
     </Link>

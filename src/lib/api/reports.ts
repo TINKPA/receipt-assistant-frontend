@@ -17,6 +17,7 @@ import type {
   BackendTrendsReport,
   BackendNetWorthReport,
   BackendCashflowReport,
+  BackendFxDisclosure,
 } from './core';
 
 export async function getSummaryReport(opts: {
@@ -90,18 +91,32 @@ export interface LegacySummaryItem {
   total_spent: number;
 }
 
+export interface LegacySummary {
+  items: LegacySummaryItem[];
+  /** The report's `fx` block: foreign postings in these totals that were
+   *  never converted, and so are counted at face value. Passed through so
+   *  the Dashboard can say so under its month figure. */
+  fx: BackendFxDisclosure;
+  /** The base currency the totals (and `fx.counted_base_minor`) are in. */
+  currency: string;
+}
+
 export async function fetchSummary(opts: {
   from?: string;
   to?: string;
-} = {}): Promise<LegacySummaryItem[]> {
+} = {}): Promise<LegacySummary> {
   const rep = await getSummaryReport({
     from: opts.from,
     to: opts.to,
     groupBy: 'category',
   });
-  return rep.items.map((it) => ({
-    category: it.key || 'other',
-    count: it.count,
-    total_spent: it.total_minor / 100,
-  }));
+  return {
+    items: rep.items.map((it) => ({
+      category: it.key || 'other',
+      count: it.count,
+      total_spent: it.total_minor / 100,
+    })),
+    fx: rep.fx,
+    currency: rep.currency,
+  };
 }
