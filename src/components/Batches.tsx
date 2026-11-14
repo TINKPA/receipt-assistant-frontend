@@ -58,7 +58,7 @@ function fmtWhen(iso: string): string {
 
 /**
  * Uploads — the ingest batch history (board screen 27): an amber
- * near-dup needs-review panel over a list of batches, each with an
+ * needs-review panel over a list of batches, each with an
  * editorial status badge. Tap a row for the live trace.
  */
 export default function Batches({ onSelectBatch }: BatchesProps) {
@@ -486,11 +486,65 @@ function AttentionRow({
   );
 }
 
+/** What a flagged transaction's `metadata.near_dup_check` says, read
+ *  defensively: the legacy agent wrote it as free-form jsonb, the server
+ *  applier as `NearDupCheck` (backend `src/ingest/apply/decide.ts`). */
+interface ReviewFlag {
+  /** The candidate the check names first: `candidate_transaction_id`, else
+   *  the head of `candidate_transaction_ids`. Absent when the flag is not
+   *  about a duplicate (a mixed tender, an unconfirmed date, …). */
+  candidateId: string | null;
+  /** How many candidates the check names (0 without one). */
+  candidateCount: number;
+  /** The backend's own words, specific cause first. */
+  reason: string | null;
+}
+
+function readReviewFlag(metadata: unknown): ReviewFlag {
+  const m = (metadata && typeof metadata === 'object' ? metadata : {}) as Record<string, unknown>;
+  const raw = m.near_dup_check;
+  const check = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  const nonEmpty = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
+  const listed = Array.isArray(check.candidate_transaction_ids)
+    ? check.candidate_transaction_ids.filter(nonEmpty)
+    : [];
+  const single = nonEmpty(check.candidate_transaction_id) ? check.candidate_transaction_id : null;
+  const ids = single && !listed.includes(single) ? [single, ...listed] : listed;
+  return {
+    candidateId: single ?? listed[0] ?? null,
+    candidateCount: ids.length,
+    reason: nonEmpty(check.reason) ? check.reason.trim() : null,
+  };
+}
+
+/** The applier's reasons start in lower case ("mixed tender, split not
+ *  booked: …"); shown as a sentence of their own they need a capital. */
+function asSentence(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
 /**
- * #134 branch-4 review queue: transactions the extraction agent
- * inserted but flagged (a same-amount/date candidate existed and
- * neither side carried a strong tiebreaker). Hidden entirely when
- * empty. Dismiss = "I checked; they are distinct purchases".
+ * The review queue: transactions whose `metadata.near_dup_check` carries
+ * `flagged_for_review` (`GET /v1/transactions?flagged=near_dup`). Hidden
+ * entirely when empty.
+ *
+ * Not every flag is about a duplicate. The duplicate check flags a row it
+ * could neither rule in nor out against a candidate (#134 branch 4, or the
+ * server applier's "several candidates match" / "an identifier matches but
+ * the total differs"), and that flag names the candidate. The server writer
+ * also flags rows that resemble nothing: a mixed tender booked whole to
+ * Credit Card, a date it could not confirm, an attach made although one
+ * identifier differs by a character. Those name no candidate, and a card
+ * that opened with "same amount + day as an existing transaction" told the
+ * reader to look for a duplicate that does not exist. So the card says
+ * "possible duplicate" only when the check names a candidate, and otherwise
+ * a neutral "needs review"; either way the backend's reason, which leads
+ * with the specific cause, is shown in full.
+ *
+ * Dismiss (`POST …/near-dup-review`, action `dismiss`) clears the flag and
+ * books nothing. On a duplicate flag it means "they are distinct
+ * purchases"; on any other, "I have looked" (a mixed-tender split worth
+ * booking is a postings edit on the receipt, made first).
  */
 function NeedsReviewSection() {
   const queryClient = useQueryClient();
@@ -509,18 +563,13 @@ function NeedsReviewSection() {
   return (
     <section className="rounded-[13px] border-[0.5px] border-l-[3px] border-[color:rgba(188,134,36,0.45)] border-l-[var(--color-amber)] bg-[color:rgba(188,134,36,0.10)] px-3.5 py-3">
       <p className="flex items-center justify-between font-mono text-[8px] uppercase tracking-[0.16em] text-[var(--color-amber)]">
-        <span>⚠ Needs review · near-duplicate</span>
+        <span>⚠ Needs review</span>
         <span>{flagged.length} flagged</span>
       </p>
       <div className="mt-2.5 space-y-2">
         {flagged.map((t) => {
-          const check = ((t.metadata as Record<string, unknown> | null)?.near_dup_check ??
-            {}) as Record<string, unknown>;
-          const candidate =
-            typeof check.candidate_transaction_id === 'string'
-              ? check.candidate_transaction_id
-              : undefined;
-          const reason = typeof check.reason === 'string' ? check.reason : null;
+          const { candidateId, candidateCount, reason } = readReviewFlag(t.metadata);
+          const duplicate = candidateId !== null;
           return (
             <div key={t.id} className="rounded-[10px] bg-[var(--color-surface)] px-3 py-2">
               <Link
@@ -530,14 +579,31 @@ function NeedsReviewSection() {
                 {t.payee ?? 'Unknown payee'}{' '}
                 <span className="font-mono text-[9px] text-[var(--color-ink-muted)]">· {t.occurred_on}</span>
               </Link>
-              <p className="mt-0.5 text-[10.5px] leading-snug text-[var(--color-ink-soft)]">
-                Same amount + day as an existing transaction, no order number to tell them apart.
-                {reason ? ` ${reason.slice(0, 80)}` : ''}
+              <p className="mt-1 font-mono text-[7.5px] uppercase tracking-[0.12em] text-[var(--color-amber)]">
+                {duplicate ? 'Possible duplicate' : 'Needs review'}
               </p>
+              {duplicate && (
+                <p className="mt-0.5 text-[10.5px] leading-snug text-[var(--color-ink-soft)]">
+                  {candidateCount > 1
+                    ? `May be the same purchase as one of ${candidateCount} transactions already in your ledger.`
+                    : 'May be the same purchase as a transaction already in your ledger.'}
+                </p>
+              )}
+              {reason ? (
+                <p className="mt-0.5 whitespace-pre-wrap wrap-break-word text-[10.5px] leading-snug text-[var(--color-ink-soft)]">
+                  {asSentence(reason)}
+                </p>
+              ) : (
+                !duplicate && (
+                  <p className="mt-0.5 text-[10.5px] leading-snug text-[var(--color-ink-soft)]">
+                    Flagged for a person to check; no reason was recorded.
+                  </p>
+                )
+              )}
               <div className="mt-2 flex items-center gap-2">
-                {candidate && (
+                {candidateId && (
                   <Link
-                    {...receiptLink(candidate)}
+                    {...receiptLink(candidateId)}
                     className="rounded-full bg-[var(--color-ink)] px-3 py-1 font-mono text-[8.5px] uppercase tracking-[0.06em] text-[var(--color-paper)]"
                   >
                     view candidate ›
@@ -549,7 +615,7 @@ function NeedsReviewSection() {
                   disabled={dismiss.isPending}
                   className="rounded-full border-[0.5px] border-[var(--color-rule)] px-3 py-1 font-mono text-[8.5px] uppercase tracking-[0.06em] text-[var(--color-ink-soft)] disabled:opacity-50"
                 >
-                  not a duplicate ✕
+                  {duplicate ? 'not a duplicate ✕' : 'reviewed ✕'}
                 </button>
               </div>
             </div>

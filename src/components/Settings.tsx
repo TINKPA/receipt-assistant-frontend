@@ -104,7 +104,7 @@ export default function Settings({ onOpenProducts, onOpenBrands, onOpenUploads }
         <SettingsCard
           glyph="⇪"
           title="Uploads"
-          subtitle="Batch history · near-dup review · dedup skips"
+          subtitle="Batch history · review queue · dedup skips"
           count={batches?.items?.length}
           onClick={onOpenUploads}
         />

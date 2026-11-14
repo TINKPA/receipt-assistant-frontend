@@ -38,7 +38,9 @@ export interface ListTransactionsFilters {
   trip_id?: string;
   has_document?: boolean;
   source_ingest_id?: string;
-  /** flagged=near_dup → only #134 branch-4 flagged transactions. */
+  /** flagged=near_dup → the review queue: every transaction whose
+   *  `metadata.near_dup_check.flagged_for_review` is true. Not only
+   *  near-duplicates despite the name; `near_dup_check.reason` says why. */
   flagged?: 'near_dup';
   sort?: 'occurred_on' | 'amount' | 'created_at';
   order?: 'asc' | 'desc';
@@ -334,7 +336,8 @@ export async function listTransactionItems(opts: {
   return unwrap('listTransactionItems', data, error, response.status).items;
 }
 
-/** Resolve a #134 branch-4 near-dup review flag (v1: dismiss only). */
+/** Clear a review-queue flag (v1: dismiss only). Books nothing: on a
+ *  duplicate flag it means "distinct purchases", on any other "looked at". */
 export async function dismissNearDupFlag(id: string): Promise<void> {
   const { data, error, response } = await client.POST(
     '/v1/transactions/{id}/near-dup-review',
