@@ -36,8 +36,8 @@ export type CreateOwnedItemRequest = components['schemas']['CreateOwnedItemReque
 /**
  * Put a product on the Things shelf.
  *
- * There is no `acquisition_cost_minor` on this resource — the price comes
- * from the linked purchase. `GET /v1/owned-items?expand=product` derives
+ * The price comes from the linked purchase unless the user sets
+ * `cost_basis_minor` on the item (the detail page's "Cost" field). `GET /v1/owned-items?expand=product` derives
  * `paid_minor` as `COALESCE(ti.effective_total_minor, ti.line_total_minor)`
  * over `LEFT JOIN transaction_items ti ON ti.id = o.transaction_item_id`,
  * and `perDay()` returns null without it. So an owned item created with

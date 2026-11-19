@@ -41,8 +41,15 @@ export function daysHeld(it: OwnedItemExpanded): number | null {
  * an fx_rate. Null propagates deliberately: every derived figure below
  * disappears rather than falling back to `paid_minor`, because that
  * fallback IS the bug.
+ *
+ * `effective_cost_minor` goes first: it is the user's own cost basis when
+ * they set one (a carrier-financed phone's receipt shows only the sales
+ * tax; the price is on bills that are never ingested), else the same
+ * `paid_base_minor`. A backend from before the field leaves it undefined
+ * and the receipt figure is used as before.
  */
 export function paidBaseMinor(it: OwnedItemExpanded): number | null {
+  if (it.effective_cost_minor != null) return it.effective_cost_minor;
   if (it.paid_base_minor != null) return it.paid_base_minor;
   // Rows predating the field, and rows the backend could not convert.
   // A missing `paid_currency` means the row was never expanded, not that
@@ -51,13 +58,21 @@ export function paidBaseMinor(it: OwnedItemExpanded): number | null {
   return null;
 }
 
-/** Amortized cost per day, in the base currency. Null without a
+/** Cost less what the item was sold or traded in for: what owning it
+ *  came to. Equal to the cost while it is still owned. */
+export function netCostMinor(it: OwnedItemExpanded): number | null {
+  const cost = paidBaseMinor(it);
+  if (cost == null) return null;
+  return cost - (it.sale_proceeds_minor ?? 0);
+}
+
+/** Amortized net cost per day, in the base currency. Null without a
  *  convertible price or an acquisition date. */
 export function perDay(it: OwnedItemExpanded): number | null {
   const days = daysHeld(it);
-  const paid = paidBaseMinor(it);
-  if (days === null || paid == null) return null;
-  return paid / 100 / days;
+  const net = netCostMinor(it);
+  if (days === null || net == null) return null;
+  return net / 100 / days;
 }
 
 /** A wish's projected $/day over its planned horizon. */
