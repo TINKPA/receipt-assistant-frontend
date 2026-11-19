@@ -5,6 +5,7 @@ import { listOwnedItemsExpanded, patchOwnedItem } from '../../../lib/api/things'
 import { formatMoney } from '../../../lib/money';
 import {
   daysHeld,
+  netCostMinor,
   paidBaseMinor,
   paidOriginal,
   perDay,
@@ -75,6 +76,14 @@ function OwnedDetailRoute() {
   const paidBase = paidBaseMinor(item);
   const paid = paidBase != null ? paidBase / 100 : null;
   const paidAsPrinted = paidOriginal(item, 'USD');
+  // The user's cost basis replaced the receipt's figure: say what the
+  // receipt said, so the big number is not mistaken for it.
+  const receiptSaid =
+    item.cost_basis_minor != null && item.paid_base_minor != null
+      ? `receipt ${formatMoney(item.paid_base_minor, 'USD')}`
+      : paidAsPrinted;
+  const sold = item.sale_proceeds_minor ?? null;
+  const net = netCostMinor(item);
   const target = item.target_days ?? null;
   const progress = target && days ? Math.min(100, (days / target) * 100) : null;
   const targetPerDay = target && paid !== null ? paid / target : null;
@@ -135,9 +144,13 @@ function OwnedDetailRoute() {
             summable number is the big one, the printed one sits beside it,
             and neither is shown alone. */}
         <Calc
-          label="paid"
-          value={paidBase !== null ? formatMoney(paidBase, 'USD') : '—'}
-          sub={paidAsPrinted}
+          label={sold ? 'cost − sold' : 'paid'}
+          value={net !== null ? formatMoney(net, 'USD') : '—'}
+          sub={
+            sold && paidBase !== null
+              ? `${formatMoney(paidBase, 'USD')} − ${formatMoney(sold, 'USD')}`
+              : receiptSaid
+          }
         />
         <span className="font-display text-[15px] text-[var(--color-ink-faint)]">÷</span>
         <Calc label="days held" value={days !== null ? days.toLocaleString() : '—'} />
@@ -207,6 +220,39 @@ function OwnedDetailRoute() {
         </div>
       </section>
 
+      {/* cost & sale — the two figures no receipt line carries */}
+      <section className="rounded-[14px] border-[0.5px] border-[var(--color-rule-soft)] bg-[var(--color-surface)] px-4 py-3.5">
+        <p className="font-mono text-[8.5px] uppercase tracking-[0.16em] text-[var(--color-ink-muted)]">
+          Cost & sale
+        </p>
+        <div className="mt-2.5 grid grid-cols-2 gap-3">
+          <MoneyField
+            key={`cost-${item.cost_basis_minor ?? 'none'}`}
+            label="full cost"
+            hint={
+              item.paid_base_minor != null
+                ? `receipt says ${formatMoney(item.paid_base_minor, 'USD')}`
+                : 'no receipt linked'
+            }
+            valueMinor={item.cost_basis_minor ?? null}
+            disabled={patchMut.isPending}
+            onSave={(v) => patchMut.mutate({ cost_basis_minor: v })}
+          />
+          <MoneyField
+            key={`sold-${item.sale_proceeds_minor ?? 'none'}`}
+            label="sold for"
+            hint="sale or trade-in value"
+            valueMinor={item.sale_proceeds_minor ?? null}
+            disabled={patchMut.isPending}
+            onSave={(v) => patchMut.mutate({ sale_proceeds_minor: v })}
+          />
+        </div>
+        <p className="mt-2 text-[10.5px] leading-snug text-[var(--color-ink-muted)]">
+          Fill in the full cost when the receipt shows only part of it, such as a phone on a
+          carrier instalment plan. Leave it empty to use the receipt.
+        </p>
+      </section>
+
       {err && <p className="text-center text-xs text-[var(--color-stamp)]">{err}</p>}
 
       {/* lifecycle actions */}
@@ -256,6 +302,61 @@ function OwnedDetailRoute() {
         )}
       </div>
     </div>
+  );
+}
+
+/** A dollar amount the user types; saved on blur or Enter. Empty clears
+ *  the stored value. Base currency, so always two decimals. */
+function MoneyField({
+  label,
+  hint,
+  valueMinor,
+  disabled,
+  onSave,
+}: {
+  label: string;
+  hint: string;
+  valueMinor: number | null;
+  disabled: boolean;
+  onSave: (minor: number | null) => void;
+}) {
+  const initial = valueMinor != null ? (valueMinor / 100).toFixed(2) : '';
+  const [text, setText] = useState(initial);
+  const trimmed = text.trim().replace(/[$,]/g, '');
+  const valid = trimmed === '' || /^\d+(\.\d{1,2})?$/.test(trimmed);
+  const commit = () => {
+    if (!valid) return;
+    const next = trimmed === '' ? null : Math.round(Number(trimmed) * 100);
+    if (next !== valueMinor) onSave(next);
+  };
+  return (
+    <label className="block">
+      <span className="font-mono text-[7.5px] uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">
+        {label}
+      </span>
+      <span
+        className={cn(
+          'mt-1 flex items-baseline gap-1 border-b-[0.5px] pb-1',
+          valid ? 'border-[var(--color-rule)]' : 'border-[var(--color-stamp)]',
+        )}
+      >
+        <span className="font-display text-[14px] text-[var(--color-ink-muted)]">$</span>
+        <input
+          type="text"
+          inputMode="decimal"
+          value={text}
+          placeholder="—"
+          disabled={disabled}
+          onChange={(e) => setText(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') e.currentTarget.blur();
+          }}
+          className="w-full min-w-0 bg-transparent font-display text-[16px] tnum outline-none placeholder:text-[var(--color-ink-faint)]"
+        />
+      </span>
+      <span className="mt-1 block font-mono text-[8.5px] text-[var(--color-ink-muted)]">{hint}</span>
+    </label>
   );
 }
 

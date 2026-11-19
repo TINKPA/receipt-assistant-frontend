@@ -711,7 +711,7 @@ export interface paths {
          *
          *     **`metadata` merges, it does not replace.** Objects merge recursively, a `null` value removes that key, any other value replaces it, and `metadata: {}` changes nothing. Send only the keys you mean to change.
          *
-         *     **Server-owned metadata keys cannot be changed here.** These are provenance and bookkeeping the server maintains: `user_edited`, `extraction`, `extraction_history`, `re_extracted_at`, `source`, `source_ingest_id`, `classification`, `ocr_audit`, `allocation_audit`, `enrichment_skipped`, `photo_ocr`, `receipt_ocr_zh`, `items`, `merge_audit`, `near_dup_check`, `fx`, `points`. A patch that would change or remove one is refused with 422 (violation code `server_owned`); echoing a key back with its current value is a no-op and is accepted, so a client may GET the object, change its own keys and PATCH the whole object back.
+         *     **Server-owned metadata keys cannot be changed here.** These are provenance and bookkeeping the server maintains: `user_edited`, `extraction`, `extraction_history`, `re_extracted_at`, `source`, `source_ingest_id`, `classification`, `ocr_audit`, `allocation_audit`, `enrichment_skipped`, `photo_ocr`, `receipt_ocr_zh`, `items`, `merge_audit`, `near_dup_check`, `fx`, `points`, `mirror_account`, `printed_totals`. A patch that would change or remove one is refused with 422 (violation code `server_owned`); echoing a key back with its current value is a no-op and is accepted, so a client may GET the object, change its own keys and PATCH the whole object back.
          *
          *     Patching `payee`, `occurred_on` or `occurred_at` sets `metadata.user_edited.<field>`, which keeps re-extract from overwriting the value.
          *
@@ -837,7 +837,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Resolve a near-duplicate review flag (#134 branch 4); v1 action: dismiss */
+        /**
+         * Resolve a near-duplicate review flag (#134 branch 4); v1 action: dismiss
+         * @description Clears metadata.near_dup_check.flagged_for_review and stamps reviewed_at: a person has looked. It changes no posting. On a duplicate flag, dismiss means the two are distinct purchases. On a mixed-tender flag (the reason starts with "mixed tender"), what the tenders paid stays on Credit Card: book the split with the postings endpoints first if it matters, then dismiss.
+         */
         post: {
             parameters: {
                 query?: never;
@@ -3775,7 +3778,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List uploads needing attention (#158) — every ingest that didn't reach `done` and isn't still in flight (default: error, unsupported, dedup, near_dup). Each row carries `category`, `retryable`, and `dedup_of` so a client can choose the right affordance without string-parsing `error`. */
+        /** List uploads needing attention (#158) — every ingest that didn't reach `done` and isn't still in flight (default: error, unsupported, dedup, near_dup). Each row carries `category`, `retryable`, and `dedup_of` so a client can choose the right affordance without string-parsing `error`. An errored ingest is left out once a later ingest of the same document (a retry, or the same bytes uploaded again) ended as done, dedup, near_dup or unsupported. */
         get: {
             parameters: {
                 query?: {
@@ -5759,6 +5762,10 @@ export interface components {
             /** Format: date-time */
             retired_at: string | null;
             target_days: number | null;
+            /** @description The instance's full cost in the workspace base currency, minor units, as entered by the user. Set it when the linked receipt line does not carry the price: a carrier-financed phone whose receipt shows only the sales tax, a gift with a known value. Null means the cost is whatever the linked line says (`paid_base_minor`). Extraction never writes it. */
+            cost_basis_minor: number | null;
+            /** @description What the instance was sold or traded in for, workspace base currency, minor units. Null: not sold, or the amount is unknown. */
+            sale_proceeds_minor: number | null;
             notes: string | null;
             /**
              * @description User-defined JSON object; not schema-validated.
@@ -5778,6 +5785,7 @@ export interface components {
             paid_minor?: number | null;
             paid_currency?: string | null;
             paid_base_minor?: number | null;
+            effective_cost_minor?: number | null;
             payee?: string | null;
             merchant_brand_id?: string | null;
         };
@@ -5807,6 +5815,8 @@ export interface components {
              */
             warranty_until?: string;
             condition?: string;
+            cost_basis_minor?: number;
+            sale_proceeds_minor?: number;
             notes?: string;
             metadata?: {
                 [key: string]: unknown;
@@ -5830,6 +5840,8 @@ export interface components {
             /** Format: date-time */
             retired_at?: string | null;
             target_days?: number | null;
+            cost_basis_minor?: number | null;
+            sale_proceeds_minor?: number | null;
             metadata?: {
                 [key: string]: unknown;
             };
@@ -6267,6 +6279,8 @@ export interface components {
             transaction_ids: string[];
             /** @default [] */
             document_ids: string[];
+            /** @description The extraction records (`document_extractions`) the server writer stored for this ingest. Absent on an ingest the extraction agent closed itself. */
+            extraction_ids?: string[];
         } | null;
         /**
          * @description Why an ingest ended where it did, so a client picks its affordance from
