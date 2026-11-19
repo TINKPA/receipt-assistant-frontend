@@ -175,7 +175,7 @@ export default function BatchDetail({ batchId, onBack }: BatchDetailProps) {
       </section>
 
       <p className="px-1 font-display italic text-[12.5px] leading-snug text-[var(--color-ink-soft)]">
-        The same trace Langfuse keeps, retold at phone width. Nothing the extractor does is off the record.
+        Batch status as the server reports it. The extractor's full transcript is kept on the server, one file per run.
       </p>
     </div>
   );

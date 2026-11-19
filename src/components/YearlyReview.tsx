@@ -5,7 +5,6 @@ import {
   classifyBackendCategory,
   extractProblemMessage,
   getCashflowReport,
-  getNetWorthReport,
   getSummaryReport,
   getTrendsReport,
 } from '../lib/api';
@@ -78,9 +77,8 @@ export default function YearlyReview({ year }: { year?: number }) {
   const canStepForward = displayYear < currentYear;
   const isCurrentYear = displayYear === currentYear;
 
-  // `now` anchors the year's date range + the net-worth `asOf` snapshot.
-  // For the current year that snapshot is "today"; for a past year it's
-  // Dec 31 of that year so the as-of net worth reflects year-end.
+  // `now` anchors the year's date range: today for the current year,
+  // Dec 31 for a past one.
   const now = useMemo(
     () => (isCurrentYear ? today : new Date(displayYear, 11, 31)),
     [displayYear, isCurrentYear, today],
@@ -99,9 +97,7 @@ export default function YearlyReview({ year }: { year?: number }) {
   const { data, isLoading: loading, error: queryError } = useQuery({
     queryKey: qk.yearlyReview(isoDay(now), isoDay(lastYear)),
     queryFn: async () => {
-      const [nw, nwPrev, cf, tr, sm] = await Promise.all([
-        getNetWorthReport({ asOf: isoDay(now) }),
-        getNetWorthReport({ asOf: isoDay(lastYear) }),
+      const [cf, tr, sm] = await Promise.all([
         getCashflowReport({ from: startOfYear(now), to: endOfYear(now) }),
         getTrendsReport({
           from: startOfYear(now),
@@ -111,7 +107,7 @@ export default function YearlyReview({ year }: { year?: number }) {
         }),
         getSummaryReport({ from: startOfYear(now), to: endOfYear(now), groupBy: 'category' }),
       ]);
-      return { netWorth: nw, netWorthPrev: nwPrev, cashflow: cf, trends: tr, summary: sm };
+      return { cashflow: cf, trends: tr, summary: sm };
     },
   });
   const error = queryError ? extractProblemMessage(queryError) : null;
@@ -129,9 +125,16 @@ export default function YearlyReview({ year }: { year?: number }) {
     return <p className="py-20 text-center text-[var(--color-stamp)]">{error}</p>;
   }
 
-  const netWorthMinor = data?.netWorth?.net_worth_minor ?? 0;
-  const prevNetWorthMinor = data?.netWorthPrev?.net_worth_minor ?? 0;
-  const ytdDeltaMinor = netWorthMinor - prevNetWorthMinor;
+  // The hero is the year's spend. It used to be "net worth", read off
+  // /v1/reports/net_worth; but this ledger is built from receipts alone,
+  // so that figure was every card purchase ever recorded with no payment
+  // against it (−$324,877 in November 2026), not anybody's net worth. It
+  // comes back when statements give the ledger its other half.
+  const spentMinor = (data?.cashflow?.buckets ?? []).reduce(
+    (sum, b) => sum + (b.expense_minor ?? 0),
+    0,
+  );
+  const entryCount = (data?.summary?.items ?? []).reduce((n, it) => n + (it.count ?? 0), 0);
 
   // Quarter totals from the cashflow month buckets.
   const quarterMinor: number[] = [0, 0, 0, 0];
@@ -161,7 +164,7 @@ export default function YearlyReview({ year }: { year?: number }) {
   })();
 
   const yearRange = { from: startOfYear(now), to: endOfYear(now) };
-  const { whole, cents } = splitMinor(netWorthMinor);
+  const { whole, cents } = splitMinor(spentMinor);
 
   return (
     <div className="space-y-5">
@@ -189,42 +192,29 @@ export default function YearlyReview({ year }: { year?: number }) {
           style={{ background: 'radial-gradient(circle, rgba(181,52,26,0.4), transparent 70%)' }}
         />
         <p className="relative font-mono text-[8.5px] uppercase tracking-[0.2em] text-[var(--color-paper-fold)]">
-          NET WORTH · AS-OF SNAPSHOT
+          SPENT · {displayYear}{isCurrentYear ? ' so far' : ''}
         </p>
         <p className="relative mt-1.5 font-display text-[2.5rem] font-light leading-none tracking-tight tnum">
-          {netWorthMinor < 0 && '−'}${whole.toLocaleString()}
+          ${whole.toLocaleString()}
           <span className="text-[0.55em] text-[var(--color-paper-fold)]">.{cents}</span>
         </p>
         <p className="relative mt-2 text-[11.5px] text-[color:rgba(221,211,190,0.85)]">
-          <strong
-            className={cn(
-              'font-mono text-[10.5px] font-semibold',
-              ytdDeltaMinor >= 0 ? 'text-[#8FA468]' : 'text-[#D08770]',
-            )}
-          >
-            {ytdDeltaMinor >= 0 ? '↑' : '↓'} ${Math.abs(Math.round(ytdDeltaMinor / 100)).toLocaleString()}
-          </strong>{' '}
-          vs a year ago
+          <strong className="font-mono text-[10.5px] font-semibold">{entryCount.toLocaleString()}</strong>{' '}
+          {entryCount === 1 ? 'entry' : 'entries'}
         </p>
       </section>
 
-      {/* #216 — net worth EXCLUDES points accounts by design: only
-          redemptions are ingested, so a points balance would be a tally of
-          points spent rather than held. The payload says so; without this
-          the figure just looks short to anyone who checks it against a
-          real balance. Placed outside the inked section deliberately —
-          the note's amber/ink palette is built for paper, not for the
-          dark hero. */}
+      {/* The year's total includes points at the workspace valuation and
+          any foreign posting the backend never converted, at face value.
+          Both notes are silent when there is nothing to say. */}
       <PointsDisclosureNote
-        points={data?.netWorth?.points}
-        currency={data?.netWorth?.currency ?? 'USD'}
+        points={data?.summary?.points}
+        currency={data?.summary?.currency ?? 'USD'}
         className="mt-0"
       />
-      {/* Balances include any foreign posting the backend never converted,
-          at face value. Silent unless there is one. */}
       <FxDisclosureNote
-        fx={data?.netWorth?.fx}
-        currency={data?.netWorth?.currency ?? 'USD'}
+        fx={data?.summary?.fx}
+        currency={data?.summary?.currency ?? 'USD'}
         className="mt-0"
       />
 

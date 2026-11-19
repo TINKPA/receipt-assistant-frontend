@@ -29,8 +29,9 @@ export default function Settings({ onOpenProducts, onOpenBrands, onOpenUploads }
     queryKey: qk.buildInfo,
     queryFn: fetchBackendBuildInfo,
   });
-  // Counts: the registries are small (< 500 rows), so a single page is
-  // the whole set — length is the count.
+  // Counts come from one capped page each (500 products, 500 brands, 200
+  // batches). A page that comes back full is shown as "500+": all three
+  // registries have outgrown their cap, and the bare cap read as a count.
   const { data: products } = useQuery({
     queryKey: ['settings', 'count', 'products'],
     queryFn: () => listProducts({ limit: 500 }),
@@ -92,6 +93,7 @@ export default function Settings({ onOpenProducts, onOpenBrands, onOpenUploads }
           title="Products"
           subtitle="Catalog SSOT · merge duplicates · recompute"
           count={products?.length}
+          cap={500}
           onClick={onOpenProducts}
         />
         <SettingsCard
@@ -99,6 +101,7 @@ export default function Settings({ onOpenProducts, onOpenBrands, onOpenUploads }
           title="Brands"
           subtitle="Registry + icon asset picker · your pick locks"
           count={brands?.length}
+          cap={500}
           onClick={onOpenBrands}
         />
         <SettingsCard
@@ -106,6 +109,7 @@ export default function Settings({ onOpenProducts, onOpenBrands, onOpenUploads }
           title="Uploads"
           subtitle="Batch history · review queue · dedup skips"
           count={batches?.items?.length}
+          cap={200}
           onClick={onOpenUploads}
         />
       </div>
@@ -124,12 +128,15 @@ function SettingsCard({
   title,
   subtitle,
   count,
+  cap,
   onClick,
 }: {
   glyph: string;
   title: string;
   subtitle: string;
   count?: number;
+  /** The page size behind `count`; a full page means "at least this many". */
+  cap?: number;
   onClick: () => void;
 }) {
   return (
@@ -157,6 +164,7 @@ function SettingsCard({
       {count != null && (
         <span className="flex-shrink-0 rounded-full bg-[var(--color-paper-deep)] px-2 py-0.5 font-mono text-[9px] text-[var(--color-ink-muted)]">
           {count}
+          {cap != null && count >= cap ? '+' : ''}
         </span>
       )}
       <span aria-hidden="true" className="flex-shrink-0 text-[14px] text-[var(--color-ink-faint)]">

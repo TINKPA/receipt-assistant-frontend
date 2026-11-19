@@ -506,7 +506,7 @@ export default function Capture({ onCancel, onComplete }: CaptureProps) {
         </div>
 
         <p className="mt-4 text-[10px] tracking-[0.18em] uppercase text-center text-[var(--color-ink-muted)]">
-          Processed via Claude AI · Monitored by Langfuse
+          Processed via Claude AI
         </p>
       </div>
     </div>
