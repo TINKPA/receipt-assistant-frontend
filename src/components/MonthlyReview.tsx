@@ -212,14 +212,14 @@ export default function MonthlyReview({ month }: { month?: string }) {
             </span>
           )}
         </p>
-        {/* #216 — the SPENT figure above is a cashflow total, and cashflow
-            INCLUDES points converted at the workspace valuation. August
-            2026 is 16% points on an unconfirmed rate, and nothing said so.
-            Renders nothing in a month with no points, so every other month
-            is untouched. */}
+        {/* #216 — SPENT includes points converted at the workspace
+            valuation. Read from this month's summary, not the cashflow
+            call: that one spans last month too, and told November 2026
+            that $2,720 of its $1,808.91 was October's Hyatt points.
+            Renders nothing in a month with no points. */}
         <PointsDisclosureNote
-          points={cashflow?.points}
-          currency={cashflow?.currency ?? 'USD'}
+          points={data?.thisMonth?.points}
+          currency={data?.thisMonth?.currency ?? 'USD'}
         />
         {/* A foreign receipt the backend could not convert is in SPENT at
             face value. Read from this month's summary, not the cashflow

@@ -231,6 +231,17 @@ export default function Transactions({
     return () => io.disconnect();
   }, [hasNextPage, fetchNextPage]);
 
+  // The header total, the entry count and the brand pills are all computed
+  // from the rows in hand. With one page loaded, October 2026 read
+  // "$2,753 · 50 entries" for a month of 102 entries and $7,934, and the
+  // figure grew as you scrolled. A month is a bounded set, so fetch the
+  // rest of it without waiting for the scroll; any other range can be the
+  // whole ledger, so it stays lazy and the header says it is partial.
+  const drainPages = filters.datePreset === 'month';
+  useEffect(() => {
+    if (drainPages && hasNextPage && !loadingMore) fetchNextPage();
+  }, [drainPages, hasNextPage, loadingMore, fetchNextPage]);
+
   // Soft-deleted documents the user chose to keep visible (showDeleted). Their
   // ids are tracked client-side in localStorage; each is re-checked against the
   // backend (stale ones self-prune). Its own query so a restore/hard-delete can
@@ -410,6 +421,7 @@ export default function Transactions({
         total={Math.abs(totalExpenses)}
         currency={baseCurrency}
         count={filteredTransactions.length}
+        partial={!!hasNextPage}
         filters={filters}
         onMonthChange={(ym) =>
           setFilters({ ...filters, datePreset: 'month', month: ym })
@@ -657,12 +669,15 @@ function Header({
   total,
   currency,
   count,
+  partial,
   filters,
   onMonthChange,
 }: {
   total: number;
   currency: string;
   count: number;
+  /** More pages exist on the server: total and count cover loaded rows only. */
+  partial: boolean;
   filters: FilterState;
   onMonthChange: (ym: string) => void;
 }) {
@@ -687,7 +702,7 @@ function Header({
       </div>
       <div className="text-right flex-shrink-0">
         <p className="font-mono text-[9px] font-medium tracking-[0.18em] uppercase text-[var(--color-ink-muted)]">
-          TOTAL
+          {partial ? 'LOADED SO FAR' : 'TOTAL'}
         </p>
         <p className="mt-1 font-mono text-xl font-semibold tracking-tight tnum">
           {/* Hundredths in, whole units out: rounding is the formatter's
@@ -696,7 +711,7 @@ function Header({
           {formatMoney(Math.round(total * 100), currency, { maximumFractionDigits: 0 })}
         </p>
         <p className="font-mono text-[10px] text-[var(--color-ink-muted)]">
-          {count} {count === 1 ? 'entry' : 'entries'}
+          {count}{partial ? '+' : ''} {count === 1 && !partial ? 'entry' : 'entries'}
         </p>
       </div>
     </div>

@@ -96,6 +96,10 @@ export function AmountHero({
   // someone reckons those points are worth. The `≈` is the whole
   // difference and is never dropped.
   const isEstimate = !isProcessing && points != null;
+  // A refund's total is negative (money came back), and formatMoney prints
+  // magnitudes. Without a mark the page for a $112.93 refund was identical
+  // to the page for a $112.93 purchase; the ledger row already says "+".
+  const isRefund = !isProcessing && amount < 0;
   const unconfirmed = isEstimate && hasUnconfirmedValuation(points ?? null);
   const merchantClass = 'font-display font-medium text-2xl sm:text-3xl leading-tight';
   // FE#48: small square icon next to the merchant name. Skipped while
@@ -124,8 +128,18 @@ export function AmountHero({
             ≈
           </span>
         )}
+        {isRefund && (
+          <span className="mr-[0.06em] text-[0.6em] font-normal text-emerald-700" aria-hidden="true">
+            +
+          </span>
+        )}
         {isProcessing ? '—' : formatMoney(amount * 100, currency)}
       </p>
+      {isRefund && (
+        <p className="mt-1.5 font-mono text-[9px] font-medium uppercase tracking-[0.18em] text-emerald-700">
+          Refund · money back
+        </p>
+      )}
       {/* #216 — what the folio actually says, above the provenance line.
           For a points stay this is the exact, countable figure and the
           number above it is the derived one, so it is set in the ink

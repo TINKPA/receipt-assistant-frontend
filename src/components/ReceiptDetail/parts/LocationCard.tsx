@@ -84,8 +84,8 @@ export function LocationCard({
           Location
         </p>
         <p className="mt-2 text-[13px] text-[var(--color-ink-muted)]">
-          Location unavailable —{' '}
-          <span className="italic">geocoding may be disabled or failed.</span>
+          No place on file for this entry.{' '}
+          <span className="italic">Online orders and emailed receipts usually have none.</span>
         </p>
       </div>
     );
