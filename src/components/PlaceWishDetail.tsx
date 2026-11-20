@@ -13,6 +13,7 @@ import {
   googleMapsLink,
   humanizePlaceType,
   isFailed,
+  closedTogether,
   isReading,
   latestVisit,
   placeSearchPrefill,
@@ -79,6 +80,9 @@ export function PlaceWishDetail({ wish }: { wish: WishItem }) {
   // An earlier save of this place that a visit closed: this one is a wish
   // to go back.
   const before = latestVisit(otherWishes);
+  // The saves this one was marked visited with ("Been there" moves them
+  // all): "Want again" puts them back too.
+  const together = closedTogether(wish, otherWishes);
 
   const patchMut = useMutation({
     mutationFn: (body: UpdateWishItemRequest) => patchWishItem(wish.id, body),
@@ -106,6 +110,28 @@ export function PlaceWishDetail({ wish }: { wish: WishItem }) {
     onSuccess: show,
     // The first PATCH may have gone through: refetch so the page says
     // what is true now.
+    onError: (e) => {
+      onError(e);
+      void refresh();
+    },
+  });
+  // "Want again" undoes what "Been there" did: this wish and the saves
+  // closed together with it go back on the list. Those are read again
+  // first, so one that changed since this page loaded is left alone.
+  const wantAgainMut = useMutation({
+    mutationFn: async () => {
+      const fresh = await Promise.all(together.map((o) => getWishItem(o.id)));
+      const next = await patchWishItem(wish.id, { status: 'active' });
+      const reopened = await Promise.all(
+        fresh
+          .filter((o) => closedTogether(wish, [o]).length > 0)
+          .map((o) => patchWishItem(o.id, { status: 'active' })),
+      );
+      for (const o of reopened) qc.setQueryData(wishDetailKey(o.id), o);
+      return next;
+    },
+    onMutate: () => setErr(null),
+    onSuccess: show,
     onError: (e) => {
       onError(e);
       void refresh();
@@ -152,7 +178,12 @@ export function PlaceWishDetail({ wish }: { wish: WishItem }) {
   const suggestion = place ? null : wish.place_suggestion;
   const sourceUrl = wish.source_url ?? reading?.sourceUrl ?? null;
   const busy =
-    patchMut.isPending || visitMut.isPending || placeMut.isPending || retryMut.isPending || deleteMut.isPending;
+    patchMut.isPending ||
+    visitMut.isPending ||
+    wantAgainMut.isPending ||
+    placeMut.isPending ||
+    retryMut.isPending ||
+    deleteMut.isPending;
 
   // The search starts from the name and, when one is known, the area: the
   // area the image named, else the matched place's.
@@ -448,7 +479,7 @@ export function PlaceWishDetail({ wish }: { wish: WishItem }) {
             type="button"
             disabled={busy}
             onClick={() =>
-              visited ? patchMut.mutate({ status: 'active' }) : visitMut.mutate()
+              visited ? wantAgainMut.mutate() : visitMut.mutate()
             }
             className={cn(
               'block w-full rounded-[14px] py-3.5 text-center font-display text-[15px] font-medium disabled:opacity-60',
@@ -465,7 +496,9 @@ export function PlaceWishDetail({ wish }: { wish: WishItem }) {
               )}
             >
               {visited
-                ? 'puts it back on the list'
+                ? together.length > 0
+                  ? `puts it and the ${together.length} ${together.length === 1 ? 'save' : 'saves'} marked with it back on the list`
+                  : 'puts it back on the list'
                 : activeOthers.length > 0
                   ? `moves it and ${activeOthers.length} other ${activeOthers.length === 1 ? 'save' : 'saves'} to visited`
                   : 'moves it to visited'}

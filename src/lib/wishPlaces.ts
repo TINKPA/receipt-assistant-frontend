@@ -365,6 +365,32 @@ export function latestVisit(
   return best && closure ? { wish: best, closure } : null;
 }
 
+/** "Been there" closes every active save of a place in one go, a second
+ *  or two apart at most; a minute leaves room for a slow connection. */
+const CLOSED_TOGETHER_MS = 60_000;
+
+/**
+ * The other saves of a place that were closed together with `w`: by the
+ * same receipt, or by the person within a minute of it (one "Been there"
+ * moves them all). "Want again" puts these back with it, so a mistaken
+ * tap can be undone from the page it was made on. Empty when `w` is not
+ * converted. `undefined` entries (still loading) are skipped.
+ */
+export function closedTogether(
+  w: WishItem,
+  others: readonly (WishItem | undefined)[],
+): WishItem[] {
+  if (w.status !== 'converted') return [];
+  const txId = w.converted_by === 'receipt' ? w.converted_transaction?.id : null;
+  const at = w.converted_by === 'user' && w.converted_at ? Date.parse(w.converted_at) : null;
+  return others.filter((o): o is WishItem => {
+    if (o?.status !== 'converted' || o.converted_by !== w.converted_by) return false;
+    if (txId) return o.converted_transaction?.id === txId;
+    if (at == null || !o.converted_at) return false;
+    return Math.abs(Date.parse(o.converted_at) - at) <= CLOSED_TOGETHER_MS;
+  });
+}
+
 export function wishClosure(w: WishItem): WishClosure | null {
   if (w.status !== 'converted') return null;
   const tx = w.converted_transaction;
