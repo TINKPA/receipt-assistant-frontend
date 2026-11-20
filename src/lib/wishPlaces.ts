@@ -70,6 +70,36 @@ export function captureFailureMessage(w: WishItem): string {
   return "Couldn't read this image";
 }
 
+/** The titles the server gives a capture before anything named it. */
+const PLACEHOLDER_TITLES = new Set(['Reading…', 'Unread capture']);
+
+/**
+ * What the image looked like, for a capture that found nothing to save
+ * (`nothing_to_save`): the latest reading's description of it. The server
+ * also puts a description in the title of such a wish; that one can be
+ * from an earlier reading, so it is only the fallback. Null for any other
+ * wish: its title is a name.
+ */
+export function unreadDescription(w: WishItem): string | null {
+  if (!isFailed(w)) return null;
+  if (str(w.capture?.error) !== 'nothing_to_save') return null;
+  const title = str(w.title);
+  return str(w.capture?.detail) ?? (title && !PLACEHOLDER_TITLES.has(title) ? title : null);
+}
+
+/**
+ * Whether the wish's name is the person's own: they typed the wish in (it
+ * was never captured from an image, so `capture_status` is null; a typed
+ * place wish still has a `capture` holding its place match), or named a
+ * captured one by hand (`capture.user_set.title`). Otherwise the name came
+ * from reading the image, and may follow the place it is linked to.
+ */
+export function titleSetByUser(w: WishItem): boolean {
+  if (w.capture_status == null) return true;
+  const u = w.capture?.user_set;
+  return u != null && typeof u === 'object' && (u as Record<string, unknown>).title === true;
+}
+
 /** `sushi_restaurant` → `Sushi restaurant`. */
 export function humanizePlaceType(t: string | null | undefined): string | null {
   const s = str(t);

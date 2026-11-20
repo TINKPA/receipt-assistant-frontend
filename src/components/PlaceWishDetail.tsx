@@ -18,6 +18,7 @@ import {
   latestVisit,
   placeSearchPrefill,
   suggestionReason,
+  titleSetByUser,
   wishAltName,
   wishCategory,
   wishClosure,
@@ -146,6 +147,21 @@ export function PlaceWishDetail({ wish }: { wish: WishItem }) {
       show(next);
     },
   });
+  // After a place is picked, a name that came from the image, or that is
+  // just the old place's name, follows the new place (the heading and the
+  // place card would disagree otherwise). A name the person gave it stays,
+  // and they are offered the place's.
+  const [offerName, setOfferName] = useState<string | null>(null);
+  const pickPlace = (googlePlaceId: string, name: string | null) => {
+    setOfferName(null);
+    const title = wish.title.trim();
+    const differs = name !== null && name.trim() !== title;
+    const follow = differs && (!titleSetByUser(wish) || title === wish.place?.name?.trim());
+    placeMut.mutate(
+      { google_place_id: googlePlaceId, ...(follow ? { title: name } : {}) },
+      { onSuccess: () => setOfferName(differs && !follow ? name : null) },
+    );
+  };
   const retryMut = useMutation({
     mutationFn: () => retryWishCapture(wish.id),
     onMutate: () => setErr(null),
@@ -244,10 +260,36 @@ export function PlaceWishDetail({ wish }: { wish: WishItem }) {
               // name it ("Name it" on the list lands here).
               autoFocus={unread}
               onSave={(title) => {
+                setOfferName(null);
                 if (title) patchMut.mutate({ title });
               }}
               className="font-display text-[22px] font-medium leading-tight tracking-tight"
             />
+            {offerName && offerName.trim() !== wish.title.trim() && (
+              <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] leading-snug text-[var(--color-ink-muted)]">
+                <span className="min-w-0 break-words">
+                  The place is called{' '}
+                  <span className="text-[var(--color-ink-soft)]">{offerName}</span>.
+                </span>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() =>
+                    patchMut.mutate({ title: offerName }, { onSuccess: () => setOfferName(null) })
+                  }
+                  className={SMALL_ACTION}
+                >
+                  Use that name
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOfferName(null)}
+                  className="font-mono text-[9px] uppercase tracking-[0.1em] text-[var(--color-ink-muted)] hover:text-[var(--color-ink)]"
+                >
+                  Keep mine
+                </button>
+              </p>
+            )}
             {(alt || category || place?.rating != null) && (
               <p className="mt-1.5 break-words text-[12.5px] text-[var(--color-ink-muted)]">
                 {[
@@ -308,7 +350,7 @@ export function PlaceWishDetail({ wish }: { wish: WishItem }) {
                 placeMut.isPending ? (placeMut.variables.google_place_id ?? null) : null
               }
               pickError={placeMut.error ? wishProblemMessage(placeMut.error) : null}
-              onPick={(c) => placeMut.mutate({ google_place_id: c.google_place_id })}
+              onPick={(c) => pickPlace(c.google_place_id, c.name ?? null)}
               onRemove={place ? () => placeMut.mutate({ place_id: null }) : undefined}
               onClose={() => setSearching(false)}
             />
@@ -404,7 +446,7 @@ export function PlaceWishDetail({ wish }: { wish: WishItem }) {
                   <button
                     type="button"
                     disabled={busy}
-                    onClick={() => placeMut.mutate({ google_place_id: suggestion.google_place_id })}
+                    onClick={() => pickPlace(suggestion.google_place_id, suggestion.name ?? null)}
                     className="rounded-full bg-[var(--color-ink)] px-3.5 py-1.5 font-mono text-[9px] uppercase tracking-[0.1em] text-[var(--color-paper)] disabled:opacity-50"
                   >
                     {placeMut.isPending && placeMut.variables.google_place_id ? 'Saving…' : 'Yes, this one'}

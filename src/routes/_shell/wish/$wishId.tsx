@@ -25,6 +25,7 @@ import {
 import {
   isFailed,
   isReading,
+  unreadDescription,
   wishClosure,
   wishDetailKey,
   wishProblemMessage,
@@ -195,6 +196,7 @@ function ThingWishDetail({ wish }: { wish: WishItem }) {
   const closure = wishClosure(wish);
   const readingNow = isReading(wish);
   const unread = isFailed(wish);
+  const description = unreadDescription(wish);
   const busy = patchMut.isPending || retryMut.isPending;
   const badges = (
     <>
@@ -255,19 +257,29 @@ function ThingWishDetail({ wish }: { wish: WishItem }) {
       )}
 
       <div className="space-y-3">
-        <TextField
-          key={`title:${wish.title}`}
-          label="Name"
-          value={wish.title}
-          placeholder="What do you want?"
-          disabled={busy}
-          required
-          autoFocus={unread}
-          onSave={(title) => {
-            if (title) patchMut.mutate({ title });
-          }}
-          className="font-display text-[22px] font-medium leading-tight tracking-tight"
-        />
+        {/* Not read: the title is a placeholder or the reading's
+            description of the image, not a name, so the field starts
+            empty and the description is shown under it as a hint. */}
+        <div>
+          <TextField
+            key={`title:${unread}:${wish.title}`}
+            label="Name"
+            value={unread ? '' : wish.title}
+            placeholder="What do you want?"
+            disabled={busy}
+            required
+            autoFocus={unread}
+            onSave={(title) => {
+              if (title) patchMut.mutate({ title });
+            }}
+            className="font-display text-[22px] font-medium leading-tight tracking-tight"
+          />
+          {description && (
+            <p className="mt-1.5 break-words text-[12.5px] leading-snug text-[var(--color-ink-muted)]">
+              The image looked like: <span className="italic">{description}</span>
+            </p>
+          )}
+        </div>
         <TextField
           key={`notes:${wish.notes ?? ''}`}
           label="Notes"

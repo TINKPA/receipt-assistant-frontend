@@ -273,13 +273,20 @@ function ThingWishes({ adding, onAdded }: { adding: boolean; onAdded: () => void
                   </span>
                 </div>
                 <div className="px-2.5 pb-2.5 pt-2">
+                  {/* Not read: the title is the server's placeholder or a
+                      description of the image, not a name, so it is not
+                      shown as one (as on the Places list). */}
                   <p
                     className={cn(
-                      'truncate font-display text-[12.5px] font-medium leading-tight',
-                      capture === 'reading' && 'italic text-[var(--color-ink-muted)]',
+                      'font-display text-[12.5px] font-medium leading-tight',
+                      capture === null ? 'truncate' : 'italic text-[var(--color-ink-muted)]',
                     )}
                   >
-                    {capture === 'reading' ? 'Reading…' : w.title}
+                    {capture === 'reading'
+                      ? 'Reading…'
+                      : capture === 'not read'
+                        ? "Couldn't read this image"
+                        : w.title}
                   </p>
                   <p className="mt-1 flex items-baseline justify-between font-mono text-[9px]">
                     <span className="font-semibold text-[var(--color-olive)]">
