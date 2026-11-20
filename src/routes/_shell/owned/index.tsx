@@ -11,6 +11,7 @@ import {
   type OwnedStatus,
 } from '../../../lib/things';
 import { ProductImage } from '../../../components/ProductImage';
+import { ThingsSwitch } from '../../../components/Segmented';
 import { cn } from '../../../lib/utils';
 
 export const Route = createFileRoute('/_shell/owned/')({
@@ -63,28 +64,22 @@ function OwnedRoute() {
 
   return (
     <div className="space-y-4">
-      <header className="flex items-start justify-between pt-2">
+      <ThingsSwitch active="owned" />
+
+      <header className="flex items-start justify-between">
         <div>
           <h1 className="font-display text-3xl tracking-tight">My things</h1>
           <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--color-ink-muted)]">
             derived from owned_items
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Link
-            to="/owned/stats"
-            aria-label="Asset dashboard"
-            className="rounded-full border-[0.5px] border-[var(--color-rule)] px-3 py-1.5 font-mono text-[11px] leading-none text-[var(--color-ink-soft)] transition-colors hover:text-[var(--color-ink)]"
-          >
-            ◷
-          </Link>
-          <Link
-            to="/wish"
-            className="rounded-full border-[0.5px] border-[var(--color-rule)] px-3.5 py-1.5 font-mono text-[9px] uppercase tracking-[0.1em] text-[var(--color-ink-soft)] transition-colors hover:text-[var(--color-ink)]"
-          >
-            Wishes →
-          </Link>
-        </div>
+        <Link
+          to="/owned/stats"
+          aria-label="Asset dashboard"
+          className="rounded-full border-[0.5px] border-[var(--color-rule)] px-3 py-1.5 font-mono text-[11px] leading-none text-[var(--color-ink-soft)] transition-colors hover:text-[var(--color-ink)]"
+        >
+          ◷
+        </Link>
       </header>
 
       {/* segmented control */}
