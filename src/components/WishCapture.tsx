@@ -3,6 +3,7 @@ import {
   captureFailureMessage,
   captureReadAt,
   fmtWhen,
+  imageMissing,
   isFailed,
   isRereading,
   namedByHand,
@@ -46,7 +47,8 @@ export function NotReadBanner({
   wish: WishItem;
   now: number;
   retried: boolean;
-  /** What the person can do about it, after the reason. */
+  /** How to name it by hand, after the reason ("Name it below"). Unless the
+   *  image file is gone, the banner adds that it can be read again. */
   hint: string;
 }) {
   const readAt = captureReadAt(wish);
@@ -57,6 +59,7 @@ export function NotReadBanner({
       </p>
       <p className="mt-1 text-[13px] leading-snug text-[var(--color-ink-soft)]">
         {captureFailureMessage(wish)}. {hint}
+        {imageMissing(wish) ? '.' : ', or have it read again.'}
       </p>
       {readAt && (
         <p className="mt-1 font-mono text-[9px] text-[var(--color-ink-muted)]">
@@ -82,15 +85,21 @@ export function ReadAgainRow({
   return (
     <div className="flex items-center justify-between gap-3 px-0.5">
       <p className="font-mono text-[9px] text-[var(--color-ink-muted)]">
-        {isFailed(wish)
-          ? 'The image was not read.'
-          : namedByHand(wish)
-            ? 'The image was not read; named by hand.'
-            : 'Read from the image.'}
+        {imageMissing(wish)
+          ? namedByHand(wish)
+            ? 'The image file is missing; named by hand.'
+            : 'The image file is missing, so it cannot be read again.'
+          : isFailed(wish)
+            ? 'The image was not read.'
+            : namedByHand(wish)
+              ? 'The image was not read; named by hand.'
+              : 'Read from the image.'}
       </p>
-      <button type="button" disabled={busy} onClick={onRetry} className={SMALL_ACTION}>
-        {starting ? 'Starting…' : 'Read again'}
-      </button>
+      {!imageMissing(wish) && (
+        <button type="button" disabled={busy} onClick={onRetry} className={SMALL_ACTION}>
+          {starting ? 'Starting…' : 'Read again'}
+        </button>
+      )}
     </div>
   );
 }

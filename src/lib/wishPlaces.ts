@@ -62,6 +62,13 @@ export const isFailed = (w: WishItem): boolean => w.capture_status === 'failed';
 export const namedByHand = (w: WishItem): boolean =>
   w.capture_status === 'done' && str(w.capture?.error) !== null;
 
+/**
+ * The capture's image file is gone (`image_missing`). Reading it again
+ * cannot work: the server checks for the file first and fails at once, so
+ * nothing offers to read it again.
+ */
+export const imageMissing = (w: WishItem): boolean => str(w.capture?.error) === 'image_missing';
+
 /** Why a capture failed, in words for the person who uploaded it. */
 export function captureFailureMessage(w: WishItem): string {
   const code = str(w.capture?.error);

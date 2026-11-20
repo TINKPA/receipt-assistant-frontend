@@ -19,6 +19,7 @@ import {
   yearsToDays,
 } from '../../../lib/things';
 import {
+  captureFailureMessage,
   isFailed,
   isReading,
   wishListKey,
@@ -285,7 +286,7 @@ function ThingWishes({ adding, onAdded }: { adding: boolean; onAdded: () => void
                     {capture === 'reading'
                       ? 'Reading…'
                       : capture === 'not read'
-                        ? "Couldn't read this image"
+                        ? captureFailureMessage(w)
                         : w.title}
                   </p>
                   <p className="mt-1 flex items-baseline justify-between font-mono text-[9px]">

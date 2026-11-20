@@ -249,7 +249,7 @@ function ThingWishDetail({ wish }: { wish: WishItem }) {
           wish={wish}
           now={now}
           retried={failedAgain(wish, retries)}
-          hint="Name it below, or have it read again."
+          hint="Name it below"
         />
       )}
 

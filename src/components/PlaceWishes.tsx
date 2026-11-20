@@ -14,6 +14,7 @@ import {
   UNPLACED_AREA,
   arrangePlaceWishes,
   captureFailureMessage,
+  imageMissing,
   captureReadAt,
   fmtWhen,
   isFailed,
@@ -511,9 +512,11 @@ function FailedCard({
         </div>
       </div>
       <CardActions>
-        <button type="button" disabled={busy} onClick={onRetry} className={SMALL_ACTION}>
-          Try again
-        </button>
+        {!imageMissing(wish) && (
+          <button type="button" disabled={busy} onClick={onRetry} className={SMALL_ACTION}>
+            Try again
+          </button>
+        )}
         <Link to="/wish/$wishId" params={{ wishId: wish.id }} className={SMALL_ACTION}>
           Name it
         </Link>
@@ -657,7 +660,7 @@ function MovedToThings({
           {one && isFailed(one) ? (
             <>
               {captureFailureMessage(one)}, so it is not a place. It is under Things: name it
-              there, or have it read again.
+              there{imageMissing(one) ? '' : ', or have it read again'}.
             </>
           ) : one ? (
             <>

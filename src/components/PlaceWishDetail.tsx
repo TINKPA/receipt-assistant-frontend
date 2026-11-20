@@ -244,7 +244,7 @@ export function PlaceWishDetail({ wish }: { wish: WishItem }) {
               wish={wish}
               now={now}
               retried={failedAgain(wish, retries)}
-              hint="Type its name below, or have it read again."
+              hint="Type its name below"
             />
           )}
 
