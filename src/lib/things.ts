@@ -81,6 +81,28 @@ export function wishPerDay(w: WishItem): number | null {
   return w.target_price_minor / 100 / w.planned_days;
 }
 
+/** Planned days as years, to at most one decimal: 1460 → `4`, 548 → `1.5`. */
+export function fmtYears(days: number): string {
+  return String(Math.round((days / 365) * 10) / 10);
+}
+
+/** Typed years → planned days; null unless a positive number of at most
+ *  100 years. */
+export function yearsToDays(text: string): number | null {
+  if (!/^\d+(\.\d+)?$/.test(text)) return null;
+  const days = Math.round(Number(text) * 365);
+  return days >= 1 && days <= 36500 ? days : null;
+}
+
+/** Typed dollars (`$1,299.99`) → minor units; null unless a positive
+ *  amount with at most two decimals. */
+export function dollarsToMinor(text: string): number | null {
+  const t = text.replace(/[$,\s]/g, '');
+  if (!/^\d+(\.\d{1,2})?$/.test(t)) return null;
+  const minor = Math.round(Number(t) * 100);
+  return minor > 0 ? minor : null;
+}
+
 export function fmtPerDay(v: number | null): string {
   if (v === null) return '—';
   return v >= 10 ? `$${v.toFixed(0)}/d` : `$${v.toFixed(2)}/d`;
@@ -89,6 +111,17 @@ export function fmtPerDay(v: number | null): string {
 export function fmtDollars(minor: number | null | undefined): string {
   if (minor == null) return '—';
   return `$${Math.round(minor / 100).toLocaleString()}`;
+}
+
+/** One price as it was set: `$40.50`, or `$40` when it has no cents.
+ *  `fmtDollars` rounds, which suits a total, not a price someone typed. */
+export function fmtPrice(minor: number | null | undefined): string {
+  if (minor == null) return '—';
+  const cents = minor % 100 !== 0;
+  return `$${(minor / 100).toLocaleString('en-US', {
+    minimumFractionDigits: cents ? 2 : 0,
+    maximumFractionDigits: 2,
+  })}`;
 }
 
 /**

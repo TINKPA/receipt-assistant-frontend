@@ -6,6 +6,7 @@
  * so everything here narrows by hand and treats a missing key as absent.
  */
 import type { WishItem } from './api/things';
+import { formatMoney } from './money';
 
 export interface WishReading {
   category: string | null;
@@ -44,27 +45,67 @@ export function wishReading(w: WishItem): WishReading | null {
 }
 
 export const isReading = (w: WishItem): boolean => w.capture_status === 'reading';
-export const isFailed = (w: WishItem): boolean => w.capture_status === 'failed';
-
-// The titles the server gives a capture it has not read: while reading,
-// and after a failed reading (receipt-assistant `src/wish/capture.ts`).
-const UNREAD_TITLES = new Set(['Reading…', 'Unread capture']);
 
 /**
- * A failed capture nobody has named yet. Naming one leaves
- * `capture_status` at `failed` (only the server writes it), so the title
- * is the only sign that the person has dealt with it: once it is theirs,
- * the wish is listed as an ordinary place.
+ * A failed capture nobody has dealt with yet. The server resolves one the
+ * moment the person names it (or gives it a kind or a place):
+ * `capture_status` becomes `done` with `capture.resolved_by: user`, so
+ * `failed` alone says it still needs them.
  */
-export const isUnreadCapture = (w: WishItem): boolean =>
-  isFailed(w) && UNREAD_TITLES.has(w.title.trim());
+export const isFailed = (w: WishItem): boolean => w.capture_status === 'failed';
+
+/**
+ * The image could not be read, and the person named the wish (or gave it a
+ * place) by hand instead: the server marks the capture `done` and keeps the
+ * reading's `error`. Nothing on the page came from the image.
+ */
+export const namedByHand = (w: WishItem): boolean =>
+  w.capture_status === 'done' && str(w.capture?.error) !== null;
+
+/**
+ * The capture's image file is gone (`image_missing`). Reading it again
+ * cannot work: the server checks for the file first and fails at once, so
+ * nothing offers to read it again.
+ */
+export const imageMissing = (w: WishItem): boolean => str(w.capture?.error) === 'image_missing';
 
 /** Why a capture failed, in words for the person who uploaded it. */
 export function captureFailureMessage(w: WishItem): string {
   const code = str(w.capture?.error);
   if (code === 'nothing_to_save') return "Couldn't find a place or product in this image";
   if (code === 'interrupted') return 'Reading was interrupted';
+  if (code === 'image_missing') return 'The image file is missing';
   return "Couldn't read this image";
+}
+
+/** The titles the server gives a capture before anything named it. */
+const PLACEHOLDER_TITLES = new Set(['Reading…', 'Unread capture']);
+
+/**
+ * What the image looked like, for a capture that found nothing to save
+ * (`nothing_to_save`): the latest reading's description of it. The server
+ * also puts a description in the title of such a wish; that one can be
+ * from an earlier reading, so it is only the fallback. Null for any other
+ * wish: its title is a name.
+ */
+export function unreadDescription(w: WishItem): string | null {
+  if (!isFailed(w)) return null;
+  if (str(w.capture?.error) !== 'nothing_to_save') return null;
+  const title = str(w.title);
+  return str(w.capture?.detail) ?? (title && !PLACEHOLDER_TITLES.has(title) ? title : null);
+}
+
+/**
+ * Whether the wish's name is the person's own: they typed the wish in (it
+ * was never captured from an image, so `capture_status` is null; a typed
+ * place wish still has a `capture` holding its place match), or named a
+ * captured one by hand (`capture.user_set.title`). Otherwise the name came
+ * from reading the image, and may follow the place it is linked to.
+ */
+export function titleSetByUser(w: WishItem): boolean {
+  if (w.capture_status == null) return true;
+  const u = w.capture?.user_set;
+  return u != null && typeof u === 'object' && (u as Record<string, unknown>).title === true;
 }
 
 /** `sushi_restaurant` → `Sushi restaurant`. */
@@ -75,14 +116,82 @@ export function humanizePlaceType(t: string | null | undefined): string | null {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
+const CJK = /[぀-ヿ㐀-鿿가-힯豈-﫿]/;
+const LATIN = /[A-Za-z]/;
+
+/**
+ * The reading's category as a label: sentence case like the place types
+ * (`restaurant` → `Restaurant`), and in one language. A reading of a
+ * Chinese or Japanese image often gives the category twice, `日料 /
+ * Japanese sashimi restaurant` or `粤菜 (Cantonese restaurant)`; the half
+ * in the title's script is kept, so an English title gets the English one.
+ */
+export function categoryLabel(category: string, title: string): string {
+  let label = category.trim();
+  const halves =
+    /^(.+?)\s*[/／]\s*(.+)$/.exec(label) ?? /^(.+?)\s*[(（]\s*(.+?)\s*[)）]$/.exec(label);
+  if (halves) {
+    const [a, b] = [halves[1].trim(), halves[2].trim()];
+    const aCjk = CJK.test(a) && !LATIN.test(a);
+    const bCjk = CJK.test(b) && !LATIN.test(b);
+    if (aCjk !== bCjk) {
+      const wantCjk = CJK.test(title);
+      label = aCjk === wantCjk ? a : b;
+    }
+  }
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
+/**
+ * Whether the linked place was picked by the person (`capture.user_set.place`)
+ * rather than found by the reading. The reading's name, category and town
+ * then describe what the image showed, which is not this place (a relink is
+ * usually a correction), so they give way to the place's own.
+ */
+export function placePickedByUser(w: WishItem): boolean {
+  if (!w.place) return false;
+  const u = w.capture?.user_set;
+  return u != null && typeof u === 'object' && (u as Record<string, unknown>).place === true;
+}
+
+/** The reading's facts about the place, or null once the person picked a
+ *  place of their own (see `placePickedByUser`). */
+function readingOfPlace(w: WishItem): WishReading | null {
+  return placePickedByUser(w) ? null : wishReading(w);
+}
+
 export function wishCategory(w: WishItem): string | null {
-  return wishReading(w)?.category ?? humanizePlaceType(w.place?.primary_type);
+  const read = readingOfPlace(w)?.category;
+  if (read) return categoryLabel(read, w.title);
+  return humanizePlaceType(w.place?.primary_type);
+}
+
+/** The town the place search starts from: the image's, unless the person
+ *  picked a place by hand, then that place's. */
+export function wishSearchArea(w: WishItem): string | null {
+  return readingOfPlace(w)?.locality ?? str(w.place?.locality);
+}
+
+/**
+ * What the place search starts from: the name, then whatever of the area
+ * the name does not already say. `Sushi Gen (Little Tokyo)` in `Little
+ * Tokyo, Los Angeles` searches `Sushi Gen (Little Tokyo) Los Angeles`.
+ */
+export function placeSearchPrefill(name: string, area: string | null): string {
+  const n = name.trim();
+  if (!area) return n;
+  const lower = n.toLowerCase();
+  const rest = area
+    .split(/[,，·]/)
+    .map((part) => part.trim())
+    .filter((part) => part !== '' && !lower.includes(part.toLowerCase()));
+  return [n, ...rest].filter(Boolean).join(' ');
 }
 
 /** A second name to show beside the title (the Chinese name of a place
  *  titled in English, say), or null when there is none or it repeats it. */
 export function wishAltName(w: WishItem): string | null {
-  const alt = str(w.place?.name_zh) ?? wishReading(w)?.nameLocal ?? null;
+  const alt = str(w.place?.name_zh) ?? readingOfPlace(w)?.nameLocal ?? null;
   if (!alt) return null;
   return alt.toLowerCase() === w.title.trim().toLowerCase() ? null : alt;
 }
@@ -100,28 +209,135 @@ export function wishArea(w: WishItem): string {
   );
 }
 
-export interface WishAreaGroup {
-  area: string;
-  wishes: WishItem[];
+/**
+ * One card of the Places list: a wish, and the other active wishes for the
+ * same place folded under it (the same restaurant saved from two
+ * screenshots, or typed in again). `wish` is the newest of them.
+ */
+export interface PlaceEntry {
+  wish: WishItem;
+  also: WishItem[];
 }
 
-/** Group by area: biggest group first, ties by name, `Somewhere` last.
- *  Inside a group the server's order (newest first) is kept. */
-export function groupWishesByArea(wishes: WishItem[]): WishAreaGroup[] {
-  const groups = new Map<string, WishItem[]>();
+export interface WishAreaGroup {
+  area: string;
+  entries: PlaceEntry[];
+}
+
+export interface PlaceListLayout {
+  /** Shown above the areas: what was just saved or just read again, so
+   *  the person sees it land without scrolling to its area. */
+  recent: PlaceEntry[];
+  groups: WishAreaGroup[];
+}
+
+/** How long a new wish stays at the top of the list before it moves to its
+ *  area. Long enough to save a few screenshots in a row and see them all. */
+export const RECENT_MS = 15 * 60_000;
+
+/**
+ * Whether a wish belongs at the top of the list right now: it is being
+ * read, it was made in the last `RECENT_MS`, or its reading failed in that
+ * time (a "Try again" that failed once more stays where it was tapped).
+ */
+export function isRecentWish(w: WishItem, now: number): boolean {
+  if (isReading(w)) return true;
+  const since = (iso: string) => now - Date.parse(iso) < RECENT_MS;
+  return since(w.created_at) || (isFailed(w) && since(w.updated_at));
+}
+
+/** Fold the active wishes for one place into one entry, newest first (the
+ *  server's order). A wish with no place is its own entry. */
+export function foldSamePlace(wishes: WishItem[]): PlaceEntry[] {
+  const byPlace = new Map<string, PlaceEntry>();
+  const entries: PlaceEntry[] = [];
   for (const w of wishes) {
-    const area = wishArea(w);
-    const list = groups.get(area);
-    if (list) list.push(w);
-    else groups.set(area, [w]);
+    const first = w.place_id ? byPlace.get(w.place_id) : undefined;
+    if (first) {
+      first.also.push(w);
+      continue;
+    }
+    const entry = { wish: w, also: [] };
+    if (w.place_id) byPlace.set(w.place_id, entry);
+    entries.push(entry);
   }
-  return [...groups.entries()]
-    .map(([area, list]) => ({ area, wishes: list }))
-    .sort((a, b) => {
-      if (a.area === UNPLACED_AREA) return 1;
-      if (b.area === UNPLACED_AREA) return -1;
-      return b.wishes.length - a.wishes.length || a.area.localeCompare(b.area);
-    });
+  return entries;
+}
+
+/** The Places list: recent entries on top, then the rest by area, biggest
+ *  area first, ties by name, `Somewhere` last. Inside each the server's
+ *  order (newest first) is kept. */
+export function arrangePlaceWishes(wishes: WishItem[], now: number): PlaceListLayout {
+  const recent: PlaceEntry[] = [];
+  const groups = new Map<string, PlaceEntry[]>();
+  for (const entry of foldSamePlace(wishes)) {
+    if (isRecentWish(entry.wish, now)) {
+      recent.push(entry);
+      continue;
+    }
+    const area = wishArea(entry.wish);
+    const list = groups.get(area);
+    if (list) list.push(entry);
+    else groups.set(area, [entry]);
+  }
+  return {
+    recent,
+    groups: [...groups.entries()]
+      .map(([area, entries]) => ({ area, entries }))
+      .sort((a, b) => {
+        if (a.area === UNPLACED_AREA) return 1;
+        if (b.area === UNPLACED_AREA) return -1;
+        return b.entries.length - a.entries.length || a.area.localeCompare(b.area);
+      }),
+  };
+}
+
+export type WishPlaceSuggestion = NonNullable<WishItem['place_suggestion']>;
+
+/**
+ * Why a place was only suggested, as a sentence. `address` is what the
+ * image said, when the reading found one.
+ */
+export function suggestionReason(s: WishPlaceSuggestion, address: string | null): string {
+  switch (s.reason) {
+    case 'name_only':
+      return 'The image gave no city or address, so this is the best guess for the name.';
+    case 'low_confidence':
+      return 'The image was hard to read, so this is a guess.';
+    case 'name_mismatch':
+      return 'The place found has a different name.';
+    case 'name_unverified':
+      return 'The two names are in different scripts, so they could not be compared.';
+    case 'address_mismatch':
+      return address
+        ? `The image gives the address as ${address}, which is not this place's.`
+        : 'The address in the image is not this place’s.';
+    default:
+      return 'This is a guess.';
+  }
+}
+
+/** A Google Maps link for a place known only by its Google id. */
+export function googleMapsLink(googlePlaceId: string, name: string | null): string {
+  const q = encodeURIComponent(name ?? 'place');
+  return `https://www.google.com/maps/search/?api=1&query=${q}&query_place_id=${encodeURIComponent(googlePlaceId)}`;
+}
+
+/** When the image was last read (a finished or failed reading), or null. */
+export function captureReadAt(w: WishItem): string | null {
+  return str(w.capture?.read_at);
+}
+
+/** The wish is being read for a second (or later) time. */
+export const isRereading = (w: WishItem): boolean =>
+  isReading(w) && w.capture != null && 'retry_of' in w.capture;
+
+/** An instant as a short time: `3:42 PM` today, else `Nov 19, 3:42 PM`. */
+export function fmtWhen(iso: string, now: number): string {
+  const d = new Date(iso);
+  const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  if (new Date(now).toDateString() === d.toDateString()) return time;
+  return `${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}, ${time}`;
 }
 
 /**
@@ -155,3 +371,99 @@ export function wishProblemMessage(err: unknown): string {
 export const wishListKey = (kind: WishItem['kind'], status: WishItem['status']) =>
   ['wish-items', 'list', { kind, status }] as const;
 export const wishDetailKey = (id: string) => ['wish-items', 'detail', id] as const;
+
+const DAY: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', year: 'numeric' };
+
+/** `2026-11-20` → `Nov 20, 2026`: a calendar date, read as written. */
+function fmtDay(ymd: string): string {
+  const [y, m, d] = ymd.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString('en-US', DAY);
+}
+
+/** An instant, as the viewer's calendar day. */
+const fmtInstantDay = (iso: string): string => new Date(iso).toLocaleDateString('en-US', DAY);
+
+/**
+ * How a converted wish was closed.
+ *
+ * `receipt`: a purchase at the place (or of the product) was booked after
+ * the wish was made, and that transaction closed it; `transactionId` is
+ * the receipt page to link. `user`: the person said so ("Been there",
+ * "Convert to purchase"). A wish converted before the server recorded who
+ * did it reads as the person's, dated by `converted_at` when there is one.
+ */
+export type WishClosure =
+  | {
+      by: 'receipt';
+      date: string;
+      payee: string | null;
+      amount: string;
+      transactionId: string;
+    }
+  | { by: 'user'; date: string | null };
+
+/** When a converted wish was closed, as a sortable string: the receipt's
+ *  date, else the day the person marked it; two on one day by when each
+ *  was converted, then by id, so every screen picks the same one. */
+function closedOn(w: WishItem): string {
+  const at = w.converted_at ?? w.updated_at;
+  return `${w.converted_transaction?.occurred_on ?? at.slice(0, 10)}|${at}|${w.id}`;
+}
+
+/**
+ * The latest visit to a place among its other wishes (the earlier saves
+ * that a receipt or "Been there" closed), or null when none was closed.
+ * `undefined` entries (still loading) are skipped.
+ */
+export function latestVisit(
+  wishes: readonly (WishItem | undefined)[],
+): { wish: WishItem; closure: WishClosure } | null {
+  let best: WishItem | null = null;
+  for (const w of wishes) {
+    if (w?.status !== 'converted') continue;
+    if (!best || closedOn(w) > closedOn(best)) best = w;
+  }
+  const closure = best ? wishClosure(best) : null;
+  return best && closure ? { wish: best, closure } : null;
+}
+
+/** "Been there" closes every active save of a place in one go, a second
+ *  or two apart at most; a minute leaves room for a slow connection. */
+const CLOSED_TOGETHER_MS = 60_000;
+
+/**
+ * The other saves of a place that were closed together with `w`: by the
+ * same receipt, or by the person within a minute of it (one "Been there"
+ * moves them all). "Want again" puts these back with it, so a mistaken
+ * tap can be undone from the page it was made on. Empty when `w` is not
+ * converted. `undefined` entries (still loading) are skipped.
+ */
+export function closedTogether(
+  w: WishItem,
+  others: readonly (WishItem | undefined)[],
+): WishItem[] {
+  if (w.status !== 'converted') return [];
+  const txId = w.converted_by === 'receipt' ? w.converted_transaction?.id : null;
+  const at = w.converted_by === 'user' && w.converted_at ? Date.parse(w.converted_at) : null;
+  return others.filter((o): o is WishItem => {
+    if (o?.status !== 'converted' || o.converted_by !== w.converted_by) return false;
+    if (txId) return o.converted_transaction?.id === txId;
+    if (at == null || !o.converted_at) return false;
+    return Math.abs(Date.parse(o.converted_at) - at) <= CLOSED_TOGETHER_MS;
+  });
+}
+
+export function wishClosure(w: WishItem): WishClosure | null {
+  if (w.status !== 'converted') return null;
+  const tx = w.converted_transaction;
+  if (w.converted_by === 'receipt' && tx) {
+    return {
+      by: 'receipt',
+      date: fmtDay(tx.occurred_on),
+      payee: str(tx.payee),
+      amount: formatMoney(tx.total_minor, tx.currency),
+      transactionId: tx.id,
+    };
+  }
+  return { by: 'user', date: w.converted_at ? fmtInstantDay(w.converted_at) : null };
+}

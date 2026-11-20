@@ -1,7 +1,7 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { Fragment, useEffect, useRef, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { ingestBatch, extractProblemMessage } from '../lib/api';
-import { captureWishItem, type WishItem } from '../lib/api/things';
+import { captureWishItem, isHeic, type CaptureResult } from '../lib/api/things';
 import { wishProblemMessage } from '../lib/wishPlaces';
 import { cn } from '../lib/utils';
 
@@ -16,8 +16,12 @@ interface CaptureProps {
   /** Which mode the screen opens in. The user can switch; the choice is
    *  always theirs, never inferred from the picture. */
   initialMode?: CaptureMode;
-  /** Want mode: the image is stored and its wish is being read. */
-  onWantSaved?: (wish: WishItem) => void;
+  /** Want mode: the image is stored and its wish is being read, or (with
+   *  `existing`) the same image was saved before and that wish is back. */
+  onWantSaved?: (result: CaptureResult) => void;
+  /** The user switched mode; the caller keeps it in the URL so a reload
+   *  opens the same mode. */
+  onModeChange?: (mode: CaptureMode) => void;
 }
 
 type CameraState =
@@ -45,11 +49,36 @@ type UploadState =
  *
  * Backend: real, via openapi-fetch (memory feedback_no_mock_api.md).
  */
+const IMAGE_NAME = /\.(jpe?g|png|gif|webp|avif|bmp|heic|heif)$/i;
+
+/** The first file the browser cannot read, or null. */
+async function firstUnreadable(files: File[]): Promise<File | null> {
+  for (const f of files) {
+    try {
+      await f.slice(0, 1).arrayBuffer();
+    } catch {
+      return f;
+    }
+  }
+  return null;
+}
+
+/** The sentence for an upload that never got an answer from the server
+ *  (fetch rejected: offline, server down), else null. */
+function uploadFailure(err: unknown): string | null {
+  // Chrome says "Failed to fetch", Safari "Load failed", Firefox
+  // "NetworkError when attempting to fetch resource."
+  return err instanceof TypeError && /fetch|load failed|network/i.test(err.message)
+    ? "Couldn't reach the server. Check the connection and try again."
+    : null;
+}
+
 export default function Capture({
   onCancel,
   onComplete,
   initialMode = 'receipt',
   onWantSaved,
+  onModeChange,
 }: CaptureProps) {
   const [mode, setMode] = useState<CaptureMode>(initialMode);
   const want = mode === 'want';
@@ -133,9 +162,29 @@ export default function Capture({
   // A blob URL only renders in an <img> when the blob is actually an image.
   // PDFs and saved HTML receipts are valid uploads with no thumbnail, so the
   // confirm stage shows them a document card rather than a broken image.
-  const isImageFile = (file: File) => file.type.startsWith('image/');
-  const documentKind = (file: File) =>
-    file.type === 'application/pdf' ? 'PDF document' : 'Saved web page';
+  // The name is the fallback: some pickers leave `type` empty.
+  const isImageFile = (file: File) =>
+    file.type.startsWith('image/') ||
+    isHeic(file) ||
+    (file.type === '' && IMAGE_NAME.test(file.name));
+  const isPdf = (file: File) => file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+  const isHtml = (file: File) => file.type === 'text/html' || /\.html?$/i.test(file.name);
+  // Neither the browser nor the name says what it is: preview it as an
+  // image if it decodes, and let the server decide.
+  const isUnknownFile = (file: File) =>
+    file.type === '' && !isImageFile(file) && !isPdf(file) && !isHtml(file);
+  const documentKind = (file: File) => {
+    if (isHeic(file)) return 'HEIC photo · converted on upload';
+    if (isImageFile(file)) return 'Image';
+    if (isPdf(file)) return 'PDF document';
+    if (isHtml(file)) return 'Saved web page';
+    if (isUnknownFile(file)) return 'File';
+    return 'Not an image or document';
+  };
+  // Only Safari decodes HEIC; elsewhere its preview fails and the confirm
+  // stage shows the file card instead. Keyed by blob URL, so a new shot
+  // gets its own try.
+  const [unpreviewable, setUnpreviewable] = useState<string | null>(null);
 
   const addPending = (file: File) => {
     const shot = { file, url: URL.createObjectURL(file) };
@@ -157,6 +206,7 @@ export default function Capture({
     });
     setUpload({ kind: 'idle' });
     setMode(next);
+    onModeChange?.(next);
   };
   const dropLastPending = () => {
     setPending((p) => {
@@ -188,14 +238,24 @@ export default function Capture({
     const files = pending.map((p) => p.file);
     if (files.length === 0) return;
     setUpload({ kind: 'uploading', filename: files[0].name });
+    // A file the browser cannot read (moved, deleted, or out of reach since
+    // it was picked) would otherwise fail inside fetch as "Failed to fetch".
+    const unreadable = await firstUnreadable(want ? files.slice(-1) : files);
+    if (unreadable) {
+      setUpload({
+        kind: 'error',
+        message: `${unreadable.name} could not be read. Pick it again.`,
+      });
+      return;
+    }
     if (want) {
       try {
-        const wish = await captureWishItem(files[files.length - 1]);
+        const result = await captureWishItem(files[files.length - 1]);
         pending.forEach((p) => URL.revokeObjectURL(p.url));
         setPending([]);
-        onWantSaved?.(wish);
+        onWantSaved?.(result);
       } catch (err: unknown) {
-        setUpload({ kind: 'error', message: wishProblemMessage(err) });
+        setUpload({ kind: 'error', message: uploadFailure(err) ?? wishProblemMessage(err) });
       }
       return;
     }
@@ -213,7 +273,7 @@ export default function Capture({
         filename: first.filename,
       });
     } catch (err: unknown) {
-      setUpload({ kind: 'error', message: extractProblemMessage(err) });
+      setUpload({ kind: 'error', message: uploadFailure(err) ?? extractProblemMessage(err) });
     }
   };
 
@@ -265,12 +325,17 @@ export default function Capture({
   const showCameraFallbackHint = camera.kind === 'denied' || camera.kind === 'unsupported';
 
   // ── Confirm stage (board screen 15) ───────────────────────────
+  // /add hangs off the root route, not `_shell`, so there is no parent
+  // padding for a `-mx-4 -mt-4` to cancel: both stages take their 16px
+  // gutter from their own padding (see AddManually).
   if (reviewing && pending.length > 0) {
     const last = pending[pending.length - 1];
     const totalKB = Math.round(pending.reduce((s, p) => s + p.file.size, 0) / 1024);
     const uploading = upload.kind === 'uploading';
+    // Wanting takes an image and nothing else; say so before the upload.
+    const notAnImage = want && !isImageFile(last.file) && !isUnknownFile(last.file);
     return (
-      <div className="-mx-4 -mt-4 flex min-h-[100dvh] flex-col bg-[var(--color-paper)] px-4 pt-4 sm:-mx-6 sm:-mt-6 sm:px-6 lg:-mx-10 lg:-mt-10">
+      <div className="flex min-h-[100dvh] flex-col bg-[var(--color-paper)] px-4 pt-4 sm:px-6">
         <div className="mx-auto flex w-full max-w-[480px] flex-1 flex-col">
           <div className="flex items-center justify-between pt-2">
             <button
@@ -284,15 +349,24 @@ export default function Capture({
             <div className="text-center">
               <p className="font-display text-[17px] font-medium leading-tight">Captured</p>
               <p className="font-mono text-[8.5px] uppercase tracking-[0.14em] text-[var(--color-ink-muted)]">
-                {want ? 'one image · ready to read' : `${pending.length} of ${pending.length} · ready to extract`}
+                {notAnImage
+                  ? 'not an image · cannot be saved'
+                  : want
+                    ? 'one image · ready to read'
+                    : `${pending.length} of ${pending.length} · ready to extract`}
               </p>
             </div>
             <span aria-hidden="true" className="w-9" />
           </div>
 
           <div className="relative mt-4 flex-1 overflow-hidden rounded-[20px] border-[0.5px] border-[var(--color-rule-soft)] bg-[var(--color-ink)]">
-            {isImageFile(last.file) ? (
-              <img src={last.url} alt={want ? 'Captured image' : 'Captured receipt'} className="absolute inset-0 h-full w-full object-contain" />
+            {(isImageFile(last.file) || isUnknownFile(last.file)) && unpreviewable !== last.url ? (
+              <img
+                src={last.url}
+                alt={want ? 'Captured image' : 'Captured receipt'}
+                onError={() => setUnpreviewable(last.url)}
+                className="absolute inset-0 h-full w-full object-contain"
+              />
             ) : (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-8 text-center">
                 <span aria-hidden="true" className="text-[34px] leading-none text-[var(--color-paper-fold)]">
@@ -314,14 +388,20 @@ export default function Capture({
             </span>
           </div>
 
-          {upload.kind === 'error' && (
-            <p className="mt-2 text-center text-xs text-[var(--color-stamp)]">{upload.message}</p>
+          {notAnImage ? (
+            <p className="mt-2 text-center text-xs text-[var(--color-stamp)]">
+              Only an image can be saved to Wanting. Pick a screenshot or a photo.
+            </p>
+          ) : (
+            upload.kind === 'error' && (
+              <p className="mt-2 text-center text-xs text-[var(--color-stamp)]">{upload.message}</p>
+            )
           )}
 
           <div className="space-y-2 pb-6 pt-4">
             <button
               type="button"
-              disabled={uploading}
+              disabled={uploading || notAnImage}
               onClick={() => void sendPending()}
               className="block w-full rounded-[14px] bg-[var(--color-ink)] py-3.5 text-center font-display text-[15px] font-medium text-[var(--color-paper)] transition-opacity hover:opacity-90 disabled:opacity-60"
             >
@@ -364,7 +444,10 @@ export default function Capture({
 
   return (
     <div
-      className="min-h-[calc(100vh-6rem)] flex flex-col -mx-4 sm:-mx-6 lg:-mx-10 -mt-4 sm:-mt-6 lg:-mt-10"
+      // /add has no dock or shell around it, so the gradient fills the
+      // whole viewport (a `-6rem` left for a dock that is not there
+      // showed as a lighter band under the last line).
+      className="min-h-[100dvh] flex flex-col"
       style={{
         background:
           'linear-gradient(180deg, var(--color-paper) 0%, var(--color-paper-deep) 100%)',
@@ -387,7 +470,7 @@ export default function Capture({
       <input
         ref={galleryInputRef}
         type="file"
-        accept={want ? 'image/*' : 'image/*,application/pdf,text/html,.html'}
+        accept={want ? 'image/*,.heic,.heif' : 'image/*,application/pdf,text/html,.html'}
         className="hidden"
         onChange={handlePicked}
       />
@@ -565,8 +648,8 @@ export default function Capture({
         <div className="mt-5 border-t-[0.5px] border-[var(--color-rule)] pt-4">
           {want ? (
             <p className="px-2 text-center text-[12px] leading-snug text-[var(--color-ink-muted)]">
-              One image at a time. It is saved to Wanting, read for you, and matched to the
-              place.
+              One image at a time. It is saved to Wanting and read for you: a place is matched
+              on the map and filed under Places, a thing to buy goes under Things.
             </p>
           ) : (
             <Link
@@ -577,8 +660,15 @@ export default function Capture({
                 <span className="block font-display text-[14px] font-medium leading-tight">
                   No receipt? Record it manually
                 </span>
+                {/* Each phrase stays whole: on a narrow phone the line
+                    breaks at a dot, never inside "keep it in things". */}
                 <span className="mt-0.5 block font-mono text-[8.5px] uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">
-                  type the amount · add a line item · keep it in things
+                  {['type the amount', 'add a line item', 'keep it in things'].map((phrase, i) => (
+                    <Fragment key={phrase}>
+                      {i > 0 && ' · '}
+                      <span className="whitespace-nowrap">{phrase}</span>
+                    </Fragment>
+                  ))}
                 </span>
               </span>
               <span
