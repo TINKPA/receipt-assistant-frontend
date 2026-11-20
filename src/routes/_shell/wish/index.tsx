@@ -66,19 +66,25 @@ function WishRoute() {
       <ThingsSwitch active="wanting" />
 
       <header className="flex items-start justify-between">
-        <div>
+        <div className="min-w-0">
           <h1 className="font-display text-3xl tracking-tight">Wanting</h1>
           <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--color-ink-muted)]">
             {section === 'places' ? 'places to go' : 'things to buy'} · derived from wish_items
           </p>
         </div>
         {section === 'things' && (
+          // One width for both labels, so the header does not move when
+          // the form opens: both are laid in the same grid cell and the
+          // one not shown is only hidden. "× hide" is as short as "+ wish",
+          // so the subtitle beside it still fits one line on a phone.
           <button
             type="button"
+            aria-expanded={adding}
             onClick={() => setAdding((v) => !v)}
-            className="rounded-full bg-[var(--color-ink)] px-3.5 py-1.5 font-mono text-[9px] uppercase tracking-[0.1em] text-[var(--color-paper)]"
+            className="grid shrink-0 whitespace-nowrap rounded-full bg-[var(--color-ink)] px-3.5 py-1.5 text-center font-mono text-[9px] uppercase tracking-[0.1em] text-[var(--color-paper)]"
           >
-            {adding ? '× close' : '+ wish'}
+            <span className={cn('col-start-1 row-start-1', adding && 'invisible')}>+ wish</span>
+            <span className={cn('col-start-1 row-start-1', !adding && 'invisible')}>× hide</span>
           </button>
         )}
       </header>

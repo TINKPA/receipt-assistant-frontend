@@ -29,6 +29,22 @@ export function WishClosureText({
   return <>{closure.date ? `${marked} ${closure.date}` : marked}</>;
 }
 
+/**
+ * "Been here before": a wish for a place an earlier save of which a visit
+ * closed. Plain text, for inside a link (a list card); the page shows it
+ * with `WishClosureCard`.
+ */
+export function BeenBeforeText({ closure }: { closure: WishClosure }) {
+  return (
+    <>
+      <span className="font-mono text-[0.85em] uppercase tracking-[0.1em] text-[var(--color-olive)]">
+        been here
+      </span>{' '}
+      · <WishClosureText closure={closure} kind="place" />
+    </>
+  );
+}
+
 /** The closure as a card; a receipt's opens the receipt. */
 export function WishClosureCard({
   closure,

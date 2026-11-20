@@ -14,6 +14,7 @@ import {
   humanizePlaceType,
   isFailed,
   isReading,
+  latestVisit,
   placeSearchPrefill,
   suggestionReason,
   wishAltName,
@@ -24,6 +25,7 @@ import {
   wishReading,
 } from '../lib/wishPlaces';
 import { useBack } from '../lib/useBack';
+import { failedAgain, noteRetry, useRetries } from '../lib/wishSession';
 import { useNow } from '../lib/useNow';
 import { cn } from '../lib/utils';
 import { PlaceSearch } from './PlaceSearch';
@@ -49,8 +51,8 @@ export function PlaceWishDetail({ wish }: { wish: WishItem }) {
   const [err, setErr] = useState<string | null>(null);
   // The place search is open (from "Wrong place" or "Find on map").
   const [searching, setSearching] = useState(false);
-  // Read again from this page: a reading that fails again says so.
-  const [retried, setRetried] = useState(false);
+  // Read again here or on the list: a reading that fails again says so.
+  const retries = useRetries();
   const now = useNow();
 
   const onError = (e: unknown) => setErr(wishProblemMessage(e));
@@ -74,6 +76,9 @@ export function PlaceWishDetail({ wish }: { wish: WishItem }) {
   });
   const otherWishes = others.map((q) => q.data);
   const activeOthers = otherWishes.filter((o): o is WishItem => o?.status === 'active');
+  // An earlier save of this place that a visit closed: this one is a wish
+  // to go back.
+  const before = latestVisit(otherWishes);
 
   const patchMut = useMutation({
     mutationFn: (body: UpdateWishItemRequest) => patchWishItem(wish.id, body),
@@ -119,7 +124,7 @@ export function PlaceWishDetail({ wish }: { wish: WishItem }) {
     mutationFn: () => retryWishCapture(wish.id),
     onMutate: () => setErr(null),
     onSuccess: (next) => {
-      setRetried(true);
+      noteRetry(next);
       show(next);
     },
     onError,
@@ -189,7 +194,7 @@ export function PlaceWishDetail({ wish }: { wish: WishItem }) {
             <NotReadBanner
               wish={wish}
               now={now}
-              retried={retried}
+              retried={failedAgain(wish, retries)}
               hint="Type its name below, or have it read again."
             />
           )}
@@ -204,6 +209,9 @@ export function PlaceWishDetail({ wish }: { wish: WishItem }) {
               placeholder="Name this place"
               disabled={busy}
               required
+              // An image that could not be read: the page is there to
+              // name it ("Name it" on the list lands here).
+              autoFocus={unread}
               onSave={(title) => {
                 if (title) patchMut.mutate({ title });
               }}
@@ -241,6 +249,14 @@ export function PlaceWishDetail({ wish }: { wish: WishItem }) {
             className="text-[13.5px] leading-snug text-[var(--color-ink-soft)]"
           />
         </div>
+      )}
+
+      {/* Saved again after a visit: say so near the top, not only in the
+          "Also saved" rows further down. */}
+      {!visited && !readingNow && before && (
+        <Section label="Been here before">
+          <WishClosureCard closure={before.closure} kind="place" className={CARD} />
+        </Section>
       )}
 
       {err && <p className="text-center text-xs text-[var(--color-stamp)]">{err}</p>}

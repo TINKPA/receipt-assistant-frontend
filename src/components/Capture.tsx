@@ -349,7 +349,11 @@ export default function Capture({
             <div className="text-center">
               <p className="font-display text-[17px] font-medium leading-tight">Captured</p>
               <p className="font-mono text-[8.5px] uppercase tracking-[0.14em] text-[var(--color-ink-muted)]">
-                {want ? 'one image · ready to read' : `${pending.length} of ${pending.length} · ready to extract`}
+                {notAnImage
+                  ? 'not an image · cannot be saved'
+                  : want
+                    ? 'one image · ready to read'
+                    : `${pending.length} of ${pending.length} · ready to extract`}
               </p>
             </div>
             <span aria-hidden="true" className="w-9" />
@@ -644,8 +648,8 @@ export default function Capture({
         <div className="mt-5 border-t-[0.5px] border-[var(--color-rule)] pt-4">
           {want ? (
             <p className="px-2 text-center text-[12px] leading-snug text-[var(--color-ink-muted)]">
-              One image at a time. It is saved to Wanting, read for you, and matched to the
-              place.
+              One image at a time. It is saved to Wanting and read for you: a place is matched
+              on the map and filed under Places, a thing to buy goes under Things.
             </p>
           ) : (
             <Link

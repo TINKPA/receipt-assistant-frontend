@@ -5,6 +5,7 @@ import {
   fmtWhen,
   isFailed,
   isRereading,
+  namedByHand,
 } from '../lib/wishPlaces';
 import { cn } from '../lib/utils';
 
@@ -35,7 +36,7 @@ export function ReadingNotice({ wish }: { wish: WishItem }) {
 }
 
 /** The reading failed and nobody has named the wish yet. `retried`: it was
- *  read again from this page and failed again. */
+ *  read again in this tab (here or on the list) and failed again. */
 export function NotReadBanner({
   wish,
   now,
@@ -81,7 +82,11 @@ export function ReadAgainRow({
   return (
     <div className="flex items-center justify-between gap-3 px-0.5">
       <p className="font-mono text-[9px] text-[var(--color-ink-muted)]">
-        {isFailed(wish) ? 'The image was not read.' : 'Read from the image.'}
+        {isFailed(wish)
+          ? 'The image was not read.'
+          : namedByHand(wish)
+            ? 'The image was not read; named by hand.'
+            : 'Read from the image.'}
       </p>
       <button type="button" disabled={busy} onClick={onRetry} className={SMALL_ACTION}>
         {starting ? 'Starting…' : 'Read again'}

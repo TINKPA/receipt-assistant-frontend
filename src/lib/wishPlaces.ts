@@ -54,6 +54,14 @@ export const isReading = (w: WishItem): boolean => w.capture_status === 'reading
  */
 export const isFailed = (w: WishItem): boolean => w.capture_status === 'failed';
 
+/**
+ * The image could not be read, and the person named the wish (or gave it a
+ * place) by hand instead: the server marks the capture `done` and keeps the
+ * reading's `error`. Nothing on the page came from the image.
+ */
+export const namedByHand = (w: WishItem): boolean =>
+  w.capture_status === 'done' && str(w.capture?.error) !== null;
+
 /** Why a capture failed, in words for the person who uploaded it. */
 export function captureFailureMessage(w: WishItem): string {
   const code = str(w.capture?.error);
@@ -331,6 +339,31 @@ export type WishClosure =
       transactionId: string;
     }
   | { by: 'user'; date: string | null };
+
+/** When a converted wish was closed, as a sortable string: the receipt's
+ *  date, else the day the person marked it; two on one day by when each
+ *  was converted, then by id, so every screen picks the same one. */
+function closedOn(w: WishItem): string {
+  const at = w.converted_at ?? w.updated_at;
+  return `${w.converted_transaction?.occurred_on ?? at.slice(0, 10)}|${at}|${w.id}`;
+}
+
+/**
+ * The latest visit to a place among its other wishes (the earlier saves
+ * that a receipt or "Been there" closed), or null when none was closed.
+ * `undefined` entries (still loading) are skipped.
+ */
+export function latestVisit(
+  wishes: readonly (WishItem | undefined)[],
+): { wish: WishItem; closure: WishClosure } | null {
+  let best: WishItem | null = null;
+  for (const w of wishes) {
+    if (w?.status !== 'converted') continue;
+    if (!best || closedOn(w) > closedOn(best)) best = w;
+  }
+  const closure = best ? wishClosure(best) : null;
+  return best && closure ? { wish: best, closure } : null;
+}
 
 export function wishClosure(w: WishItem): WishClosure | null {
   if (w.status !== 'converted') return null;

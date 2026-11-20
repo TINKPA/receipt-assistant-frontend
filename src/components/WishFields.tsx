@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { cn } from '../lib/utils';
 
 /** Inline editors on the wish pages. Each saves on blur (and on Enter for a
@@ -29,6 +29,7 @@ export function TextField({
   disabled,
   multiline,
   required,
+  autoFocus,
   onSave,
   className,
 }: {
@@ -38,6 +39,9 @@ export function TextField({
   disabled: boolean;
   multiline?: boolean;
   required?: boolean;
+  /** Focus the (single-line) field when it mounts: the page is there to
+   *  have it filled in. */
+  autoFocus?: boolean;
   onSave: (next: string | null) => void;
   className?: string;
 }) {
@@ -49,6 +53,11 @@ export function TextField({
     el.style.height = 'auto';
     el.style.height = `${el.scrollHeight}px`;
   }, [text]);
+  // On mount (or when asked later); a field that remounts with a new value
+  // (the parent's key) is focused again only when it asks to be.
+  useEffect(() => {
+    if (autoFocus) lineRef.current?.focus();
+  }, [autoFocus]);
   const commit = () => {
     const next = text.trim();
     if (next === value.trim()) return;

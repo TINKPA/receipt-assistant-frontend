@@ -1,9 +1,10 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   createWishItem,
   deleteWishItem,
+  getWishItem,
   listWishItems,
   patchWishItem,
   retryWishCapture,
@@ -18,6 +19,7 @@ import {
   isFailed,
   isReading,
   isRereading,
+  latestVisit,
   wishAltName,
   wishArea,
   wishCategory,
@@ -26,10 +28,22 @@ import {
   wishProblemMessage,
   wishReading,
   type PlaceEntry,
+  type WishClosure,
 } from '../lib/wishPlaces';
 import { useNow } from '../lib/useNow';
+import {
+  dismissMovedToThings,
+  failedAgain,
+  noteMovedToThings,
+  noteRetry,
+  unwatchCapture,
+  useMovedToThings,
+  useRetries,
+  useWatchedCaptures,
+  watchCapture,
+} from '../lib/wishSession';
 import { cn } from '../lib/utils';
-import { WishClosureText } from './WishClosure';
+import { BeenBeforeText, WishClosureText } from './WishClosure';
 import { WishThumb } from './WishImage';
 
 const ACTIVE_KEY = wishListKey('place', 'active');
@@ -71,11 +85,25 @@ export function PlaceWishes({
     queryFn: () => listWishItems({ status: 'converted', kind: 'place' }),
   });
 
-  // Captures read again from this list: their card says so when the
-  // reading fails once more, so the retry is not mistaken for a no-op.
-  const [retried, setRetried] = useState<ReadonlySet<string>>(() => new Set());
+  // Captures read again (here or on their page): their card says so when
+  // the reading fails once more, so the retry is not mistaken for a no-op.
+  const retries = useRetries();
   const now = useNow();
   const layout = useMemo(() => arrangePlaceWishes(wishes, now), [wishes, now]);
+  // The latest visit to each place, from the wishes for it that a visit
+  // closed: a card for a place saved again after it says so.
+  const visitByPlace = useMemo(() => {
+    const byPlace = new Map<string, WishItem[]>();
+    for (const w of visited) {
+      if (!w.place_id) continue;
+      const list = byPlace.get(w.place_id);
+      if (list) list.push(w);
+      else byPlace.set(w.place_id, [w]);
+    }
+    return new Map([...byPlace].map(([id, ws]) => [id, latestVisit(ws)]));
+  }, [visited]);
+  useWatchForThings(wishes);
+  const movedToThings = useMovedToThings();
   const refresh = () => qc.invalidateQueries({ queryKey: ['wish-items'] });
   const onError = (e: unknown) => setErr(wishProblemMessage(e));
 
@@ -102,7 +130,8 @@ export function PlaceWishes({
     mutationFn: (id: string) => retryWishCapture(id),
     onMutate: () => setErr(null),
     onSuccess: (wish) => {
-      setRetried((prev) => new Set(prev).add(wish.id));
+      noteRetry(wish);
+      watchCapture(wish.id);
       // Put the `reading` row in place now, so polling starts without
       // waiting for a refetch to notice.
       qc.setQueryData<WishItem[]>(ACTIVE_KEY, (list) =>
@@ -129,7 +158,7 @@ export function PlaceWishes({
           key={w.id}
           wish={w}
           now={now}
-          retried={retried.has(w.id)}
+          retried={failedAgain(w, retries)}
           busy={retryMut.isPending || deleteMut.isPending}
           onRetry={() => retryMut.mutate(w.id)}
           onDelete={() => deleteMut.mutate(w.id)}
@@ -142,6 +171,7 @@ export function PlaceWishes({
         wish={w}
         also={also}
         area={recent ? wishArea(w) : null}
+        before={(w.place_id && visitByPlace.get(w.place_id)?.closure) || null}
         onVisited={() => visitMut.mutate([w.id, ...also.map((a) => a.id)])}
       />
     );
@@ -178,6 +208,10 @@ export function PlaceWishes({
       {addRow}
 
       {err && <p className="text-center text-xs text-[var(--color-stamp)]">{err}</p>}
+
+      {movedToThings.length > 0 && (
+        <MovedToThings wishes={movedToThings} onDismiss={dismissMovedToThings} />
+      )}
 
       {isLoading ? (
         <p className="py-10 text-center font-display italic text-[var(--color-ink-muted)]">
@@ -306,6 +340,7 @@ function PlaceCard({
   wish,
   also,
   area,
+  before,
   onVisited,
 }: {
   wish: WishItem;
@@ -313,6 +348,8 @@ function PlaceCard({
   also: WishItem[];
   /** The area it is filed under, said on a card shown outside its area. */
   area: string | null;
+  /** The latest visit to the place, when it was saved again after one. */
+  before: WishClosure | null;
   onVisited: () => void;
 }) {
   const reading = wishReading(wish);
@@ -365,6 +402,11 @@ function PlaceCard({
                 </li>
               )}
             </ul>
+          )}
+          {before && (
+            <p className="mt-1.5 truncate text-[11.5px] text-[var(--color-ink-muted)]">
+              <BeenBeforeText closure={before} />
+            </p>
           )}
           {wish.notes && (
             <p className="mt-1.5 line-clamp-2 text-[12px] leading-snug text-[var(--color-ink-soft)] [overflow-wrap:anywhere]">
@@ -547,5 +589,108 @@ function AddPlaceForm({ onDone }: { onDone: () => void }) {
         <p className="text-xs text-[var(--color-stamp)]">{wishProblemMessage(createMut.error)}</p>
       )}
     </form>
+  );
+}
+
+/**
+ * Captures that left Places because their reading found a thing to buy,
+ * not a place. A capture is filed under Places until it is read, so
+ * without this it would just vanish from the list. Watched: the captures
+ * saved from this tab, and any card seen here while it was being read.
+ */
+function useWatchForThings(wishes: WishItem[]) {
+  const qc = useQueryClient();
+  const watched = useWatchedCaptures();
+  // Ids already being looked up, so a refetch does not ask twice.
+  const asking = useRef(new Set<string>());
+  useEffect(() => {
+    for (const w of wishes) if (isReading(w)) watchCapture(w.id);
+  }, [wishes]);
+  useEffect(() => {
+    const here = new Map(wishes.map((w) => [w.id, w]));
+    for (const id of watched) {
+      const w = here.get(id);
+      if (w) {
+        // Still here and read: it is a place, nothing to say.
+        if (!isReading(w)) unwatchCapture(id);
+        continue;
+      }
+      if (asking.current.has(id)) continue;
+      asking.current.add(id);
+      getWishItem(id)
+        .then((found) => {
+          // Saved after this list was fetched: fetch it again, which
+          // brings the card in and keeps the list polling.
+          if (isReading(found)) {
+            void qc.invalidateQueries({ queryKey: ACTIVE_KEY });
+            return;
+          }
+          unwatchCapture(id);
+          if (found.kind === 'thing' && found.status === 'active') noteMovedToThings(found);
+        })
+        .catch(() => unwatchCapture(id)) // deleted
+        .finally(() => asking.current.delete(id));
+    }
+  }, [wishes, watched, qc]);
+}
+
+/** Where the captures read as things went, with a way there. */
+function MovedToThings({
+  wishes,
+  onDismiss,
+}: {
+  wishes: readonly WishItem[];
+  onDismiss: () => void;
+}) {
+  const one = wishes.length === 1 ? wishes[0] : null;
+  const unread = wishes.filter(isFailed).length;
+  return (
+    <div
+      role="status"
+      className="flex items-start gap-3 rounded-[14px] border-[0.5px] border-[var(--color-rule)] bg-[var(--color-surface)] px-3.5 py-3"
+    >
+      <div className="min-w-0 flex-1">
+        <p className="font-mono text-[8.5px] uppercase tracking-[0.14em] text-[var(--color-accent)]">
+          {unread === wishes.length ? 'not read · moved to things' : 'saved under things'}
+        </p>
+        <p className="mt-1 text-[13px] leading-snug text-[var(--color-ink-soft)] [overflow-wrap:anywhere]">
+          {one && isFailed(one) ? (
+            <>
+              {captureFailureMessage(one)}, so it is not a place. It is under Things: name it
+              there, or have it read again.
+            </>
+          ) : one ? (
+            <>
+              The screenshot shows a thing to buy, not a place:{' '}
+              <span className="font-display font-medium text-[var(--color-ink)]">{one.title}</span>.
+            </>
+          ) : unread === wishes.length ? (
+            `${wishes.length} images could not be read, so they are not places. They are under Things.`
+          ) : unread > 0 ? (
+            `${wishes.length} screenshots are under Things now: ${wishes.length - unread} read as things to buy, ${unread} not read.`
+          ) : (
+            `${wishes.length} screenshots show things to buy, not places.`
+          )}
+        </p>
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {one && (
+            <Link to="/wish/$wishId" params={{ wishId: one.id }} className={SMALL_ACTION}>
+              Open it
+            </Link>
+          )}
+          <Link to="/wish" search={{ section: 'things' }} className={SMALL_ACTION}>
+            Go to Things →
+          </Link>
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={onDismiss}
+        aria-label="Dismiss"
+        className="shrink-0 px-1 text-[16px] leading-none text-[var(--color-ink-muted)] hover:text-[var(--color-ink)]"
+      >
+        ×
+      </button>
+    </div>
   );
 }

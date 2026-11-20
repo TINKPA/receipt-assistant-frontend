@@ -33,11 +33,14 @@ import { NumberField, TextField } from '../../../components/WishFields';
 import { PlaceWishDetail } from '../../../components/PlaceWishDetail';
 import { NotReadBanner, ReadAgainRow, ReadingNotice } from '../../../components/WishCapture';
 import { useBack } from '../../../lib/useBack';
+import { failedAgain, noteRetry, useRetries } from '../../../lib/wishSession';
 import { useNow } from '../../../lib/useNow';
 import { cn } from '../../../lib/utils';
 
 // `?notice=already-saved`: arrived from a capture of an image this wish
-// was already saved from. Shown once, then dropped from the URL.
+// was already saved from. The notice is taken out of the URL at once (a
+// reload, or Back to this page, uploaded nothing) and kept on screen for a
+// few seconds by the page itself.
 const wishDetailSearch = z.object({
   notice: z.enum(['already-saved']).optional().catch(undefined),
 });
@@ -89,23 +92,37 @@ function WishDetailRoute() {
   // still being read, or that failed, lands on the place page too.
   return (
     <>
-      <AlreadySavedNotice />
+      <AlreadySavedNotice wish={wish} />
       {wish.kind === 'place' ? <PlaceWishDetail wish={wish} /> : <ThingWishDetail wish={wish} />}
     </>
   );
 }
 
-function AlreadySavedNotice() {
+const NOTICE_MS = 6000;
+
+function AlreadySavedNotice({ wish }: { wish: WishItem }) {
   const { notice } = Route.useSearch();
   const navigate = Route.useNavigate();
+  // Taken from the URL on the first render, then held here.
+  const [shown, setShown] = useState(notice === 'already-saved');
   useEffect(() => {
     if (!notice) return;
-    const t = setTimeout(() => {
-      void navigate({ search: {}, replace: true });
-    }, 4000);
-    return () => clearTimeout(t);
+    void navigate({ search: {}, replace: true });
   }, [notice, navigate]);
-  if (notice !== 'already-saved') return null;
+  useEffect(() => {
+    if (!shown) return;
+    const t = setTimeout(() => setShown(false), NOTICE_MS);
+    return () => clearTimeout(t);
+  }, [shown]);
+  if (!shown) return null;
+  const where =
+    wish.status === 'converted'
+      ? wish.kind === 'place'
+        ? 'you have been there since · this is that wish'
+        : 'you have bought it since · this is that wish'
+      : wish.status === 'declined'
+        ? 'you declined it since · this is that wish'
+        : 'here is that wish';
   return (
     <p
       role="status"
@@ -113,7 +130,7 @@ function AlreadySavedNotice() {
     >
       Already saved
       <span className="block font-mono text-[8.5px] uppercase tracking-[0.12em] text-[var(--color-paper-fold)]">
-        this image was saved before · here is that wish
+        this image was saved before · {where}
       </span>
     </p>
   );
@@ -130,8 +147,8 @@ function ThingWishDetail({ wish }: { wish: WishItem }) {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [err, setErr] = useState<string | null>(null);
-  // Read again from this page: a reading that fails again says so.
-  const [retried, setRetried] = useState(false);
+  // Read again here or on the list: a reading that fails again says so.
+  const retries = useRetries();
   const now = useNow();
 
   const { data: owned = [] } = useQuery({
@@ -158,7 +175,7 @@ function ThingWishDetail({ wish }: { wish: WishItem }) {
     mutationFn: () => retryWishCapture(wishId),
     onMutate: () => setErr(null),
     onSuccess: (next) => {
-      setRetried(true);
+      noteRetry(next);
       qc.setQueryData(wishDetailKey(wishId), next);
       void qc.invalidateQueries({ queryKey: ['wish-items'] });
     },
@@ -232,7 +249,7 @@ function ThingWishDetail({ wish }: { wish: WishItem }) {
         <NotReadBanner
           wish={wish}
           now={now}
-          retried={retried}
+          retried={failedAgain(wish, retries)}
           hint="Name it below, or have it read again."
         />
       )}
@@ -245,6 +262,7 @@ function ThingWishDetail({ wish }: { wish: WishItem }) {
           placeholder="What do you want?"
           disabled={busy}
           required
+          autoFocus={unread}
           onSave={(title) => {
             if (title) patchMut.mutate({ title });
           }}
