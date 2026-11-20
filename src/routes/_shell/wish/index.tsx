@@ -11,6 +11,7 @@ import { wishPerDay, fmtPerDay, fmtDollars, isSnoozed, perDay } from '../../../l
 import { wishListKey } from '../../../lib/wishPlaces';
 import { cn } from '../../../lib/utils';
 import { PlaceWishes } from '../../../components/PlaceWishes';
+import { WishThumb } from '../../../components/WishImage';
 import { SegmentedControl, ThingsSwitch } from '../../../components/Segmented';
 
 const SECTIONS = [
@@ -201,16 +202,20 @@ function ThingWishes({ adding, onAdded }: { adding: boolean; onAdded: () => void
                 )}
               >
                 <div className="relative flex aspect-[4/3] items-center justify-center bg-[var(--color-paper-deep)]">
-                  <span
-                    aria-hidden="true"
-                    className="text-[34px] text-[var(--color-ink-faint)]"
-                    style={{
-                      background:
-                        'repeating-linear-gradient(45deg, transparent 0 6px, rgba(140,130,115,0.06) 6px 8px)',
-                    }}
-                  >
-                    ◇
-                  </span>
+                  {w.has_image ? (
+                    <WishThumb wish={w} className="absolute inset-0" />
+                  ) : (
+                    <span
+                      aria-hidden="true"
+                      className="text-[34px] text-[var(--color-ink-faint)]"
+                      style={{
+                        background:
+                          'repeating-linear-gradient(45deg, transparent 0 6px, rgba(140,130,115,0.06) 6px 8px)',
+                      }}
+                    >
+                      ◇
+                    </span>
+                  )}
                   <span
                     className={cn(
                       'absolute left-2 top-2 rounded-full px-2 py-[2px] font-mono text-[7px] uppercase tracking-[0.1em] text-[var(--color-paper)]',

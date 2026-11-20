@@ -2139,7 +2139,10 @@ export interface paths {
             };
         };
         put?: never;
-        /** Add a wish */
+        /**
+         * Add a wish
+         * @description A place wish can name its place by `place_id` (a place the ledger has) or `google_place_id` (one picked from `GET /v1/wish-items/place-search`, stored by the server). A place wish sent with neither is matched by its title with Google Find Place before the answer; a miss leaves it unmatched, with the reason in `capture.place_match.error`. A wish that gets a place or a product is checked against the ledger at once: a live purchase there on or after the day the wish was made converts it.
+         */
         post: {
             parameters: {
                 query?: never;
@@ -2163,8 +2166,26 @@ export interface paths {
                     };
                 };
                 400: components["responses"]["BadRequest"];
-                /** @description Validation failed */
+                /** @description Validation failed (also: Google has no such `google_place_id`) */
                 422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+                /** @description Google failed while fetching the picked place */
+                502: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+                /** @description `google_place_id` sent, and the server has no Google Maps key */
+                503: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -2257,7 +2278,7 @@ export interface paths {
         head?: never;
         /**
          * Patch a wish (fields, urgency, snooze, convert / decline)
-         * @description JSON Merge Patch (RFC 7396). `metadata` merges into the stored object rather than replacing it (`null` removes a key, `{}` changes nothing).
+         * @description JSON Merge Patch (RFC 7396). `metadata` merges into the stored object rather than replacing it (`null` removes a key, `{}` changes nothing). `status: converted` from the user sets `converted_by: user` and `converted_at` (now unless sent). `status: active` on a converted wish is "Want again": the transaction that converted it never converts it again, and only a purchase from that day on can. `google_place_id` stores the picked place and links it. Setting `title`, `kind` or the place on a wish whose capture failed marks the capture `done` (`capture.resolved_by: user`, the error kept). A new place or product is checked against the ledger at once.
          */
         patch: {
             parameters: {
@@ -2284,7 +2305,15 @@ export interface paths {
                         "application/json": components["schemas"]["WishItem"];
                     };
                 };
-                400: components["responses"]["BadRequest"];
+                /** @description No field to change */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
                 /** @description Not Found */
                 404: {
                     headers: {
@@ -2294,8 +2323,122 @@ export interface paths {
                         "application/problem+json": components["schemas"]["ProblemDetails"];
                     };
                 };
+                /** @description Validation failed (also: Google has no such `google_place_id`) */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+                /** @description Google failed while fetching the picked place */
+                502: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+                /** @description `google_place_id` sent, and the server has no Google Maps key */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
             };
         };
+        trace?: never;
+    };
+    "/v1/wish-items/place-search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search Google for a wish's place (up to five candidates)
+         * @description Google Places Text Search with the server's key. With `near`, the query is biased to the locality the wish's image reading found. Pick a candidate by sending its `google_place_id` in `PATCH /v1/wish-items/{id}`.
+         */
+        get: {
+            parameters: {
+                query: {
+                    q: string;
+                    near?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["WishPlaceSearchResponse"];
+                    };
+                };
+                /** @description `near` is not a UUID */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+                /** @description No wish `near` */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+                /** @description `q` missing or empty */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+                /** @description Google answered with an error */
+                502: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+                /** @description The server has no Google Maps key */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/v1/wish-items/capture": {
@@ -2309,7 +2452,7 @@ export interface paths {
         put?: never;
         /**
          * Save a wish from an image (a screenshot of a post, a chat, a map; a photo)
-         * @description Stores the image and answers at once with a wish whose `capture_status` is `reading` and whose title is a placeholder. The image is then read in the background: the title, kind, notes, source link and, for a place, the matched `place` are filled in and `capture_status` becomes `done`, or `failed` with `capture.error`. Poll `GET /v1/wish-items/{id}`. Nothing the reading fills overwrites a note sent with the upload.
+         * @description Stores the image and answers at once with a wish whose `capture_status` is `reading` and whose title is a placeholder. The image is then read in the background: the title, kind, notes, source link and, for a place, the matched `place` are filled in and `capture_status` becomes `done`, or `failed` with `capture.error`. Poll `GET /v1/wish-items/{id}`. Nothing the reading fills overwrites a note sent with the upload. HEIC and AVIF are converted to JPEG first. The same bytes uploaded again answer 200 with the wish they made the first time, whatever its state, and are not read again.
          */
         post: {
             parameters: {
@@ -2324,6 +2467,15 @@ export interface paths {
                 };
             };
             responses: {
+                /** @description This image was captured before: the existing wish */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["WishItem"];
+                    };
+                };
                 /** @description Accepted; reading */
                 202: {
                     headers: {
@@ -6021,6 +6173,21 @@ export interface components {
             primary_type: string | null;
             rating: number | null;
         } | null;
+        WishConvertedTransaction: {
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            id: string;
+            /**
+             * Format: date
+             * @example 2026-04-19
+             */
+            occurred_on: string;
+            payee: string | null;
+            total_minor: number;
+            currency: string;
+        } | null;
         WishItem: {
             /**
              * Format: uuid
@@ -6064,6 +6231,11 @@ export interface components {
              * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
              */
             converted_transaction_id: string | null;
+            /** Format: date-time */
+            converted_at: string | null;
+            /** @enum {string|null} */
+            converted_by: "user" | "receipt" | null;
+            converted_transaction: components["schemas"]["WishConvertedTransaction"];
             source_url: string | null;
             has_image: boolean;
             /** @enum {string|null} */
@@ -6092,6 +6264,11 @@ export interface components {
              * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
              */
             place_id?: string;
+            /**
+             * @description A Google place id (`ChIJ…`), as place search returns it.
+             * @example ChIJN1t_tDeuEmsRUsoyG83frY4
+             */
+            google_place_id?: string;
             /** Format: uri */
             source_url?: string;
             /**
@@ -6123,6 +6300,11 @@ export interface components {
              * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
              */
             place_id?: string | null;
+            /**
+             * @description A Google place id (`ChIJ…`), as place search returns it.
+             * @example ChIJN1t_tDeuEmsRUsoyG83frY4
+             */
+            google_place_id?: string;
             /** Format: uri */
             source_url?: string | null;
             /**
@@ -6147,6 +6329,8 @@ export interface components {
              * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
              */
             converted_transaction_id?: string | null;
+            /** Format: date-time */
+            converted_at?: string;
             metadata?: {
                 [key: string]: unknown;
             };
@@ -6154,11 +6338,23 @@ export interface components {
         CaptureWishForm: {
             /**
              * Format: binary
-             * @description A JPEG, PNG, WebP or GIF image: a screenshot or a photo.
+             * @description A JPEG, PNG, WebP, GIF, HEIC or AVIF image: a screenshot or a photo. HEIC and AVIF are stored (and read) as JPEG.
              */
             file: string;
             /** @description What you want to remember about it. Stored as the wish's notes and shown to the reader. */
             note?: string;
+        };
+        WishPlaceCandidate: {
+            google_place_id: string;
+            name: string | null;
+            formatted_address: string | null;
+            rating: number | null;
+            user_rating_count: number | null;
+            primary_type: string | null;
+        };
+        WishPlaceSearchResponse: {
+            query: string;
+            candidates: components["schemas"]["WishPlaceCandidate"][];
         };
         Insight: {
             /**

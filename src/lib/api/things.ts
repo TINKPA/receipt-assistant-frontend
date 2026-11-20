@@ -83,19 +83,36 @@ export async function getWishItem(id: string): Promise<WishItem> {
   return unwrap('getWishItem', data, error, response.status);
 }
 
+/** What a capture upload answered: the wish, and whether it already
+ *  existed (the same image was saved before; it is not read again). */
+export interface CaptureResult {
+  wish: WishItem;
+  existing: boolean;
+}
+
+/** HEIC/HEIF: what an iPhone camera writes. Browsers other than Safari
+ *  cannot decode it, so it is neither compressed nor previewed here; the
+ *  server converts it to JPEG. Some pickers leave `type` empty, hence the
+ *  extension check. */
+export function isHeic(file: File): boolean {
+  return /^image\/hei[cf]/.test(file.type) || /\.hei[cf]$/i.test(file.name);
+}
+
 /**
  * Save a want from one image (a screenshot of a recommendation, a photo of
- * a storefront). The server answers at once with a wish whose
- * `capture_status` is `reading`; the image is read in the background, so
- * the caller polls the wish (or the list) until that changes.
+ * a storefront). A new image answers 202 with a wish whose
+ * `capture_status` is `reading`; it is read in the background, so the
+ * caller polls the wish (or the list) until that changes. An image the
+ * workspace already has answers 200 with the wish it made the first time
+ * (`existing`), in whatever state that wish is.
  *
- * Large images are downscaled first, as receipt uploads are. If the
- * browser cannot decode the file the original goes up untouched, so the
- * server's own message (it names HEIC, for one) is what the user reads.
+ * Large images are downscaled first, as receipt uploads are, except HEIC
+ * (see `isHeic`). If the browser cannot decode the file the original goes
+ * up untouched, so the server's own message is what the user reads.
  */
-export async function captureWishItem(file: File, note?: string): Promise<WishItem> {
+export async function captureWishItem(file: File, note?: string): Promise<CaptureResult> {
   let payload: File = file;
-  if (file.type.startsWith('image/')) {
+  if (file.type.startsWith('image/') && !isHeic(file)) {
     try {
       payload = await compressImage(file);
     } catch {
@@ -109,7 +126,8 @@ export async function captureWishItem(file: File, note?: string): Promise<WishIt
     body: form as unknown as { file: string },
     bodySerializer: (b) => b as unknown as FormData,
   });
-  return unwrap('captureWishItem', data, error, response.status);
+  const wish = unwrap('captureWishItem', data, error, response.status);
+  return { wish, existing: response.status === 200 };
 }
 
 /** Read a captured wish's image again. 202 with the wish back in `reading`. */
@@ -123,6 +141,17 @@ export async function retryWishCapture(id: string): Promise<WishItem> {
 /** The image a wish was captured from; only when `has_image`. */
 export function wishImageUrl(id: string): string {
   return `/api/v1/wish-items/${id}/image`;
+}
+
+export type WishPlaceCandidate = components['schemas']['WishPlaceCandidate'];
+
+/** Up to five Google places for `q`, to pick a wish's place from. Send
+ *  the pick back as `google_place_id` in `patchWishItem`. */
+export async function searchWishPlaces(q: string): Promise<WishPlaceCandidate[]> {
+  const { data, error, response } = await client.GET('/v1/wish-items/place-search', {
+    params: { query: { q } },
+  });
+  return unwrap('searchWishPlaces', data, error, response.status).candidates;
 }
 
 export async function createWishItem(body: CreateWishItemRequest): Promise<WishItem> {

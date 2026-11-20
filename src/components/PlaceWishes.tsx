@@ -7,23 +7,25 @@ import {
   listWishItems,
   patchWishItem,
   retryWishCapture,
-  wishImageUrl,
   type WishItem,
 } from '../lib/api/things';
 import {
   UNPLACED_AREA,
   captureFailureMessage,
   groupWishesByArea,
+  isFailed,
   isReading,
-  isUnreadCapture,
   wishAltName,
   wishArea,
   wishCategory,
+  wishClosure,
   wishListKey,
   wishProblemMessage,
   wishReading,
 } from '../lib/wishPlaces';
 import { cn } from '../lib/utils';
+import { WishClosureText } from './WishClosure';
+import { WishThumb } from './WishImage';
 
 const ACTIVE_KEY = wishListKey('place', 'active');
 const VISITED_KEY = wishListKey('place', 'converted');
@@ -158,7 +160,7 @@ export function PlaceWishes() {
             <div className="grid gap-2.5 md:grid-cols-2">
               {g.wishes.map((w) => {
                 if (isReading(w)) return <ReadingCard key={w.id} wish={w} />;
-                if (isUnreadCapture(w)) {
+                if (isFailed(w)) {
                   return (
                     <FailedCard
                       key={w.id}
@@ -192,20 +194,7 @@ export function PlaceWishes() {
           {showVisited && (
             <ul className="divide-y divide-[var(--color-rule-soft)] rounded-[14px] border-[0.5px] border-[var(--color-rule-soft)] bg-[var(--color-surface)]">
               {visited.map((w) => (
-                <li key={w.id}>
-                  <Link
-                    to="/wish/$wishId"
-                    params={{ wishId: w.id }}
-                    className="flex items-baseline justify-between gap-3 px-3.5 py-2.5"
-                  >
-                    <span className="min-w-0 truncate font-display text-[13.5px] font-medium">
-                      {w.title}
-                    </span>
-                    <span className="shrink-0 font-mono text-[9px] text-[var(--color-ink-muted)]">
-                      {wishArea(w) === UNPLACED_AREA ? '' : wishArea(w)}
-                    </span>
-                  </Link>
-                </li>
+                <VisitedRow key={w.id} wish={w} />
               ))}
             </ul>
           )}
@@ -215,22 +204,49 @@ export function PlaceWishes() {
   );
 }
 
+/** A visited place: its name (to its page) and how it was closed, the
+ *  receipt's line opening the receipt. Two links side by side, never one
+ *  inside the other. */
+function VisitedRow({ wish }: { wish: WishItem }) {
+  const closure = wishClosure(wish);
+  const area = wishArea(wish);
+  return (
+    <li className="px-3.5 py-2.5">
+      <Link
+        to="/wish/$wishId"
+        params={{ wishId: wish.id }}
+        className="flex items-baseline justify-between gap-3"
+      >
+        <span className="min-w-0 truncate font-display text-[13.5px] font-medium">{wish.title}</span>
+        <span className="shrink-0 font-mono text-[9px] text-[var(--color-ink-muted)]">
+          {area === UNPLACED_AREA ? '' : area}
+        </span>
+      </Link>
+      {closure &&
+        (closure.by === 'receipt' ? (
+          <Link
+            to="/receipt/$receiptId"
+            params={{ receiptId: closure.transactionId }}
+            className="mt-0.5 block truncate text-[11.5px] text-[var(--color-ink-muted)] hover:text-[var(--color-ink)]"
+          >
+            <WishClosureText closure={closure} kind="place" />
+            <span className="text-[var(--color-accent)]"> →</span>
+          </Link>
+        ) : (
+          <p className="mt-0.5 truncate text-[11.5px] text-[var(--color-ink-muted)]">
+            <WishClosureText closure={closure} kind="place" />
+          </p>
+        ))}
+    </li>
+  );
+}
+
 const CARD =
   'overflow-hidden rounded-[14px] border-[0.5px] border-[var(--color-rule-soft)] bg-[var(--color-surface)]';
 
-/** The image a wish was captured from. */
+/** The image a place wish was captured from, beside its card. */
 function Thumb({ wish, dimmed }: { wish: WishItem; dimmed?: boolean }) {
-  return (
-    <div className="relative aspect-[3/4] w-[84px] shrink-0 overflow-hidden rounded-[10px] bg-[var(--color-paper-deep)]">
-      <img
-        src={wishImageUrl(wish.id)}
-        alt=""
-        loading="lazy"
-        decoding="async"
-        className={cn('h-full w-full object-cover', dimmed && 'opacity-60')}
-      />
-    </div>
-  );
+  return <WishThumb wish={wish} dimmed={dimmed} className="aspect-[3/4] w-[84px] rounded-[10px]" />;
 }
 
 function PlaceCard({ wish, onVisited }: { wish: WishItem; onVisited: () => void }) {

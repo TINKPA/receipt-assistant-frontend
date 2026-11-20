@@ -32,10 +32,20 @@ function AddRoute() {
       initialMode={mode ?? 'receipt'}
       // Opened from Wanting, the screen closes back to Wanting.
       onCancel={() => (mode === 'want' ? toPlaces() : navigate({ to: '/' }))}
-      onWantSaved={() => {
+      onWantSaved={({ wish, existing }) => {
+        void qc.invalidateQueries({ queryKey: ['wish-items'] });
+        // The same image saved before: nothing new was made, so show the
+        // wish it made then, and say so.
+        if (existing) {
+          void navigate({
+            to: '/wish/$wishId',
+            params: { wishId: wish.id },
+            search: { notice: 'already-saved' },
+          });
+          return;
+        }
         // The new wish is `reading`; the Places list shows it as such and
         // polls until the server has filled it in.
-        void qc.invalidateQueries({ queryKey: ['wish-items'] });
         void toPlaces();
       }}
       onComplete={(job) => {

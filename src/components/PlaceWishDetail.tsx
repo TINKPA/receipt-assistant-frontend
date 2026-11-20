@@ -5,7 +5,6 @@ import {
   deleteWishItem,
   patchWishItem,
   retryWishCapture,
-  wishImageUrl,
   type UpdateWishItemRequest,
   type WishItem,
 } from '../lib/api/things';
@@ -14,15 +13,18 @@ import {
   humanizePlaceType,
   isFailed,
   isReading,
-  isUnreadCapture,
   wishAltName,
   wishCategory,
+  wishClosure,
   wishDetailKey,
   wishProblemMessage,
   wishReading,
 } from '../lib/wishPlaces';
 import { useBack } from '../lib/useBack';
 import { cn } from '../lib/utils';
+import { PlaceSearch } from './PlaceSearch';
+import { WishClosureCard } from './WishClosure';
+import { WishHeroImage } from './WishImage';
 
 const LABEL = 'font-mono text-[8.5px] uppercase tracking-[0.18em] text-[var(--color-ink-muted)]';
 const CARD =
@@ -39,6 +41,8 @@ export function PlaceWishDetail({ wish }: { wish: WishItem }) {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [err, setErr] = useState<string | null>(null);
+  // The place search is open (from "Wrong place" or "Find on map").
+  const [searching, setSearching] = useState(false);
 
   const onError = (e: unknown) => setErr(wishProblemMessage(e));
   const refresh = () => qc.invalidateQueries({ queryKey: ['wish-items'] });
@@ -54,6 +58,15 @@ export function PlaceWishDetail({ wish }: { wish: WishItem }) {
     onMutate: () => setErr(null),
     onSuccess: show,
     onError,
+  });
+  // A place picked in the search, or the match removed. Its failure is
+  // shown inside the search, which stays open for another try.
+  const placeMut = useMutation({
+    mutationFn: (body: UpdateWishItemRequest) => patchWishItem(wish.id, body),
+    onSuccess: (next) => {
+      setSearching(false);
+      show(next);
+    },
   });
   const retryMut = useMutation({
     mutationFn: () => retryWishCapture(wish.id),
@@ -74,13 +87,28 @@ export function PlaceWishDetail({ wish }: { wish: WishItem }) {
 
   const reading = wishReading(wish);
   const readingNow = isReading(wish);
-  const unread = isUnreadCapture(wish);
+  const unread = isFailed(wish);
   const visited = wish.status === 'converted';
+  const closure = wishClosure(wish);
   const alt = wishAltName(wish);
   const category = wishCategory(wish);
   const place = wish.place;
   const sourceUrl = wish.source_url ?? reading?.sourceUrl ?? null;
-  const busy = patchMut.isPending || retryMut.isPending || deleteMut.isPending;
+  const busy =
+    patchMut.isPending || placeMut.isPending || retryMut.isPending || deleteMut.isPending;
+
+  // The search starts from the name and, when one is known, the area: the
+  // area the image named, else the matched place's.
+  const area = reading?.locality ?? place?.locality ?? null;
+  const name = unread ? '' : wish.title.trim();
+  const searchQuery =
+    area && !name.toLowerCase().includes(area.toLowerCase())
+      ? `${name} ${area}`.trim()
+      : name;
+  const openSearch = () => {
+    placeMut.reset();
+    setSearching(true);
+  };
 
   return (
     <div className="mx-auto max-w-[560px] space-y-4">
@@ -98,25 +126,11 @@ export function PlaceWishDetail({ wish }: { wish: WishItem }) {
       </div>
 
       {wish.has_image && (
-        <a
-          href={wishImageUrl(wish.id)}
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label="Open the captured image full size"
-          className="relative block overflow-hidden rounded-[18px] border-[0.5px] border-[var(--color-rule-soft)] bg-[var(--color-paper-deep)]"
-        >
-          <img
-            src={wishImageUrl(wish.id)}
-            alt="The image this place was saved from"
-            className={cn(
-              'mx-auto max-h-[56vh] w-auto max-w-full object-contain',
-              readingNow && 'animate-pulse',
-            )}
-          />
-          <span className="absolute bottom-2.5 right-2.5 rounded-full bg-[color:rgba(251,247,238,0.92)] px-2.5 py-1 font-mono text-[8.5px] text-[var(--color-ink-soft)]">
-            full size ↗
-          </span>
-        </a>
+        <WishHeroImage
+          wish={wish}
+          alt="The image this place was saved from"
+          pulsing={readingNow}
+        />
       )}
 
       {readingNow ? (
@@ -185,9 +199,27 @@ export function PlaceWishDetail({ wish }: { wish: WishItem }) {
 
       {err && <p className="text-center text-xs text-[var(--color-stamp)]">{err}</p>}
 
+      {closure && (
+        <Section label="Visited">
+          <WishClosureCard closure={closure} kind="place" className={CARD} />
+        </Section>
+      )}
+
       {!readingNow && (
         <Section label="The place">
-          {place ? (
+          {searching ? (
+            <PlaceSearch
+              initialQuery={searchQuery}
+              currentGooglePlaceId={place?.google_place_id ?? null}
+              picking={
+                placeMut.isPending ? (placeMut.variables.google_place_id ?? null) : null
+              }
+              pickError={placeMut.error ? wishProblemMessage(placeMut.error) : null}
+              onPick={(c) => placeMut.mutate({ google_place_id: c.google_place_id })}
+              onRemove={place ? () => placeMut.mutate({ place_id: null }) : undefined}
+              onClose={() => setSearching(false)}
+            />
+          ) : place ? (
             <div className={CARD}>
               <p className="font-display text-[15px] font-medium leading-tight">
                 {place.name ?? wish.title}
@@ -223,22 +255,23 @@ export function PlaceWishDetail({ wish }: { wish: WishItem }) {
                 ) : (
                   <span />
                 )}
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => patchMut.mutate({ place_id: null })}
-                  className={SMALL_ACTION}
-                >
+                <button type="button" disabled={busy} onClick={openSearch} className={SMALL_ACTION}>
                   Wrong place
                 </button>
               </div>
             </div>
           ) : (
-            <p className={cn(CARD, 'border-dashed text-[12.5px] leading-snug text-[var(--color-ink-muted)]')}>
-              Not matched to a place on the map.
-              {reading?.address ? ` The image says: ${reading.address}.` : ''}
-              {wish.has_image ? ' Reading the image again looks for it again.' : ''}
-            </p>
+            <div className={cn(CARD, 'border-dashed')}>
+              <p className="text-[12.5px] leading-snug text-[var(--color-ink-muted)]">
+                Not matched to a place on the map.
+                {reading?.address ? ` The image says: ${reading.address}.` : ''}
+              </p>
+              <div className="mt-2.5 flex justify-end">
+                <button type="button" disabled={busy} onClick={openSearch} className={SMALL_ACTION}>
+                  Find on map
+                </button>
+              </div>
+            </div>
           )}
         </Section>
       )}

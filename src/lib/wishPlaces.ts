@@ -6,6 +6,7 @@
  * so everything here narrows by hand and treats a missing key as absent.
  */
 import type { WishItem } from './api/things';
+import { formatMoney } from './money';
 
 export interface WishReading {
   category: string | null;
@@ -44,20 +45,14 @@ export function wishReading(w: WishItem): WishReading | null {
 }
 
 export const isReading = (w: WishItem): boolean => w.capture_status === 'reading';
-export const isFailed = (w: WishItem): boolean => w.capture_status === 'failed';
-
-// The titles the server gives a capture it has not read: while reading,
-// and after a failed reading (receipt-assistant `src/wish/capture.ts`).
-const UNREAD_TITLES = new Set(['Reading…', 'Unread capture']);
 
 /**
- * A failed capture nobody has named yet. Naming one leaves
- * `capture_status` at `failed` (only the server writes it), so the title
- * is the only sign that the person has dealt with it: once it is theirs,
- * the wish is listed as an ordinary place.
+ * A failed capture nobody has dealt with yet. The server resolves one the
+ * moment the person names it (or gives it a kind or a place):
+ * `capture_status` becomes `done` with `capture.resolved_by: user`, so
+ * `failed` alone says it still needs them.
  */
-export const isUnreadCapture = (w: WishItem): boolean =>
-  isFailed(w) && UNREAD_TITLES.has(w.title.trim());
+export const isFailed = (w: WishItem): boolean => w.capture_status === 'failed';
 
 /** Why a capture failed, in words for the person who uploaded it. */
 export function captureFailureMessage(w: WishItem): string {
@@ -155,3 +150,48 @@ export function wishProblemMessage(err: unknown): string {
 export const wishListKey = (kind: WishItem['kind'], status: WishItem['status']) =>
   ['wish-items', 'list', { kind, status }] as const;
 export const wishDetailKey = (id: string) => ['wish-items', 'detail', id] as const;
+
+const DAY: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', year: 'numeric' };
+
+/** `2026-11-20` → `Nov 20, 2026`: a calendar date, read as written. */
+function fmtDay(ymd: string): string {
+  const [y, m, d] = ymd.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString('en-US', DAY);
+}
+
+/** An instant, as the viewer's calendar day. */
+const fmtInstantDay = (iso: string): string => new Date(iso).toLocaleDateString('en-US', DAY);
+
+/**
+ * How a converted wish was closed.
+ *
+ * `receipt`: a purchase at the place (or of the product) was booked after
+ * the wish was made, and that transaction closed it; `transactionId` is
+ * the receipt page to link. `user`: the person said so ("Been there",
+ * "Convert to purchase"). A wish converted before the server recorded who
+ * did it reads as the person's, dated by `converted_at` when there is one.
+ */
+export type WishClosure =
+  | {
+      by: 'receipt';
+      date: string;
+      payee: string | null;
+      amount: string;
+      transactionId: string;
+    }
+  | { by: 'user'; date: string | null };
+
+export function wishClosure(w: WishItem): WishClosure | null {
+  if (w.status !== 'converted') return null;
+  const tx = w.converted_transaction;
+  if (w.converted_by === 'receipt' && tx) {
+    return {
+      by: 'receipt',
+      date: fmtDay(tx.occurred_on),
+      payee: str(tx.payee),
+      amount: formatMoney(tx.total_minor, tx.currency),
+      transactionId: tx.id,
+    };
+  }
+  return { by: 'user', date: w.converted_at ? fmtInstantDay(w.converted_at) : null };
+}

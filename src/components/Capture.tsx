@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { ingestBatch, extractProblemMessage } from '../lib/api';
-import { captureWishItem, type WishItem } from '../lib/api/things';
+import { captureWishItem, isHeic, type CaptureResult } from '../lib/api/things';
 import { wishProblemMessage } from '../lib/wishPlaces';
 import { cn } from '../lib/utils';
 
@@ -16,8 +16,9 @@ interface CaptureProps {
   /** Which mode the screen opens in. The user can switch; the choice is
    *  always theirs, never inferred from the picture. */
   initialMode?: CaptureMode;
-  /** Want mode: the image is stored and its wish is being read. */
-  onWantSaved?: (wish: WishItem) => void;
+  /** Want mode: the image is stored and its wish is being read, or (with
+   *  `existing`) the same image was saved before and that wish is back. */
+  onWantSaved?: (result: CaptureResult) => void;
 }
 
 type CameraState =
@@ -133,9 +134,15 @@ export default function Capture({
   // A blob URL only renders in an <img> when the blob is actually an image.
   // PDFs and saved HTML receipts are valid uploads with no thumbnail, so the
   // confirm stage shows them a document card rather than a broken image.
-  const isImageFile = (file: File) => file.type.startsWith('image/');
-  const documentKind = (file: File) =>
-    file.type === 'application/pdf' ? 'PDF document' : 'Saved web page';
+  const isImageFile = (file: File) => file.type.startsWith('image/') || isHeic(file);
+  const documentKind = (file: File) => {
+    if (isHeic(file)) return 'HEIC photo · converted on upload';
+    return file.type === 'application/pdf' ? 'PDF document' : 'Saved web page';
+  };
+  // Only Safari decodes HEIC; elsewhere its preview fails and the confirm
+  // stage shows the file card instead. Keyed by blob URL, so a new shot
+  // gets its own try.
+  const [unpreviewable, setUnpreviewable] = useState<string | null>(null);
 
   const addPending = (file: File) => {
     const shot = { file, url: URL.createObjectURL(file) };
@@ -190,10 +197,10 @@ export default function Capture({
     setUpload({ kind: 'uploading', filename: files[0].name });
     if (want) {
       try {
-        const wish = await captureWishItem(files[files.length - 1]);
+        const result = await captureWishItem(files[files.length - 1]);
         pending.forEach((p) => URL.revokeObjectURL(p.url));
         setPending([]);
-        onWantSaved?.(wish);
+        onWantSaved?.(result);
       } catch (err: unknown) {
         setUpload({ kind: 'error', message: wishProblemMessage(err) });
       }
@@ -265,12 +272,15 @@ export default function Capture({
   const showCameraFallbackHint = camera.kind === 'denied' || camera.kind === 'unsupported';
 
   // ── Confirm stage (board screen 15) ───────────────────────────
+  // /add hangs off the root route, not `_shell`, so there is no parent
+  // padding for a `-mx-4 -mt-4` to cancel: both stages take their 16px
+  // gutter from their own padding (see AddManually).
   if (reviewing && pending.length > 0) {
     const last = pending[pending.length - 1];
     const totalKB = Math.round(pending.reduce((s, p) => s + p.file.size, 0) / 1024);
     const uploading = upload.kind === 'uploading';
     return (
-      <div className="-mx-4 -mt-4 flex min-h-[100dvh] flex-col bg-[var(--color-paper)] px-4 pt-4 sm:-mx-6 sm:-mt-6 sm:px-6 lg:-mx-10 lg:-mt-10">
+      <div className="flex min-h-[100dvh] flex-col bg-[var(--color-paper)] px-4 pt-4 sm:px-6">
         <div className="mx-auto flex w-full max-w-[480px] flex-1 flex-col">
           <div className="flex items-center justify-between pt-2">
             <button
@@ -291,8 +301,13 @@ export default function Capture({
           </div>
 
           <div className="relative mt-4 flex-1 overflow-hidden rounded-[20px] border-[0.5px] border-[var(--color-rule-soft)] bg-[var(--color-ink)]">
-            {isImageFile(last.file) ? (
-              <img src={last.url} alt={want ? 'Captured image' : 'Captured receipt'} className="absolute inset-0 h-full w-full object-contain" />
+            {isImageFile(last.file) && unpreviewable !== last.url ? (
+              <img
+                src={last.url}
+                alt={want ? 'Captured image' : 'Captured receipt'}
+                onError={() => setUnpreviewable(last.url)}
+                className="absolute inset-0 h-full w-full object-contain"
+              />
             ) : (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-8 text-center">
                 <span aria-hidden="true" className="text-[34px] leading-none text-[var(--color-paper-fold)]">
@@ -364,7 +379,7 @@ export default function Capture({
 
   return (
     <div
-      className="min-h-[calc(100vh-6rem)] flex flex-col -mx-4 sm:-mx-6 lg:-mx-10 -mt-4 sm:-mt-6 lg:-mt-10"
+      className="min-h-[calc(100vh-6rem)] flex flex-col"
       style={{
         background:
           'linear-gradient(180deg, var(--color-paper) 0%, var(--color-paper-deep) 100%)',
@@ -387,7 +402,7 @@ export default function Capture({
       <input
         ref={galleryInputRef}
         type="file"
-        accept={want ? 'image/*' : 'image/*,application/pdf,text/html,.html'}
+        accept={want ? 'image/*,.heic,.heif' : 'image/*,application/pdf,text/html,.html'}
         className="hidden"
         onChange={handlePicked}
       />

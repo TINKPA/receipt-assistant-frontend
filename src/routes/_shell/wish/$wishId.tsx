@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { z } from 'zod';
 import {
   deleteWishItem,
   getWishItem,
@@ -8,13 +9,22 @@ import {
   patchWishItem,
   type WishItem,
 } from '../../../lib/api/things';
+import { WishClosureCard } from '../../../components/WishClosure';
+import { WishHeroImage } from '../../../components/WishImage';
 import { wishPerDay, perDay, isSnoozed } from '../../../lib/things';
-import { isReading, wishDetailKey } from '../../../lib/wishPlaces';
+import { isReading, wishClosure, wishDetailKey } from '../../../lib/wishPlaces';
 import { PlaceWishDetail } from '../../../components/PlaceWishDetail';
 import { useBack } from '../../../lib/useBack';
 import { cn } from '../../../lib/utils';
 
+// `?notice=already-saved`: arrived from a capture of an image this wish
+// was already saved from. Shown once, then dropped from the URL.
+const wishDetailSearch = z.object({
+  notice: z.enum(['already-saved']).optional().catch(undefined),
+});
+
 export const Route = createFileRoute('/_shell/wish/$wishId')({
+  validateSearch: wishDetailSearch,
   component: WishDetailRoute,
 });
 
@@ -50,8 +60,36 @@ function WishDetailRoute() {
   }
   // A capture is a place until its reading says otherwise, so one that is
   // still being read, or that failed, lands on the place page too.
-  if (wish.kind === 'place') return <PlaceWishDetail wish={wish} />;
-  return <ThingWishDetail wish={wish} />;
+  return (
+    <>
+      <AlreadySavedNotice />
+      {wish.kind === 'place' ? <PlaceWishDetail wish={wish} /> : <ThingWishDetail wish={wish} />}
+    </>
+  );
+}
+
+function AlreadySavedNotice() {
+  const { notice } = Route.useSearch();
+  const navigate = Route.useNavigate();
+  useEffect(() => {
+    if (!notice) return;
+    const t = setTimeout(() => {
+      void navigate({ search: {}, replace: true });
+    }, 4000);
+    return () => clearTimeout(t);
+  }, [notice, navigate]);
+  if (notice !== 'already-saved') return null;
+  return (
+    <p
+      role="status"
+      className="mx-auto mb-1 max-w-[560px] rounded-[12px] bg-[var(--color-ink)] px-3.5 py-2.5 text-center font-display text-[13.5px] text-[var(--color-paper)]"
+    >
+      Already saved
+      <span className="block font-mono text-[8.5px] uppercase tracking-[0.12em] text-[var(--color-paper-fold)]">
+        this image was saved before · here is that wish
+      </span>
+    </p>
+  );
 }
 
 /**
@@ -92,6 +130,18 @@ function ThingWishDetail({ wish }: { wish: WishItem }) {
   const pd = wishPerDay(wish);
   const target = wish.target_price_minor != null ? wish.target_price_minor / 100 : null;
   const snoozed = isSnoozed(wish);
+  const closure = wishClosure(wish);
+  const badges = (
+    <>
+      <span className="absolute bottom-3 left-3 rounded-full bg-[color:rgba(251,247,238,0.92)] px-2.5 py-1 font-mono text-[8.5px] text-[var(--color-ink-soft)]">
+        ● {snoozed ? `snoozed until ${wish.snoozed_until}` : wish.urgency} · saved{' '}
+        {wish.created_at.slice(0, 10)}
+      </span>
+      <span className="absolute right-3 top-3 rounded-[4px] border border-[var(--color-ink-faint)] px-1.5 py-0.5 font-mono text-[7px] uppercase tracking-[0.14em] text-[var(--color-ink-muted)] [transform:rotate(2deg)]">
+        wish
+      </span>
+    </>
+  );
 
   return (
     <div className="space-y-4">
@@ -108,26 +158,26 @@ function ThingWishDetail({ wish }: { wish: WishItem }) {
         </span>
       </div>
 
-      {/* hero */}
-      <div className="relative flex aspect-[5/3] items-center justify-center overflow-hidden rounded-[18px] border-[0.5px] border-[var(--color-rule-soft)] bg-[var(--color-paper-deep)]">
-        <span
-          aria-hidden="true"
-          className="flex h-full w-full items-center justify-center text-[64px] text-[var(--color-ink-faint)]"
-          style={{
-            background:
-              'repeating-linear-gradient(45deg, transparent 0 7px, rgba(140,130,115,0.07) 7px 9px)',
-          }}
-        >
-          ◇
-        </span>
-        <span className="absolute bottom-3 left-3 rounded-full bg-[color:rgba(251,247,238,0.92)] px-2.5 py-1 font-mono text-[8.5px] text-[var(--color-ink-soft)]">
-          ● {snoozed ? `snoozed until ${wish.snoozed_until}` : wish.urgency} · saved{' '}
-          {wish.created_at.slice(0, 10)}
-        </span>
-        <span className="absolute right-3 top-3 rounded-[4px] border border-[var(--color-ink-faint)] px-1.5 py-0.5 font-mono text-[7px] uppercase tracking-[0.14em] text-[var(--color-ink-muted)] [transform:rotate(2deg)]">
-          wish
-        </span>
-      </div>
+      {/* hero: the image it was captured from, else the placeholder */}
+      {wish.has_image ? (
+        <WishHeroImage wish={wish} alt="The image this wish was saved from">
+          {badges}
+        </WishHeroImage>
+      ) : (
+        <div className="relative flex aspect-[5/3] items-center justify-center overflow-hidden rounded-[18px] border-[0.5px] border-[var(--color-rule-soft)] bg-[var(--color-paper-deep)]">
+          <span
+            aria-hidden="true"
+            className="flex h-full w-full items-center justify-center text-[64px] text-[var(--color-ink-faint)]"
+            style={{
+              background:
+                'repeating-linear-gradient(45deg, transparent 0 7px, rgba(140,130,115,0.07) 7px 9px)',
+            }}
+          >
+            ◇
+          </span>
+          {badges}
+        </div>
+      )}
 
       <div>
         <h1 className="font-display text-[22px] font-medium leading-tight tracking-tight">
@@ -172,24 +222,46 @@ function ThingWishDetail({ wish }: { wish: WishItem }) {
 
       {err && <p className="text-center text-xs text-[var(--color-stamp)]">{err}</p>}
 
+      {closure && (
+        <WishClosureCard
+          closure={closure}
+          kind="thing"
+          className="rounded-[13px] border-[0.5px] border-[var(--color-rule-soft)] bg-[var(--color-surface)] px-3.5 py-3"
+        />
+      )}
+
       {/* decision actions */}
       <div className="space-y-2 pb-4">
-        <button
-          type="button"
-          disabled={patchMut.isPending}
-          onClick={() =>
-            patchMut.mutate(
-              { status: 'converted' },
-              { onSuccess: () => navigate({ to: '/wish', search: { section: 'things' } }) },
-            )
-          }
-          className="block w-full rounded-[14px] bg-[var(--color-ink)] py-3.5 text-center font-display text-[15px] font-medium text-[var(--color-paper)]"
-        >
-          Convert to purchase
-          <span className="block font-mono text-[8.5px] uppercase tracking-[0.12em] text-[var(--color-paper-fold)]">
-            marks converted · link the transaction after it lands
-          </span>
-        </button>
+        {closure ? (
+          <button
+            type="button"
+            disabled={patchMut.isPending}
+            onClick={() => patchMut.mutate({ status: 'active' })}
+            className="block w-full rounded-[14px] border-[0.5px] border-[var(--color-rule)] bg-[var(--color-surface)] py-3.5 text-center font-display text-[15px] font-medium text-[var(--color-ink-soft)]"
+          >
+            Want again
+            <span className="block font-mono text-[8.5px] uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">
+              puts it back on the list
+            </span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            disabled={patchMut.isPending}
+            onClick={() =>
+              patchMut.mutate(
+                { status: 'converted' },
+                { onSuccess: () => navigate({ to: '/wish', search: { section: 'things' } }) },
+              )
+            }
+            className="block w-full rounded-[14px] bg-[var(--color-ink)] py-3.5 text-center font-display text-[15px] font-medium text-[var(--color-paper)]"
+          >
+            Convert to purchase
+            <span className="block font-mono text-[8.5px] uppercase tracking-[0.12em] text-[var(--color-paper-fold)]">
+              marks converted · link the transaction after it lands
+            </span>
+          </button>
+        )}
         <div className="grid grid-cols-2 gap-2">
           <button
             type="button"
