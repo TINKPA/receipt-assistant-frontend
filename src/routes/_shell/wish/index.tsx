@@ -1,15 +1,32 @@
 import { useMemo, useState } from 'react';
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { z } from 'zod';
 import {
   createWishItem,
   listOwnedItemsExpanded,
   listWishItems,
 } from '../../../lib/api/things';
 import { wishPerDay, fmtPerDay, fmtDollars, isSnoozed, perDay } from '../../../lib/things';
+import { wishListKey } from '../../../lib/wishPlaces';
 import { cn } from '../../../lib/utils';
+import { PlaceWishes } from '../../../components/PlaceWishes';
+import { SegmentedControl, ThingsSwitch } from '../../../components/Segmented';
+
+const SECTIONS = [
+  { key: 'places', label: 'Places' },
+  { key: 'things', label: 'Things' },
+] as const;
+type Section = (typeof SECTIONS)[number]['key'];
+
+// The section lives in the URL so a reload, or coming back from a detail
+// page, lands where the user was. Absent (or anything else) means Places.
+const wishSearch = z.object({
+  section: z.enum(['places', 'things']).optional().catch(undefined),
+});
 
 export const Route = createFileRoute('/_shell/wish/')({
+  validateSearch: wishSearch,
   component: WishRoute,
 });
 
@@ -17,16 +34,65 @@ type Pill = 'all' | 'now' | 'soon' | 'someday' | 'snoozed';
 const PILLS: Pill[] = ['all', 'now', 'soon', 'someday', 'snoozed'];
 
 /**
- * /wish — the wishlist (board screen 12): the same machinery as owned,
+ * /wish — Wanting, the other half of the Things tab. Two sections: places
+ * to go to (first, and the default) and things to buy.
+ */
+function WishRoute() {
+  const section: Section = Route.useSearch().section ?? 'places';
+  const navigate = Route.useNavigate();
+  const [adding, setAdding] = useState(false);
+
+  return (
+    <div className="space-y-4">
+      <ThingsSwitch active="wanting" />
+
+      <header className="flex items-start justify-between">
+        <div>
+          <h1 className="font-display text-3xl tracking-tight">Wanting</h1>
+          <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--color-ink-muted)]">
+            {section === 'places' ? 'places to go' : 'things to buy'} · derived from wish_items
+          </p>
+        </div>
+        {section === 'things' && (
+          <button
+            type="button"
+            onClick={() => setAdding((v) => !v)}
+            className="rounded-full bg-[var(--color-ink)] px-3.5 py-1.5 font-mono text-[9px] uppercase tracking-[0.1em] text-[var(--color-paper)]"
+          >
+            {adding ? '× close' : '+ wish'}
+          </button>
+        )}
+      </header>
+
+      <SegmentedControl
+        label="Kind of wish"
+        options={SECTIONS}
+        value={section}
+        onChange={(key) => {
+          setAdding(false);
+          void navigate({ search: { section: key }, replace: true });
+        }}
+      />
+
+      {section === 'places' ? (
+        <PlaceWishes />
+      ) : (
+        <ThingWishes adding={adding} onAdded={() => setAdding(false)} />
+      )}
+    </div>
+  );
+}
+
+/**
+ * The wishlist of things (board screen 12): the same machinery as owned,
  * run forward. Each wish projects a $/day; the header shows what the
  * whole list would do to the portfolio's daily cost if acquired.
  */
-function WishRoute() {
+function ThingWishes({ adding, onAdded }: { adding: boolean; onAdded: () => void }) {
   const [pill, setPill] = useState<Pill>('all');
-  const [adding, setAdding] = useState(false);
   const { data: wishes = [], isLoading } = useQuery({
-    queryKey: ['wish-items'],
-    queryFn: () => listWishItems({ status: 'active' }),
+    queryKey: wishListKey('thing', 'active'),
+    queryFn: () => listWishItems({ status: 'active', kind: 'thing' }),
   });
   const { data: owned = [] } = useQuery({
     queryKey: ['owned-items', 'expanded'],
@@ -54,31 +120,7 @@ function WishRoute() {
 
   return (
     <div className="space-y-4">
-      <header className="flex items-start justify-between pt-2">
-        <div>
-          <h1 className="font-display text-3xl tracking-tight">Wanting</h1>
-          <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--color-ink-muted)]">
-            derived from wish_items
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Link
-            to="/owned"
-            className="rounded-full border-[0.5px] border-[var(--color-rule)] px-3.5 py-1.5 font-mono text-[9px] uppercase tracking-[0.1em] text-[var(--color-ink-soft)] transition-colors hover:text-[var(--color-ink)]"
-          >
-            ← Owned
-          </Link>
-          <button
-            type="button"
-            onClick={() => setAdding((v) => !v)}
-            className="rounded-full bg-[var(--color-ink)] px-3.5 py-1.5 font-mono text-[9px] uppercase tracking-[0.1em] text-[var(--color-paper)]"
-          >
-            {adding ? '× close' : '+ wish'}
-          </button>
-        </div>
-      </header>
-
-      {adding && <AddWishForm onDone={() => setAdding(false)} />}
+      {adding && <AddWishForm onDone={onAdded} />}
 
       {/* urgency pills */}
       <div className="no-scrollbar flex gap-1.5 overflow-x-auto">

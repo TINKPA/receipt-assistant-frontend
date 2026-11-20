@@ -2113,6 +2113,7 @@ export interface paths {
                 query?: {
                     status?: "active" | "converted" | "declined";
                     urgency?: "now" | "soon" | "someday";
+                    kind?: "thing" | "place";
                     cursor?: string;
                     limit?: number;
                 };
@@ -2295,6 +2296,162 @@ export interface paths {
                 };
             };
         };
+        trace?: never;
+    };
+    "/v1/wish-items/capture": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Save a wish from an image (a screenshot of a post, a chat, a map; a photo)
+         * @description Stores the image and answers at once with a wish whose `capture_status` is `reading` and whose title is a placeholder. The image is then read in the background: the title, kind, notes, source link and, for a place, the matched `place` are filled in and `capture_status` becomes `done`, or `failed` with `capture.error`. Poll `GET /v1/wish-items/{id}`. Nothing the reading fills overwrites a note sent with the upload.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "multipart/form-data": components["schemas"]["CaptureWishForm"];
+                };
+            };
+            responses: {
+                /** @description Accepted; reading */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["WishItem"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                /** @description Not an image this endpoint reads */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/wish-items/{id}/capture/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Read a captured image again */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Accepted; reading */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["WishItem"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+                /** @description No image, or it is being read now */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/wish-items/{id}/image": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The image a wish was captured from */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description The image bytes */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                400: components["responses"]["BadRequest"];
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/v1/insights": {
@@ -5846,6 +6003,24 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        WishPlace: {
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            id: string;
+            google_place_id: string;
+            name: string | null;
+            name_zh: string | null;
+            formatted_address: string | null;
+            locality: string | null;
+            neighborhood: string | null;
+            lat: number | null;
+            lng: number | null;
+            google_maps_uri: string | null;
+            primary_type: string | null;
+            rating: number | null;
+        } | null;
         WishItem: {
             /**
              * Format: uuid
@@ -5862,6 +6037,14 @@ export interface components {
              * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
              */
             product_id: string | null;
+            /** @enum {string} */
+            kind: "thing" | "place";
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            place_id: string | null;
+            place: components["schemas"]["WishPlace"];
             title: string;
             notes: string | null;
             target_price_minor: number | null;
@@ -5881,6 +6064,13 @@ export interface components {
              * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
              */
             converted_transaction_id: string | null;
+            source_url: string | null;
+            has_image: boolean;
+            /** @enum {string|null} */
+            capture_status: "reading" | "done" | "failed" | null;
+            capture: {
+                [key: string]: unknown;
+            } | null;
             /**
              * @description User-defined JSON object; not schema-validated.
              * @default {}
@@ -5895,6 +6085,15 @@ export interface components {
         };
         CreateWishItemRequest: {
             title: string;
+            /** @enum {string} */
+            kind?: "thing" | "place";
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            place_id?: string;
+            /** Format: uri */
+            source_url?: string;
             /**
              * Format: uuid
              * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
@@ -5917,6 +6116,15 @@ export interface components {
         };
         UpdateWishItemRequest: {
             title?: string;
+            /** @enum {string} */
+            kind?: "thing" | "place";
+            /**
+             * Format: uuid
+             * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
+             */
+            place_id?: string | null;
+            /** Format: uri */
+            source_url?: string | null;
             /**
              * Format: uuid
              * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
@@ -5942,6 +6150,15 @@ export interface components {
             metadata?: {
                 [key: string]: unknown;
             };
+        };
+        CaptureWishForm: {
+            /**
+             * Format: binary
+             * @description A JPEG, PNG, WebP or GIF image: a screenshot or a photo.
+             */
+            file: string;
+            /** @description What you want to remember about it. Stored as the wish's notes and shown to the reader. */
+            note?: string;
         };
         Insight: {
             /**

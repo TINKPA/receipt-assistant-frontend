@@ -38,7 +38,9 @@ export default defineConfig(({mode}) => {
       hmr: process.env.DISABLE_HMR !== 'true',
       proxy: {
         '/api': {
-          target: 'http://localhost:3000',
+          // The backend to proxy to. Override to run the dev server against
+          // the sandbox stack: VITE_API_PROXY_TARGET=http://127.0.0.1:3001
+          target: env.VITE_API_PROXY_TARGET || 'http://localhost:3000',
           changeOrigin: true,
           rewrite: (path: string) => path.replace(/^\/api/, ''),
         },

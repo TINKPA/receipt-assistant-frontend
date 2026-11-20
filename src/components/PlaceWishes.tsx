@@ -1,0 +1,429 @@
+import { useMemo, useState, type ReactNode } from 'react';
+import { Link } from '@tanstack/react-router';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  createWishItem,
+  deleteWishItem,
+  listWishItems,
+  patchWishItem,
+  retryWishCapture,
+  wishImageUrl,
+  type WishItem,
+} from '../lib/api/things';
+import {
+  UNPLACED_AREA,
+  captureFailureMessage,
+  groupWishesByArea,
+  isReading,
+  isUnreadCapture,
+  wishAltName,
+  wishArea,
+  wishCategory,
+  wishListKey,
+  wishProblemMessage,
+  wishReading,
+} from '../lib/wishPlaces';
+import { cn } from '../lib/utils';
+
+const ACTIVE_KEY = wishListKey('place', 'active');
+const VISITED_KEY = wishListKey('place', 'converted');
+const MAX_CHIPS = 3;
+
+const LABEL = 'font-mono text-[9px] uppercase tracking-[0.14em] text-[var(--color-ink-muted)]';
+const SMALL_ACTION =
+  'rounded-full border-[0.5px] border-[var(--color-rule)] px-3 py-1.5 font-mono text-[9px] uppercase tracking-[0.1em] text-[var(--color-ink-soft)] transition-colors hover:border-[var(--color-ink-muted)] hover:text-[var(--color-ink)] disabled:opacity-50';
+
+/**
+ * The Places half of Wanting: restaurants (and cafes, bars, …) someone
+ * recommended, saved from a screenshot or typed in, filed by area.
+ *
+ * A wish captured from an image arrives as `reading` and is filled in by
+ * the server some seconds later, so the list polls while any card is in
+ * that state and stops when none is.
+ */
+export function PlaceWishes() {
+  const qc = useQueryClient();
+  const [typing, setTyping] = useState(false);
+  const [showVisited, setShowVisited] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const { data: wishes = [], isLoading, error } = useQuery({
+    queryKey: ACTIVE_KEY,
+    queryFn: () => listWishItems({ status: 'active', kind: 'place' }),
+    refetchInterval: (query) => (query.state.data?.some(isReading) ? 3000 : false),
+  });
+  const { data: visited = [] } = useQuery({
+    queryKey: VISITED_KEY,
+    queryFn: () => listWishItems({ status: 'converted', kind: 'place' }),
+  });
+
+  const groups = useMemo(() => groupWishesByArea(wishes), [wishes]);
+  const refresh = () => qc.invalidateQueries({ queryKey: ['wish-items'] });
+  const onError = (e: unknown) => setErr(wishProblemMessage(e));
+
+  // "Been there" takes the card out of the list at once; the refetch that
+  // follows either confirms it or, after a failure, puts it back.
+  const visitMut = useMutation({
+    mutationFn: (id: string) => patchWishItem(id, { status: 'converted' }),
+    onMutate: async (id) => {
+      setErr(null);
+      await qc.cancelQueries({ queryKey: ACTIVE_KEY });
+      const before = qc.getQueryData<WishItem[]>(ACTIVE_KEY);
+      qc.setQueryData<WishItem[]>(ACTIVE_KEY, (list) => list?.filter((w) => w.id !== id));
+      return { before };
+    },
+    onError: (e, _id, ctx) => {
+      if (ctx?.before) qc.setQueryData(ACTIVE_KEY, ctx.before);
+      onError(e);
+    },
+    onSettled: refresh,
+  });
+  const retryMut = useMutation({
+    mutationFn: (id: string) => retryWishCapture(id),
+    onMutate: () => setErr(null),
+    onSuccess: (wish) => {
+      // Put the `reading` row in place now, so polling starts without
+      // waiting for a refetch to notice.
+      qc.setQueryData<WishItem[]>(ACTIVE_KEY, (list) =>
+        list?.map((w) => (w.id === wish.id ? wish : w)),
+      );
+    },
+    onError,
+    onSettled: refresh,
+  });
+  const deleteMut = useMutation({
+    mutationFn: (id: string) => deleteWishItem(id),
+    onMutate: () => setErr(null),
+    onError,
+    onSettled: refresh,
+  });
+
+  const addRow = (
+    <div className="space-y-2">
+      <Link
+        to="/add"
+        search={{ mode: 'want' }}
+        className="block w-full rounded-[14px] bg-[var(--color-ink)] py-3 text-center font-display text-[15px] font-medium text-[var(--color-paper)] transition-opacity hover:opacity-90"
+      >
+        Add from a screenshot
+        <span className="block font-mono text-[8.5px] uppercase tracking-[0.12em] text-[var(--color-paper-fold)]">
+          read for you · matched to the place
+        </span>
+      </Link>
+      {typing ? (
+        <AddPlaceForm onDone={() => setTyping(false)} />
+      ) : (
+        <button
+          type="button"
+          onClick={() => setTyping(true)}
+          className="block w-full py-1 text-center font-mono text-[9px] uppercase tracking-[0.1em] text-[var(--color-ink-muted)] hover:text-[var(--color-ink)]"
+        >
+          or type a name
+        </button>
+      )}
+    </div>
+  );
+
+  return (
+    <div className="space-y-4">
+      {addRow}
+
+      {err && <p className="text-center text-xs text-[var(--color-stamp)]">{err}</p>}
+
+      {isLoading ? (
+        <p className="py-10 text-center font-display italic text-[var(--color-ink-muted)]">
+          gathering places…
+        </p>
+      ) : error ? (
+        <p className="py-10 text-center text-xs text-[var(--color-stamp)]">
+          {wishProblemMessage(error)}
+        </p>
+      ) : wishes.length === 0 ? (
+        <div className="rounded-[var(--radius-card)] border-[0.5px] border-dashed border-[var(--color-rule)] px-5 py-8 text-center">
+          <p className="font-display text-[15px] italic leading-snug text-[var(--color-ink-soft)]">
+            Someone recommended a restaurant? Save a screenshot of it here.
+          </p>
+          <p className="mt-2 text-[12px] leading-snug text-[var(--color-ink-muted)]">
+            It is read for you and matched to the place, so the next time you are nearby you know
+            where to go.
+          </p>
+        </div>
+      ) : (
+        groups.map((g) => (
+          <section key={g.area} className="space-y-2">
+            <h2 className={cn(LABEL, 'flex items-baseline justify-between px-0.5')}>
+              <span className="truncate">{g.area}</span>
+              <span className="ml-2 shrink-0 text-[var(--color-ink-faint)]">{g.wishes.length}</span>
+            </h2>
+            <div className="grid gap-2.5 md:grid-cols-2">
+              {g.wishes.map((w) => {
+                if (isReading(w)) return <ReadingCard key={w.id} wish={w} />;
+                if (isUnreadCapture(w)) {
+                  return (
+                    <FailedCard
+                      key={w.id}
+                      wish={w}
+                      busy={retryMut.isPending || deleteMut.isPending}
+                      onRetry={() => retryMut.mutate(w.id)}
+                      onDelete={() => deleteMut.mutate(w.id)}
+                    />
+                  );
+                }
+                return <PlaceCard key={w.id} wish={w} onVisited={() => visitMut.mutate(w.id)} />;
+              })}
+            </div>
+          </section>
+        ))
+      )}
+
+      {visited.length > 0 && (
+        <section className="space-y-2 pt-1">
+          <button
+            type="button"
+            aria-expanded={showVisited}
+            onClick={() => setShowVisited((v) => !v)}
+            className={cn(LABEL, 'flex w-full items-baseline justify-between px-0.5 hover:text-[var(--color-ink)]')}
+          >
+            <span>
+              {showVisited ? '▾' : '▸'} Visited
+            </span>
+            <span className="text-[var(--color-ink-faint)]">{visited.length}</span>
+          </button>
+          {showVisited && (
+            <ul className="divide-y divide-[var(--color-rule-soft)] rounded-[14px] border-[0.5px] border-[var(--color-rule-soft)] bg-[var(--color-surface)]">
+              {visited.map((w) => (
+                <li key={w.id}>
+                  <Link
+                    to="/wish/$wishId"
+                    params={{ wishId: w.id }}
+                    className="flex items-baseline justify-between gap-3 px-3.5 py-2.5"
+                  >
+                    <span className="min-w-0 truncate font-display text-[13.5px] font-medium">
+                      {w.title}
+                    </span>
+                    <span className="shrink-0 font-mono text-[9px] text-[var(--color-ink-muted)]">
+                      {wishArea(w) === UNPLACED_AREA ? '' : wishArea(w)}
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
+    </div>
+  );
+}
+
+const CARD =
+  'overflow-hidden rounded-[14px] border-[0.5px] border-[var(--color-rule-soft)] bg-[var(--color-surface)]';
+
+/** The image a wish was captured from. */
+function Thumb({ wish, dimmed }: { wish: WishItem; dimmed?: boolean }) {
+  return (
+    <div className="relative aspect-[3/4] w-[84px] shrink-0 overflow-hidden rounded-[10px] bg-[var(--color-paper-deep)]">
+      <img
+        src={wishImageUrl(wish.id)}
+        alt=""
+        loading="lazy"
+        decoding="async"
+        className={cn('h-full w-full object-cover', dimmed && 'opacity-60')}
+      />
+    </div>
+  );
+}
+
+function PlaceCard({ wish, onVisited }: { wish: WishItem; onVisited: () => void }) {
+  const reading = wishReading(wish);
+  const alt = wishAltName(wish);
+  const category = wishCategory(wish);
+  const rating = wish.place?.rating ?? null;
+  const highlights = reading?.highlights ?? [];
+  const mapUri = wish.place?.google_maps_uri ?? null;
+  return (
+    <article className={CARD}>
+      <Link
+        to="/wish/$wishId"
+        params={{ wishId: wish.id }}
+        className="flex gap-3 p-3 transition-colors hover:bg-[var(--color-paper)]"
+      >
+        {wish.has_image && <Thumb wish={wish} />}
+        <div className="min-w-0 flex-1">
+          <h3 className="font-display text-[16px] font-medium leading-tight tracking-tight">
+            {wish.title}
+            {alt && (
+              <span className="ml-1.5 text-[13px] font-normal text-[var(--color-ink-muted)]">
+                {alt}
+              </span>
+            )}
+          </h3>
+          {(category || rating != null) && (
+            <p className="mt-1 font-mono text-[9.5px] text-[var(--color-ink-muted)]">
+              {category}
+              {category && rating != null && ' · '}
+              {rating != null && (
+                <span className="text-[var(--color-amber)]">★ {rating.toFixed(1)}</span>
+              )}
+            </p>
+          )}
+          {highlights.length > 0 && (
+            <ul className="mt-1.5 flex flex-wrap gap-1">
+              {highlights.slice(0, MAX_CHIPS).map((h) => (
+                <li
+                  key={h}
+                  title={h}
+                  className="max-w-full truncate rounded-full bg-[var(--color-paper-deep)] px-2 py-[3px] text-[10.5px] leading-tight text-[var(--color-ink-soft)]"
+                >
+                  {h}
+                </li>
+              ))}
+              {highlights.length > MAX_CHIPS && (
+                <li className="rounded-full px-1 py-[3px] font-mono text-[9.5px] text-[var(--color-ink-muted)]">
+                  +{highlights.length - MAX_CHIPS}
+                </li>
+              )}
+            </ul>
+          )}
+          {wish.notes && (
+            <p className="mt-1.5 line-clamp-2 text-[12px] leading-snug text-[var(--color-ink-soft)]">
+              {wish.notes}
+            </p>
+          )}
+          {reading?.recommendedBy && (
+            <p className="mt-1 truncate font-mono text-[9px] text-[var(--color-ink-muted)]">
+              from {reading.recommendedBy}
+            </p>
+          )}
+        </div>
+      </Link>
+      <CardActions>
+        {mapUri && (
+          <a href={mapUri} target="_blank" rel="noopener noreferrer" className={SMALL_ACTION}>
+            Map ↗
+          </a>
+        )}
+        <button type="button" onClick={onVisited} className={SMALL_ACTION}>
+          Been there
+        </button>
+      </CardActions>
+    </article>
+  );
+}
+
+function ReadingCard({ wish }: { wish: WishItem }) {
+  return (
+    <article className={cn(CARD, 'flex gap-3 p-3')} aria-busy="true">
+      <div className="animate-pulse">
+        <Thumb wish={wish} />
+      </div>
+      <div className="min-w-0 flex-1 self-center">
+        <p className="font-display text-[15px] italic text-[var(--color-ink-muted)]">Reading…</p>
+        <p className="mt-1 text-[12px] leading-snug text-[var(--color-ink-muted)]">
+          Working out what this is and where. It usually takes under a minute.
+        </p>
+      </div>
+    </article>
+  );
+}
+
+function FailedCard({
+  wish,
+  busy,
+  onRetry,
+  onDelete,
+}: {
+  wish: WishItem;
+  busy: boolean;
+  onRetry: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <article className={CARD}>
+      <div className="flex gap-3 p-3">
+        <Thumb wish={wish} dimmed />
+        <div className="min-w-0 flex-1 self-center">
+          <p className="font-mono text-[8.5px] uppercase tracking-[0.14em] text-[var(--color-stamp)]">
+            not read
+          </p>
+          <p className="mt-1 text-[13px] leading-snug text-[var(--color-ink-soft)]">
+            {captureFailureMessage(wish)}
+          </p>
+        </div>
+      </div>
+      <CardActions>
+        <button type="button" disabled={busy} onClick={onRetry} className={SMALL_ACTION}>
+          Try again
+        </button>
+        <Link to="/wish/$wishId" params={{ wishId: wish.id }} className={SMALL_ACTION}>
+          Name it
+        </Link>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={onDelete}
+          className={cn(SMALL_ACTION, 'border-transparent text-[var(--color-ink-muted)]')}
+        >
+          Delete
+        </button>
+      </CardActions>
+    </article>
+  );
+}
+
+function CardActions({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex flex-wrap justify-end gap-1.5 border-t-[0.5px] border-[var(--color-rule-soft)] px-3 py-2">
+      {children}
+    </div>
+  );
+}
+
+function AddPlaceForm({ onDone }: { onDone: () => void }) {
+  const qc = useQueryClient();
+  const [title, setTitle] = useState('');
+  const createMut = useMutation({
+    mutationFn: () => createWishItem({ kind: 'place', title: title.trim() }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['wish-items'] });
+      onDone();
+    },
+  });
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (title.trim()) createMut.mutate();
+      }}
+      className="space-y-2 rounded-[14px] border-[0.5px] border-[var(--color-rule)] bg-[var(--color-surface)] p-3"
+    >
+      <div className="flex gap-2">
+        <input
+          autoFocus
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="Where do you want to go?"
+          aria-label="Place name"
+          className="min-w-0 flex-1 rounded-[10px] border-[0.5px] border-[var(--color-rule-soft)] bg-[var(--color-paper)] px-3 py-2 font-display text-[14px] outline-none placeholder:font-mono placeholder:text-[11px] placeholder:text-[var(--color-ink-faint)]"
+        />
+        <button
+          type="submit"
+          disabled={!title.trim() || createMut.isPending}
+          className="shrink-0 rounded-[10px] bg-[var(--color-ink)] px-4 font-display text-[13px] font-medium text-[var(--color-paper)] disabled:opacity-50"
+        >
+          {createMut.isPending ? 'Saving…' : 'Add'}
+        </button>
+        <button
+          type="button"
+          onClick={onDone}
+          aria-label="Cancel"
+          className="shrink-0 px-1 text-[16px] leading-none text-[var(--color-ink-muted)]"
+        >
+          ×
+        </button>
+      </div>
+      {createMut.isError && (
+        <p className="text-xs text-[var(--color-stamp)]">{wishProblemMessage(createMut.error)}</p>
+      )}
+    </form>
+  );
+}

@@ -1,11 +1,23 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { ingestBatch, extractProblemMessage } from '../lib/api';
+import { captureWishItem, type WishItem } from '../lib/api/things';
+import { wishProblemMessage } from '../lib/wishPlaces';
 import { cn } from '../lib/utils';
+
+/** What the picture is for. `receipt`: one or more documents, extracted
+ *  into the ledger. `want`: one image of something recommended (a
+ *  restaurant, mostly), saved to Wanting and read in the background. */
+export type CaptureMode = 'receipt' | 'want';
 
 interface CaptureProps {
   onCancel: () => void;
   onComplete: (job: { batchId: string; ingestId: string; filename: string }) => void;
+  /** Which mode the screen opens in. The user can switch; the choice is
+   *  always theirs, never inferred from the picture. */
+  initialMode?: CaptureMode;
+  /** Want mode: the image is stored and its wish is being read. */
+  onWantSaved?: (wish: WishItem) => void;
 }
 
 type CameraState =
@@ -33,7 +45,14 @@ type UploadState =
  *
  * Backend: real, via openapi-fetch (memory feedback_no_mock_api.md).
  */
-export default function Capture({ onCancel, onComplete }: CaptureProps) {
+export default function Capture({
+  onCancel,
+  onComplete,
+  initialMode = 'receipt',
+  onWantSaved,
+}: CaptureProps) {
+  const [mode, setMode] = useState<CaptureMode>(initialMode);
+  const want = mode === 'want';
   const [camera, setCamera] = useState<CameraState>({ kind: 'idle' });
   const [upload, setUpload] = useState<UploadState>({ kind: 'idle' });
 
@@ -119,8 +138,25 @@ export default function Capture({ onCancel, onComplete }: CaptureProps) {
     file.type === 'application/pdf' ? 'PDF document' : 'Saved web page';
 
   const addPending = (file: File) => {
-    setPending((p) => [...p, { file, url: URL.createObjectURL(file) }]);
+    const shot = { file, url: URL.createObjectURL(file) };
+    // A want is one image, so a new shot replaces the one before it.
+    setPending((p) => {
+      if (!want) return [...p, shot];
+      p.forEach((x) => URL.revokeObjectURL(x.url));
+      return [shot];
+    });
     setReviewing(true);
+  };
+  // The two modes upload to different places, so shots taken for one are
+  // not carried into the other.
+  const switchMode = (next: CaptureMode) => {
+    if (next === mode || upload.kind === 'uploading') return;
+    setPending((p) => {
+      p.forEach((x) => URL.revokeObjectURL(x.url));
+      return [];
+    });
+    setUpload({ kind: 'idle' });
+    setMode(next);
   };
   const dropLastPending = () => {
     setPending((p) => {
@@ -152,6 +188,17 @@ export default function Capture({ onCancel, onComplete }: CaptureProps) {
     const files = pending.map((p) => p.file);
     if (files.length === 0) return;
     setUpload({ kind: 'uploading', filename: files[0].name });
+    if (want) {
+      try {
+        const wish = await captureWishItem(files[files.length - 1]);
+        pending.forEach((p) => URL.revokeObjectURL(p.url));
+        setPending([]);
+        onWantSaved?.(wish);
+      } catch (err: unknown) {
+        setUpload({ kind: 'error', message: wishProblemMessage(err) });
+      }
+      return;
+    }
     try {
       const result = await ingestBatch(files);
       const first = result.items[0];
@@ -237,7 +284,7 @@ export default function Capture({ onCancel, onComplete }: CaptureProps) {
             <div className="text-center">
               <p className="font-display text-[17px] font-medium leading-tight">Captured</p>
               <p className="font-mono text-[8.5px] uppercase tracking-[0.14em] text-[var(--color-ink-muted)]">
-                {pending.length} of {pending.length} · ready to extract
+                {want ? 'one image · ready to read' : `${pending.length} of ${pending.length} · ready to extract`}
               </p>
             </div>
             <span aria-hidden="true" className="w-9" />
@@ -245,7 +292,7 @@ export default function Capture({ onCancel, onComplete }: CaptureProps) {
 
           <div className="relative mt-4 flex-1 overflow-hidden rounded-[20px] border-[0.5px] border-[var(--color-rule-soft)] bg-[var(--color-ink)]">
             {isImageFile(last.file) ? (
-              <img src={last.url} alt="Captured receipt" className="absolute inset-0 h-full w-full object-contain" />
+              <img src={last.url} alt={want ? 'Captured image' : 'Captured receipt'} className="absolute inset-0 h-full w-full object-contain" />
             ) : (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-8 text-center">
                 <span aria-hidden="true" className="text-[34px] leading-none text-[var(--color-paper-fold)]">
@@ -278,20 +325,28 @@ export default function Capture({ onCancel, onComplete }: CaptureProps) {
               onClick={() => void sendPending()}
               className="block w-full rounded-[14px] bg-[var(--color-ink)] py-3.5 text-center font-display text-[15px] font-medium text-[var(--color-paper)] transition-opacity hover:opacity-90 disabled:opacity-60"
             >
-              {uploading ? 'Uploading…' : pending.length > 1 ? `Process ${pending.length} now` : 'Use this · Process now'}
+              {(() => {
+                if (uploading) return 'Uploading…';
+                if (want) return 'Use this · Save to Wanting';
+                return pending.length > 1 ? `Process ${pending.length} now` : 'Use this · Process now';
+              })()}
               <span className="block font-mono text-[8.5px] uppercase tracking-[0.12em] text-[var(--color-paper-fold)]">
-                extraction starts immediately · live trace follows
+                {want
+                  ? 'read in the background · matched to the place'
+                  : 'extraction starts immediately · live trace follows'}
               </span>
             </button>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                disabled={uploading}
-                onClick={() => setReviewing(false)}
-                className="rounded-[14px] border-[0.5px] border-[var(--color-rule)] bg-[var(--color-surface)] py-2.5 font-display text-[13px] font-medium text-[var(--color-ink-soft)] disabled:opacity-60"
-              >
-                + Add another
-              </button>
+            <div className={cn('grid gap-2', want ? 'grid-cols-1' : 'grid-cols-2')}>
+              {!want && (
+                <button
+                  type="button"
+                  disabled={uploading}
+                  onClick={() => setReviewing(false)}
+                  className="rounded-[14px] border-[0.5px] border-[var(--color-rule)] bg-[var(--color-surface)] py-2.5 font-display text-[13px] font-medium text-[var(--color-ink-soft)] disabled:opacity-60"
+                >
+                  + Add another
+                </button>
+              )}
               <button
                 type="button"
                 disabled={uploading}
@@ -332,7 +387,7 @@ export default function Capture({ onCancel, onComplete }: CaptureProps) {
       <input
         ref={galleryInputRef}
         type="file"
-        accept="image/*,application/pdf,text/html,.html"
+        accept={want ? 'image/*' : 'image/*,application/pdf,text/html,.html'}
         className="hidden"
         onChange={handlePicked}
       />
@@ -352,19 +407,43 @@ export default function Capture({ onCancel, onComplete }: CaptureProps) {
         >
           ×
         </button>
-        <span className="font-mono text-[9px] uppercase tracking-[0.16em] text-[var(--color-ink-muted)] leading-none">
-          new entry
-        </span>
+        {/* Receipt | Want. Explicit on purpose: the two go to different
+            places (the ledger, the wishlist), and a wrong guess from the
+            picture would file a restaurant tip as a purchase. */}
+        <div
+          role="tablist"
+          aria-label="What is this picture for"
+          className="flex rounded-full border border-[var(--color-rule)] bg-[var(--color-paper-deep)] p-[3px]"
+        >
+          {(['receipt', 'want'] as const).map((m) => (
+            <button
+              key={m}
+              type="button"
+              role="tab"
+              aria-selected={mode === m}
+              disabled={upload.kind === 'uploading'}
+              onClick={() => switchMode(m)}
+              className={cn(
+                'min-w-[84px] rounded-full px-4 py-2 font-mono text-[10.5px] uppercase tracking-[0.12em] transition-colors',
+                mode === m
+                  ? 'bg-[var(--color-ink)] text-[var(--color-paper)]'
+                  : 'text-[var(--color-ink-muted)] hover:text-[var(--color-ink)]',
+              )}
+            >
+              {m}
+            </button>
+          ))}
+        </div>
         <span aria-hidden="true" className="w-10" />
       </div>
 
       {/* Title */}
       <div className="px-4 sm:px-6 pt-6 pb-4 text-center">
         <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[var(--color-accent)] leading-none">
-          point · hold steady · let go
+          {want ? 'a screenshot · a menu · a storefront' : 'point · hold steady · let go'}
         </p>
         <h1 className="mt-2 font-display font-medium text-3xl sm:text-4xl leading-none tracking-tight">
-          Snap a receipt
+          {want ? 'Save a place to go' : 'Snap a receipt'}
         </h1>
       </div>
 
@@ -484,25 +563,32 @@ export default function Capture({ onCancel, onComplete }: CaptureProps) {
             them: this path doesn't produce a document, so it doesn't
             belong in a row of ways to supply one. */}
         <div className="mt-5 border-t-[0.5px] border-[var(--color-rule)] pt-4">
-          <Link
-            to="/add-manual"
-            className="group flex items-center justify-between rounded-[14px] border-[0.5px] border-[var(--color-rule)] bg-[var(--color-surface)] px-4 py-3 transition-colors hover:border-[var(--color-accent)]"
-          >
-            <span className="min-w-0">
-              <span className="block font-display text-[14px] font-medium leading-tight">
-                No receipt? Record it manually
-              </span>
-              <span className="mt-0.5 block font-mono text-[8.5px] uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">
-                type the amount · add a line item · keep it in things
-              </span>
-            </span>
-            <span
-              aria-hidden="true"
-              className="ml-3 shrink-0 font-mono text-[13px] text-[var(--color-accent)] transition-transform group-hover:translate-x-0.5"
+          {want ? (
+            <p className="px-2 text-center text-[12px] leading-snug text-[var(--color-ink-muted)]">
+              One image at a time. It is saved to Wanting, read for you, and matched to the
+              place.
+            </p>
+          ) : (
+            <Link
+              to="/add-manual"
+              className="group flex items-center justify-between rounded-[14px] border-[0.5px] border-[var(--color-rule)] bg-[var(--color-surface)] px-4 py-3 transition-colors hover:border-[var(--color-accent)]"
             >
-              →
-            </span>
-          </Link>
+              <span className="min-w-0">
+                <span className="block font-display text-[14px] font-medium leading-tight">
+                  No receipt? Record it manually
+                </span>
+                <span className="mt-0.5 block font-mono text-[8.5px] uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">
+                  type the amount · add a line item · keep it in things
+                </span>
+              </span>
+              <span
+                aria-hidden="true"
+                className="ml-3 shrink-0 font-mono text-[13px] text-[var(--color-accent)] transition-transform group-hover:translate-x-0.5"
+              >
+                →
+              </span>
+            </Link>
+          )}
         </div>
 
         <p className="mt-4 text-[10px] tracking-[0.18em] uppercase text-center text-[var(--color-ink-muted)]">

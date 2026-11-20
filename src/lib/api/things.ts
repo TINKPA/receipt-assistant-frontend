@@ -7,7 +7,7 @@
  * contract).
  */
 import type { components } from '@/lib/api-types';
-import { client, unwrap } from './core';
+import { client, compressImage, unwrap } from './core';
 
 export type OwnedItemExpanded = components['schemas']['OwnedItemExpanded'];
 export type WishItem = components['schemas']['WishItem'];
@@ -63,14 +63,66 @@ export async function patchOwnedItem(
   return unwrap('patchOwnedItem', data, error, response.status);
 }
 
+export type WishKind = WishItem['kind'];
+
 export async function listWishItems(opts: {
   status?: 'active' | 'converted' | 'declined';
+  kind?: WishKind;
   limit?: number;
 } = {}): Promise<WishItem[]> {
   const { data, error, response } = await client.GET('/v1/wish-items', {
-    params: { query: { status: opts.status, limit: opts.limit ?? 500 } },
+    params: { query: { status: opts.status, kind: opts.kind, limit: opts.limit ?? 500 } },
   });
   return unwrap('listWishItems', data, error, response.status).items;
+}
+
+export async function getWishItem(id: string): Promise<WishItem> {
+  const { data, error, response } = await client.GET('/v1/wish-items/{id}', {
+    params: { path: { id } },
+  });
+  return unwrap('getWishItem', data, error, response.status);
+}
+
+/**
+ * Save a want from one image (a screenshot of a recommendation, a photo of
+ * a storefront). The server answers at once with a wish whose
+ * `capture_status` is `reading`; the image is read in the background, so
+ * the caller polls the wish (or the list) until that changes.
+ *
+ * Large images are downscaled first, as receipt uploads are. If the
+ * browser cannot decode the file the original goes up untouched, so the
+ * server's own message (it names HEIC, for one) is what the user reads.
+ */
+export async function captureWishItem(file: File, note?: string): Promise<WishItem> {
+  let payload: File = file;
+  if (file.type.startsWith('image/')) {
+    try {
+      payload = await compressImage(file);
+    } catch {
+      payload = file;
+    }
+  }
+  const form = new FormData();
+  form.append('file', payload, file.name);
+  if (note?.trim()) form.append('note', note.trim());
+  const { data, error, response } = await client.POST('/v1/wish-items/capture', {
+    body: form as unknown as { file: string },
+    bodySerializer: (b) => b as unknown as FormData,
+  });
+  return unwrap('captureWishItem', data, error, response.status);
+}
+
+/** Read a captured wish's image again. 202 with the wish back in `reading`. */
+export async function retryWishCapture(id: string): Promise<WishItem> {
+  const { data, error, response } = await client.POST('/v1/wish-items/{id}/capture/retry', {
+    params: { path: { id } },
+  });
+  return unwrap('retryWishCapture', data, error, response.status);
+}
+
+/** The image a wish was captured from; only when `has_image`. */
+export function wishImageUrl(id: string): string {
+  return `/api/v1/wish-items/${id}/image`;
 }
 
 export async function createWishItem(body: CreateWishItemRequest): Promise<WishItem> {

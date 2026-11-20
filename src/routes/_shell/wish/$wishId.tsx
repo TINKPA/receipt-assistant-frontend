@@ -3,11 +3,14 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   deleteWishItem,
+  getWishItem,
   listOwnedItemsExpanded,
-  listWishItems,
   patchWishItem,
+  type WishItem,
 } from '../../../lib/api/things';
 import { wishPerDay, perDay, isSnoozed } from '../../../lib/things';
+import { isReading, wishDetailKey } from '../../../lib/wishPlaces';
+import { PlaceWishDetail } from '../../../components/PlaceWishDetail';
 import { useBack } from '../../../lib/useBack';
 import { cn } from '../../../lib/utils';
 
@@ -16,26 +19,57 @@ export const Route = createFileRoute('/_shell/wish/$wishId')({
 });
 
 /**
- * /wish/$id — projected cost + acquisition decision (board screen 13):
- * target ÷ planned days = projected $/day, framed against the current
- * portfolio daily. Convert / snooze 30d / decline.
+ * /wish/$id — one wish. A place to go to and a thing to buy share the
+ * route and nothing else, so the kind picks the page.
  */
 function WishDetailRoute() {
   const { wishId } = Route.useParams();
-  const back = useBack('/wish');
+  // Read by id, not out of the active list: a visited place is still a
+  // page (it is where "Want again" lives). A wish whose image is still
+  // being read is polled until the server has filled it in.
+  const { data: wish, isLoading } = useQuery({
+    queryKey: wishDetailKey(wishId),
+    queryFn: () => getWishItem(wishId),
+    retry: false,
+    refetchInterval: (query) => (query.state.data && isReading(query.state.data) ? 3000 : false),
+  });
+
+  if (isLoading) {
+    return (
+      <p className="py-16 text-center font-display italic text-[var(--color-ink-muted)]">
+        loading…
+      </p>
+    );
+  }
+  if (!wish) {
+    return (
+      <p className="py-16 text-center font-display italic text-[var(--color-ink-muted)]">
+        Wish not found (it may have been deleted).
+      </p>
+    );
+  }
+  // A capture is a place until its reading says otherwise, so one that is
+  // still being read, or that failed, lands on the place page too.
+  if (wish.kind === 'place') return <PlaceWishDetail wish={wish} />;
+  return <ThingWishDetail wish={wish} />;
+}
+
+/**
+ * A thing to buy — projected cost + acquisition decision (board screen
+ * 13): target ÷ planned days = projected $/day, framed against the current
+ * portfolio daily. Convert / snooze 30d / decline.
+ */
+function ThingWishDetail({ wish }: { wish: WishItem }) {
+  const wishId = wish.id;
+  const back = useBack('/wish?section=things');
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [err, setErr] = useState<string | null>(null);
 
-  const { data: wishes = [], isLoading } = useQuery({
-    queryKey: ['wish-items'],
-    queryFn: () => listWishItems({ status: 'active' }),
-  });
   const { data: owned = [] } = useQuery({
     queryKey: ['owned-items', 'expanded'],
     queryFn: () => listOwnedItemsExpanded({ include_retired: true }),
   });
-  const wish = wishes.find((w) => w.id === wishId);
 
   const ownedDaily = useMemo(
     () => owned.filter((i) => !i.retired_at).reduce((s, i) => s + (perDay(i) ?? 0), 0),
@@ -51,24 +85,9 @@ function WishDetailRoute() {
     mutationFn: () => deleteWishItem(wishId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['wish-items'] });
-      navigate({ to: '/wish' });
+      navigate({ to: '/wish', search: { section: 'things' } });
     },
   });
-
-  if (isLoading) {
-    return (
-      <p className="py-16 text-center font-display italic text-[var(--color-ink-muted)]">
-        loading…
-      </p>
-    );
-  }
-  if (!wish) {
-    return (
-      <p className="py-16 text-center font-display italic text-[var(--color-ink-muted)]">
-        Wish not found (it may have been converted or declined).
-      </p>
-    );
-  }
 
   const pd = wishPerDay(wish);
   const target = wish.target_price_minor != null ? wish.target_price_minor / 100 : null;
@@ -161,7 +180,7 @@ function WishDetailRoute() {
           onClick={() =>
             patchMut.mutate(
               { status: 'converted' },
-              { onSuccess: () => navigate({ to: '/wish' }) },
+              { onSuccess: () => navigate({ to: '/wish', search: { section: 'things' } }) },
             )
           }
           className="block w-full rounded-[14px] bg-[var(--color-ink)] py-3.5 text-center font-display text-[15px] font-medium text-[var(--color-paper)]"
@@ -190,7 +209,7 @@ function WishDetailRoute() {
             onClick={() =>
               patchMut.mutate(
                 { status: 'declined' },
-                { onSuccess: () => navigate({ to: '/wish' }) },
+                { onSuccess: () => navigate({ to: '/wish', search: { section: 'things' } }) },
               )
             }
             className="rounded-[12px] border-[0.5px] border-[color:rgba(181,52,26,0.45)] py-2.5 font-display text-[13px] font-medium text-[var(--color-accent)]"
