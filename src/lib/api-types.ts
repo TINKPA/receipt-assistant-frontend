@@ -2141,7 +2141,7 @@ export interface paths {
         put?: never;
         /**
          * Add a wish
-         * @description A place wish can name its place by `place_id` (a place the ledger has) or `google_place_id` (one picked from `GET /v1/wish-items/place-search`, stored by the server). A place wish sent with neither is matched by its title with Google Find Place before the answer; a miss leaves it unmatched, with the reason in `capture.place_match.error`. A wish that gets a place or a product is checked against the ledger at once: a live purchase there on or after the day the wish was made converts it.
+         * @description A place wish can name its place by `place_id` (a place the ledger has) or `google_place_id` (one picked from `GET /v1/wish-items/place-search`, stored by the server). A place wish sent with neither is matched by its title with Google Find Place before the answer, biased to the workspace's usual area; a miss leaves it unmatched, with the reason in `capture.place_match.error`, and a found place whose name differs from the title is not linked but offered as `place_suggestion`. A wish that gets a place or a product is checked against the ledger at once: a live purchase there on or after the day the wish was made converts it.
          */
         post: {
             parameters: {
@@ -2278,7 +2278,7 @@ export interface paths {
         head?: never;
         /**
          * Patch a wish (fields, urgency, snooze, convert / decline)
-         * @description JSON Merge Patch (RFC 7396). `metadata` merges into the stored object rather than replacing it (`null` removes a key, `{}` changes nothing). `status: converted` from the user sets `converted_by: user` and `converted_at` (now unless sent). `status: active` on a converted wish is "Want again": the transaction that converted it never converts it again, and only a purchase from that day on can. `google_place_id` stores the picked place and links it. Setting `title`, `kind` or the place on a wish whose capture failed marks the capture `done` (`capture.resolved_by: user`, the error kept). A new place or product is checked against the ledger at once.
+         * @description JSON Merge Patch (RFC 7396). `metadata` merges into the stored object rather than replacing it (`null` removes a key, `{}` changes nothing). `status: converted` from the user sets `converted_by: user` and `converted_at` (now unless sent; not before the wish was made). Changing `converted_transaction_id` (a live transaction) or `converted_at` on a receipt conversion makes it `converted_by: user`. Leaving `converted` (to active or declined) dismisses its transaction for good; `status: active` from converted or declined starts the wish over: only a purchase from then on converts it, and that is checked at once. `google_place_id` stores the picked place and links it (confirming a `place_suggestion`); `place_id: null` removes a place or rejects the suggestion. Setting `title`, `kind` or the place on a captured wish records it in `capture.user_set`, which no reading overwrites; on a wish whose capture failed it also marks the capture `done` (`capture.resolved_by: user`, the error kept). A new place, product or kind is checked against the ledger at once.
          */
         patch: {
             parameters: {
@@ -2363,7 +2363,7 @@ export interface paths {
         };
         /**
          * Search Google for a wish's place (up to five candidates)
-         * @description Google Places Text Search with the server's key. With `near`, the query is biased to the locality the wish's image reading found. Pick a candidate by sending its `google_place_id` in `PATCH /v1/wish-items/{id}`.
+         * @description Google Places Text Search with the server's key. With `near`, the locality the wish's image reading found is added to the query; otherwise the search prefers the workspace's usual area (`location_biased`). Candidates that share no word with `q` are not returned. Pick a candidate by sending its `google_place_id` in `PATCH /v1/wish-items/{id}`.
          */
         get: {
             parameters: {
@@ -2452,7 +2452,7 @@ export interface paths {
         put?: never;
         /**
          * Save a wish from an image (a screenshot of a post, a chat, a map; a photo)
-         * @description Stores the image and answers at once with a wish whose `capture_status` is `reading` and whose title is a placeholder. The image is then read in the background: the title, kind, notes, source link and, for a place, the matched `place` are filled in and `capture_status` becomes `done`, or `failed` with `capture.error`. Poll `GET /v1/wish-items/{id}`. Nothing the reading fills overwrites a note sent with the upload. HEIC and AVIF are converted to JPEG first. The same bytes uploaded again answer 200 with the wish they made the first time, whatever its state, and are not read again.
+         * @description Stores the image and answers at once with a wish whose `capture_status` is `reading` and whose title is a placeholder. The image is then read in the background: the title, kind, notes, source link and, for a place, the matched `place` are filled in and `capture_status` becomes `done`, or `failed` with `capture.error` (`nothing_to_save` titles it with what the image showed). Poll `GET /v1/wish-items/{id}`. Nothing the reading fills overwrites a note sent with the upload, or a title, kind or place the person set while it was being read. A place with no city or address in the image is offered as `place_suggestion`, not linked. An image that lists several places with equal weight makes one wish for each (`capture.sibling_of` / `capture.siblings`), except for places already wished for. HEIC and AVIF are converted to JPEG first. The same bytes uploaded again answer 200 with the wish they made the first time, whatever its state, and are not read again; a note sent with them is added to its notes.
          */
         post: {
             parameters: {
@@ -2512,7 +2512,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Read a captured image again */
+        /**
+         * Read a captured image again
+         * @description Fields the person set by hand (`capture.user_set`) are kept; if the new reading fails, a wish they had named or placed stays `done`. A wish split from another capture (`capture.sibling_of`) is not read on its own: 409, read the original.
+         */
         post: {
             parameters: {
                 query?: never;
@@ -6173,6 +6176,12 @@ export interface components {
             primary_type: string | null;
             rating: number | null;
         } | null;
+        WishPlaceSuggestion: {
+            google_place_id: string;
+            name: string | null;
+            formatted_address: string | null;
+            reason: string | null;
+        } | null;
         WishConvertedTransaction: {
             /**
              * Format: uuid
@@ -6212,6 +6221,8 @@ export interface components {
              */
             place_id: string | null;
             place: components["schemas"]["WishPlace"];
+            place_suggestion: components["schemas"]["WishPlaceSuggestion"];
+            same_place_wish_ids: string[];
             title: string;
             notes: string | null;
             target_price_minor: number | null;
@@ -6354,6 +6365,7 @@ export interface components {
         };
         WishPlaceSearchResponse: {
             query: string;
+            location_biased: boolean;
             candidates: components["schemas"]["WishPlaceCandidate"][];
         };
         Insight: {

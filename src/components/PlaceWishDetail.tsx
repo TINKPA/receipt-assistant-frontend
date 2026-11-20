@@ -1,19 +1,21 @@
 import { useState, type ReactNode } from 'react';
-import { useNavigate } from '@tanstack/react-router';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { Link, useNavigate } from '@tanstack/react-router';
+import { useMutation, useQueries, useQueryClient } from '@tanstack/react-query';
 import {
   deleteWishItem,
+  getWishItem,
   patchWishItem,
   retryWishCapture,
   type UpdateWishItemRequest,
   type WishItem,
 } from '../lib/api/things';
 import {
-  captureFailureMessage,
+  googleMapsLink,
   humanizePlaceType,
   isFailed,
   isReading,
   placeSearchPrefill,
+  suggestionReason,
   wishAltName,
   wishCategory,
   wishClosure,
@@ -22,8 +24,10 @@ import {
   wishReading,
 } from '../lib/wishPlaces';
 import { useBack } from '../lib/useBack';
+import { useNow } from '../lib/useNow';
 import { cn } from '../lib/utils';
 import { PlaceSearch } from './PlaceSearch';
+import { NotReadBanner, ReadAgainRow, ReadingNotice } from './WishCapture';
 import { WishClosureCard } from './WishClosure';
 import { WishHeroImage } from './WishImage';
 import { TextField } from './WishFields';
@@ -45,6 +49,9 @@ export function PlaceWishDetail({ wish }: { wish: WishItem }) {
   const [err, setErr] = useState<string | null>(null);
   // The place search is open (from "Wrong place" or "Find on map").
   const [searching, setSearching] = useState(false);
+  // Read again from this page: a reading that fails again says so.
+  const [retried, setRetried] = useState(false);
+  const now = useNow();
 
   const onError = (e: unknown) => setErr(wishProblemMessage(e));
   const refresh = () => qc.invalidateQueries({ queryKey: ['wish-items'] });
@@ -73,7 +80,10 @@ export function PlaceWishDetail({ wish }: { wish: WishItem }) {
   const retryMut = useMutation({
     mutationFn: () => retryWishCapture(wish.id),
     onMutate: () => setErr(null),
-    onSuccess: show,
+    onSuccess: (next) => {
+      setRetried(true);
+      show(next);
+    },
     onError,
   });
   const deleteMut = useMutation({
@@ -95,6 +105,8 @@ export function PlaceWishDetail({ wish }: { wish: WishItem }) {
   const alt = wishAltName(wish);
   const category = wishCategory(wish);
   const place = wish.place;
+  // A guessed place waits for a yes or a no; a linked place has none.
+  const suggestion = place ? null : wish.place_suggestion;
   const sourceUrl = wish.source_url ?? reading?.sourceUrl ?? null;
   const busy =
     patchMut.isPending || placeMut.isPending || retryMut.isPending || deleteMut.isPending;
@@ -132,27 +144,16 @@ export function PlaceWishDetail({ wish }: { wish: WishItem }) {
       )}
 
       {readingNow ? (
-        <div aria-busy="true">
-          <h1 className="font-display text-[22px] font-medium italic leading-tight text-[var(--color-ink-muted)]">
-            Reading…
-          </h1>
-          <p className="mt-1 text-[12.5px] leading-snug text-[var(--color-ink-muted)]">
-            Working out what this is and where. It usually takes under a minute; this page fills in
-            by itself.
-          </p>
-        </div>
+        <ReadingNotice wish={wish} />
       ) : (
         <div className="space-y-3">
-          {isFailed(wish) && (
-            <div className={cn(CARD, 'border-[color:rgba(139,38,19,0.35)]')}>
-              <p className="font-mono text-[8.5px] uppercase tracking-[0.14em] text-[var(--color-stamp)]">
-                not read
-              </p>
-              <p className="mt-1 text-[13px] leading-snug text-[var(--color-ink-soft)]">
-                {captureFailureMessage(wish)}.{' '}
-                {unread ? 'Type its name below, or have it read again.' : ''}
-              </p>
-            </div>
+          {unread && (
+            <NotReadBanner
+              wish={wish}
+              now={now}
+              retried={retried}
+              hint="Type its name below, or have it read again."
+            />
           )}
 
           <div>
@@ -267,6 +268,65 @@ export function PlaceWishDetail({ wish }: { wish: WishItem }) {
                 </button>
               </div>
             </div>
+          ) : suggestion ? (
+            <div className={cn(CARD, 'border-[color:rgba(181,52,26,0.35)]')}>
+              <p className="font-mono text-[8.5px] uppercase tracking-[0.14em] text-[var(--color-accent)]">
+                is it this place?
+              </p>
+              <p className="mt-1 font-display text-[15px] font-medium leading-tight">
+                {suggestion.name ?? 'A place on the map'}
+              </p>
+              {suggestion.formatted_address && (
+                <p className="mt-1 text-[12.5px] leading-snug text-[var(--color-ink-soft)]">
+                  {suggestion.formatted_address}
+                </p>
+              )}
+              <p className="mt-1.5 text-[12px] leading-snug text-[var(--color-ink-muted)]">
+                {suggestionReason(suggestion, reading?.address ?? null)} Not linked until you say
+                so.
+              </p>
+              {placeMut.error && (
+                <p className="mt-1.5 text-xs text-[var(--color-stamp)]">
+                  {wishProblemMessage(placeMut.error)}
+                </p>
+              )}
+              <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2">
+                <a
+                  href={googleMapsLink(suggestion.google_place_id, suggestion.name)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-mono text-[9px] uppercase tracking-[0.1em] text-[var(--color-accent)] hover:underline"
+                >
+                  Look at it ↗
+                </a>
+                <div className="flex flex-wrap justify-end gap-1.5">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => placeMut.mutate({ place_id: null })}
+                    className={SMALL_ACTION}
+                  >
+                    {placeMut.isPending && placeMut.variables.place_id === null ? 'Saving…' : 'Not it'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={openSearch}
+                    className={SMALL_ACTION}
+                  >
+                    Search
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => placeMut.mutate({ google_place_id: suggestion.google_place_id })}
+                    className="rounded-full bg-[var(--color-ink)] px-3.5 py-1.5 font-mono text-[9px] uppercase tracking-[0.1em] text-[var(--color-paper)] disabled:opacity-50"
+                  >
+                    {placeMut.isPending && placeMut.variables.google_place_id ? 'Saving…' : 'Yes, this one'}
+                  </button>
+                </div>
+              </div>
+            </div>
           ) : (
             <div className={cn(CARD, 'border-dashed')}>
               <p className="text-[12.5px] leading-snug text-[var(--color-ink-muted)]">
@@ -317,20 +377,17 @@ export function PlaceWishDetail({ wish }: { wish: WishItem }) {
         </Section>
       )}
 
+      {wish.same_place_wish_ids.length > 0 && (
+        <SamePlaceWishes ids={wish.same_place_wish_ids} />
+      )}
+
       {wish.has_image && !readingNow && (
-        <div className="flex items-center justify-between gap-3 px-0.5">
-          <p className="font-mono text-[9px] text-[var(--color-ink-muted)]">
-            {isFailed(wish) ? 'The image was not read.' : 'Read from the image.'}
-          </p>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => retryMut.mutate()}
-            className={SMALL_ACTION}
-          >
-            {retryMut.isPending ? 'Starting…' : 'Read again'}
-          </button>
-        </div>
+        <ReadAgainRow
+          wish={wish}
+          busy={busy}
+          starting={retryMut.isPending}
+          onRetry={() => retryMut.mutate()}
+        />
       )}
 
       <div className="space-y-2 pb-4">
@@ -367,6 +424,56 @@ export function PlaceWishDetail({ wish }: { wish: WishItem }) {
         </button>
       </div>
     </div>
+  );
+}
+
+/**
+ * The other wishes for the same place: the same restaurant saved from
+ * another screenshot, or typed in again. The list shows them as one card;
+ * this is where each can still be opened.
+ */
+function SamePlaceWishes({ ids }: { ids: string[] }) {
+  const others = useQueries({
+    queries: ids.map((id) => ({
+      queryKey: wishDetailKey(id),
+      queryFn: () => getWishItem(id),
+      retry: false,
+    })),
+  });
+  return (
+    <Section label={`Also saved · ${ids.length}`}>
+      <ul className="divide-y divide-[var(--color-rule-soft)] rounded-[13px] border-[0.5px] border-[var(--color-rule-soft)] bg-[var(--color-surface)]">
+        {ids.map((id, i) => {
+          const other = others[i]?.data;
+          const state = !other
+            ? ''
+            : other.status === 'converted'
+              ? 'visited'
+              : other.status === 'declined'
+                ? 'declined'
+                : `saved ${other.created_at.slice(0, 10)}`;
+          return (
+            <li key={id}>
+              <Link
+                to="/wish/$wishId"
+                params={{ wishId: id }}
+                className="flex items-baseline justify-between gap-3 px-3.5 py-2.5 hover:bg-[var(--color-paper)]"
+              >
+                <span className="min-w-0 truncate text-[13px] text-[var(--color-ink-soft)]">
+                  {other ? other.title : '…'}
+                  {other?.notes && (
+                    <span className="text-[var(--color-ink-muted)]"> · {other.notes}</span>
+                  )}
+                </span>
+                <span className="shrink-0 font-mono text-[9px] text-[var(--color-ink-muted)]">
+                  {state} <span className="text-[var(--color-accent)]">→</span>
+                </span>
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+    </Section>
   );
 }
 

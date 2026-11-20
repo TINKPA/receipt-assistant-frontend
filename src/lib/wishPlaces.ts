@@ -139,28 +139,135 @@ export function wishArea(w: WishItem): string {
   );
 }
 
-export interface WishAreaGroup {
-  area: string;
-  wishes: WishItem[];
+/**
+ * One card of the Places list: a wish, and the other active wishes for the
+ * same place folded under it (the same restaurant saved from two
+ * screenshots, or typed in again). `wish` is the newest of them.
+ */
+export interface PlaceEntry {
+  wish: WishItem;
+  also: WishItem[];
 }
 
-/** Group by area: biggest group first, ties by name, `Somewhere` last.
- *  Inside a group the server's order (newest first) is kept. */
-export function groupWishesByArea(wishes: WishItem[]): WishAreaGroup[] {
-  const groups = new Map<string, WishItem[]>();
+export interface WishAreaGroup {
+  area: string;
+  entries: PlaceEntry[];
+}
+
+export interface PlaceListLayout {
+  /** Shown above the areas: what was just saved or just read again, so
+   *  the person sees it land without scrolling to its area. */
+  recent: PlaceEntry[];
+  groups: WishAreaGroup[];
+}
+
+/** How long a new wish stays at the top of the list before it moves to its
+ *  area. Long enough to save a few screenshots in a row and see them all. */
+export const RECENT_MS = 15 * 60_000;
+
+/**
+ * Whether a wish belongs at the top of the list right now: it is being
+ * read, it was made in the last `RECENT_MS`, or its reading failed in that
+ * time (a "Try again" that failed once more stays where it was tapped).
+ */
+export function isRecentWish(w: WishItem, now: number): boolean {
+  if (isReading(w)) return true;
+  const since = (iso: string) => now - Date.parse(iso) < RECENT_MS;
+  return since(w.created_at) || (isFailed(w) && since(w.updated_at));
+}
+
+/** Fold the active wishes for one place into one entry, newest first (the
+ *  server's order). A wish with no place is its own entry. */
+export function foldSamePlace(wishes: WishItem[]): PlaceEntry[] {
+  const byPlace = new Map<string, PlaceEntry>();
+  const entries: PlaceEntry[] = [];
   for (const w of wishes) {
-    const area = wishArea(w);
-    const list = groups.get(area);
-    if (list) list.push(w);
-    else groups.set(area, [w]);
+    const first = w.place_id ? byPlace.get(w.place_id) : undefined;
+    if (first) {
+      first.also.push(w);
+      continue;
+    }
+    const entry = { wish: w, also: [] };
+    if (w.place_id) byPlace.set(w.place_id, entry);
+    entries.push(entry);
   }
-  return [...groups.entries()]
-    .map(([area, list]) => ({ area, wishes: list }))
-    .sort((a, b) => {
-      if (a.area === UNPLACED_AREA) return 1;
-      if (b.area === UNPLACED_AREA) return -1;
-      return b.wishes.length - a.wishes.length || a.area.localeCompare(b.area);
-    });
+  return entries;
+}
+
+/** The Places list: recent entries on top, then the rest by area, biggest
+ *  area first, ties by name, `Somewhere` last. Inside each the server's
+ *  order (newest first) is kept. */
+export function arrangePlaceWishes(wishes: WishItem[], now: number): PlaceListLayout {
+  const recent: PlaceEntry[] = [];
+  const groups = new Map<string, PlaceEntry[]>();
+  for (const entry of foldSamePlace(wishes)) {
+    if (isRecentWish(entry.wish, now)) {
+      recent.push(entry);
+      continue;
+    }
+    const area = wishArea(entry.wish);
+    const list = groups.get(area);
+    if (list) list.push(entry);
+    else groups.set(area, [entry]);
+  }
+  return {
+    recent,
+    groups: [...groups.entries()]
+      .map(([area, entries]) => ({ area, entries }))
+      .sort((a, b) => {
+        if (a.area === UNPLACED_AREA) return 1;
+        if (b.area === UNPLACED_AREA) return -1;
+        return b.entries.length - a.entries.length || a.area.localeCompare(b.area);
+      }),
+  };
+}
+
+export type WishPlaceSuggestion = NonNullable<WishItem['place_suggestion']>;
+
+/**
+ * Why a place was only suggested, as a sentence. `address` is what the
+ * image said, when the reading found one.
+ */
+export function suggestionReason(s: WishPlaceSuggestion, address: string | null): string {
+  switch (s.reason) {
+    case 'name_only':
+      return 'The image gave no city or address, so this is the best guess for the name.';
+    case 'low_confidence':
+      return 'The image was hard to read, so this is a guess.';
+    case 'name_mismatch':
+      return 'The place found has a different name.';
+    case 'name_unverified':
+      return 'The two names are in different scripts, so they could not be compared.';
+    case 'address_mismatch':
+      return address
+        ? `The image gives the address as ${address}, which is not this place's.`
+        : 'The address in the image is not this place’s.';
+    default:
+      return 'This is a guess.';
+  }
+}
+
+/** A Google Maps link for a place known only by its Google id. */
+export function googleMapsLink(googlePlaceId: string, name: string | null): string {
+  const q = encodeURIComponent(name ?? 'place');
+  return `https://www.google.com/maps/search/?api=1&query=${q}&query_place_id=${encodeURIComponent(googlePlaceId)}`;
+}
+
+/** When the image was last read (a finished or failed reading), or null. */
+export function captureReadAt(w: WishItem): string | null {
+  return str(w.capture?.read_at);
+}
+
+/** The wish is being read for a second (or later) time. */
+export const isRereading = (w: WishItem): boolean =>
+  isReading(w) && w.capture != null && 'retry_of' in w.capture;
+
+/** An instant as a short time: `3:42 PM` today, else `Nov 19, 3:42 PM`. */
+export function fmtWhen(iso: string, now: number): string {
+  const d = new Date(iso);
+  const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  if (new Date(now).toDateString() === d.toDateString()) return time;
+  return `${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}, ${time}`;
 }
 
 /**

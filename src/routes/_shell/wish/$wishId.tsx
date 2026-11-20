@@ -7,6 +7,7 @@ import {
   getWishItem,
   listOwnedItemsExpanded,
   patchWishItem,
+  retryWishCapture,
   type UpdateWishItemRequest,
   type WishItem,
 } from '../../../lib/api/things';
@@ -16,11 +17,13 @@ import {
   wishPerDay,
   perDay,
   isSnoozed,
+  fmtPrice,
   fmtYears,
   yearsToDays,
   dollarsToMinor,
 } from '../../../lib/things';
 import {
+  isFailed,
   isReading,
   wishClosure,
   wishDetailKey,
@@ -28,7 +31,9 @@ import {
 } from '../../../lib/wishPlaces';
 import { NumberField, TextField } from '../../../components/WishFields';
 import { PlaceWishDetail } from '../../../components/PlaceWishDetail';
+import { NotReadBanner, ReadAgainRow, ReadingNotice } from '../../../components/WishCapture';
 import { useBack } from '../../../lib/useBack';
+import { useNow } from '../../../lib/useNow';
 import { cn } from '../../../lib/utils';
 
 // `?notice=already-saved`: arrived from a capture of an image this wish
@@ -125,6 +130,9 @@ function ThingWishDetail({ wish }: { wish: WishItem }) {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [err, setErr] = useState<string | null>(null);
+  // Read again from this page: a reading that fails again says so.
+  const [retried, setRetried] = useState(false);
+  const now = useNow();
 
   const { data: owned = [] } = useQuery({
     queryKey: ['owned-items', 'expanded'],
@@ -146,6 +154,16 @@ function ThingWishDetail({ wish }: { wish: WishItem }) {
     },
     onError: (e: unknown) => setErr(wishProblemMessage(e)),
   });
+  const retryMut = useMutation({
+    mutationFn: () => retryWishCapture(wishId),
+    onMutate: () => setErr(null),
+    onSuccess: (next) => {
+      setRetried(true);
+      qc.setQueryData(wishDetailKey(wishId), next);
+      void qc.invalidateQueries({ queryKey: ['wish-items'] });
+    },
+    onError: (e: unknown) => setErr(wishProblemMessage(e)),
+  });
   const deleteMut = useMutation({
     mutationFn: () => deleteWishItem(wishId),
     onSuccess: () => {
@@ -158,6 +176,9 @@ function ThingWishDetail({ wish }: { wish: WishItem }) {
   const target = wish.target_price_minor != null ? wish.target_price_minor / 100 : null;
   const snoozed = isSnoozed(wish);
   const closure = wishClosure(wish);
+  const readingNow = isReading(wish);
+  const unread = isFailed(wish);
+  const busy = patchMut.isPending || retryMut.isPending;
   const badges = (
     <>
       <span className="absolute bottom-3 left-3 rounded-full bg-[color:rgba(251,247,238,0.92)] px-2.5 py-1 font-mono text-[8.5px] text-[var(--color-ink-soft)]">
@@ -187,7 +208,7 @@ function ThingWishDetail({ wish }: { wish: WishItem }) {
 
       {/* hero: the image it was captured from, else the placeholder */}
       {wish.has_image ? (
-        <WishHeroImage wish={wish} alt="The image this wish was saved from">
+        <WishHeroImage wish={wish} alt="The image this wish was saved from" pulsing={readingNow}>
           {badges}
         </WishHeroImage>
       ) : (
@@ -206,13 +227,23 @@ function ThingWishDetail({ wish }: { wish: WishItem }) {
         </div>
       )}
 
+      {readingNow && <ReadingNotice wish={wish} />}
+      {unread && (
+        <NotReadBanner
+          wish={wish}
+          now={now}
+          retried={retried}
+          hint="Name it below, or have it read again."
+        />
+      )}
+
       <div className="space-y-3">
         <TextField
           key={`title:${wish.title}`}
           label="Name"
           value={wish.title}
           placeholder="What do you want?"
-          disabled={patchMut.isPending}
+          disabled={busy}
           required
           onSave={(title) => {
             if (title) patchMut.mutate({ title });
@@ -286,10 +317,10 @@ function ThingWishDetail({ wish }: { wish: WishItem }) {
 
       {/* calc row */}
       <div className="grid grid-cols-[1fr_auto_1fr_auto_1fr] items-center rounded-[13px] border-[0.5px] border-[var(--color-rule-soft)] bg-[var(--color-surface)] px-3 py-3 text-center">
-        <Calc label="target" value={target !== null ? `$${target.toLocaleString()}` : '—'} />
+        <Calc label="target" value={fmtPrice(wish.target_price_minor)} />
         <span className="font-display text-[15px] text-[var(--color-ink-faint)]">÷</span>
         <Calc
-          label="planned d"
+          label="days"
           value={wish.planned_days ? wish.planned_days.toLocaleString() : '—'}
         />
         <span className="font-display text-[15px] text-[var(--color-ink-faint)]">=</span>
@@ -297,6 +328,15 @@ function ThingWishDetail({ wish }: { wish: WishItem }) {
       </div>
 
       {err && <p className="text-center text-xs text-[var(--color-stamp)]">{err}</p>}
+
+      {wish.has_image && !readingNow && (
+        <ReadAgainRow
+          wish={wish}
+          busy={busy}
+          starting={retryMut.isPending}
+          onRetry={() => retryMut.mutate()}
+        />
+      )}
 
       {closure && (
         <WishClosureCard

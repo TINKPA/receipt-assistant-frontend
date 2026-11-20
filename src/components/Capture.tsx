@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { Fragment, useEffect, useRef, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { ingestBatch, extractProblemMessage } from '../lib/api';
 import { captureWishItem, isHeic, type CaptureResult } from '../lib/api/things';
@@ -440,7 +440,10 @@ export default function Capture({
 
   return (
     <div
-      className="min-h-[calc(100vh-6rem)] flex flex-col"
+      // /add has no dock or shell around it, so the gradient fills the
+      // whole viewport (a `-6rem` left for a dock that is not there
+      // showed as a lighter band under the last line).
+      className="min-h-[100dvh] flex flex-col"
       style={{
         background:
           'linear-gradient(180deg, var(--color-paper) 0%, var(--color-paper-deep) 100%)',
@@ -653,8 +656,15 @@ export default function Capture({
                 <span className="block font-display text-[14px] font-medium leading-tight">
                   No receipt? Record it manually
                 </span>
+                {/* Each phrase stays whole: on a narrow phone the line
+                    breaks at a dot, never inside "keep it in things". */}
                 <span className="mt-0.5 block font-mono text-[8.5px] uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">
-                  type the amount · add a line item · keep it in things
+                  {['type the amount', 'add a line item', 'keep it in things'].map((phrase, i) => (
+                    <Fragment key={phrase}>
+                      {i > 0 && ' · '}
+                      <span className="whitespace-nowrap">{phrase}</span>
+                    </Fragment>
+                  ))}
                 </span>
               </span>
               <span

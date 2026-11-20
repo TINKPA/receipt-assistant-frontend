@@ -11,10 +11,13 @@ import {
 } from '../lib/api/things';
 import {
   UNPLACED_AREA,
+  arrangePlaceWishes,
   captureFailureMessage,
-  groupWishesByArea,
+  captureReadAt,
+  fmtWhen,
   isFailed,
   isReading,
+  isRereading,
   wishAltName,
   wishArea,
   wishCategory,
@@ -22,7 +25,9 @@ import {
   wishListKey,
   wishProblemMessage,
   wishReading,
+  type PlaceEntry,
 } from '../lib/wishPlaces';
+import { useNow } from '../lib/useNow';
 import { cn } from '../lib/utils';
 import { WishClosureText } from './WishClosure';
 import { WishThumb } from './WishImage';
@@ -66,22 +71,28 @@ export function PlaceWishes({
     queryFn: () => listWishItems({ status: 'converted', kind: 'place' }),
   });
 
-  const groups = useMemo(() => groupWishesByArea(wishes), [wishes]);
+  // Captures read again from this list: their card says so when the
+  // reading fails once more, so the retry is not mistaken for a no-op.
+  const [retried, setRetried] = useState<ReadonlySet<string>>(() => new Set());
+  const now = useNow();
+  const layout = useMemo(() => arrangePlaceWishes(wishes, now), [wishes, now]);
   const refresh = () => qc.invalidateQueries({ queryKey: ['wish-items'] });
   const onError = (e: unknown) => setErr(wishProblemMessage(e));
 
   // "Been there" takes the card out of the list at once; the refetch that
-  // follows either confirms it or, after a failure, puts it back.
+  // follows either confirms it or, after a failure, puts it back. A card
+  // that folds several wishes for the place marks them all.
   const visitMut = useMutation({
-    mutationFn: (id: string) => patchWishItem(id, { status: 'converted' }),
-    onMutate: async (id) => {
+    mutationFn: (ids: string[]) =>
+      Promise.all(ids.map((id) => patchWishItem(id, { status: 'converted' }))),
+    onMutate: async (ids) => {
       setErr(null);
       await qc.cancelQueries({ queryKey: ACTIVE_KEY });
       const before = qc.getQueryData<WishItem[]>(ACTIVE_KEY);
-      qc.setQueryData<WishItem[]>(ACTIVE_KEY, (list) => list?.filter((w) => w.id !== id));
+      qc.setQueryData<WishItem[]>(ACTIVE_KEY, (list) => list?.filter((w) => !ids.includes(w.id)));
       return { before };
     },
-    onError: (e, _id, ctx) => {
+    onError: (e, _ids, ctx) => {
       if (ctx?.before) qc.setQueryData(ACTIVE_KEY, ctx.before);
       onError(e);
     },
@@ -91,6 +102,7 @@ export function PlaceWishes({
     mutationFn: (id: string) => retryWishCapture(id),
     onMutate: () => setErr(null),
     onSuccess: (wish) => {
+      setRetried((prev) => new Set(prev).add(wish.id));
       // Put the `reading` row in place now, so polling starts without
       // waiting for a refetch to notice.
       qc.setQueryData<WishItem[]>(ACTIVE_KEY, (list) =>
@@ -106,6 +118,34 @@ export function PlaceWishes({
     onError,
     onSettled: refresh,
   });
+
+  // `recent`: the card is in the "Just added" section, so it also says
+  // which area it is filed under.
+  const renderEntry = ({ wish: w, also }: PlaceEntry, recent: boolean) => {
+    if (isReading(w)) return <ReadingCard key={w.id} wish={w} />;
+    if (isFailed(w)) {
+      return (
+        <FailedCard
+          key={w.id}
+          wish={w}
+          now={now}
+          retried={retried.has(w.id)}
+          busy={retryMut.isPending || deleteMut.isPending}
+          onRetry={() => retryMut.mutate(w.id)}
+          onDelete={() => deleteMut.mutate(w.id)}
+        />
+      );
+    }
+    return (
+      <PlaceCard
+        key={w.id}
+        wish={w}
+        also={also}
+        area={recent ? wishArea(w) : null}
+        onVisited={() => visitMut.mutate([w.id, ...also.map((a) => a.id)])}
+      />
+    );
+  };
 
   const addRow = (
     <div className="space-y-2">
@@ -158,31 +198,37 @@ export function PlaceWishes({
           </p>
         </div>
       ) : (
-        groups.map((g) => (
-          <section key={g.area} className="space-y-2">
-            <h2 className={cn(LABEL, 'flex items-baseline justify-between px-0.5')}>
-              <span className="truncate">{g.area}</span>
-              <span className="ml-2 shrink-0 text-[var(--color-ink-faint)]">{g.wishes.length}</span>
-            </h2>
-            <div className="grid gap-2.5 md:grid-cols-2">
-              {g.wishes.map((w) => {
-                if (isReading(w)) return <ReadingCard key={w.id} wish={w} />;
-                if (isFailed(w)) {
-                  return (
-                    <FailedCard
-                      key={w.id}
-                      wish={w}
-                      busy={retryMut.isPending || deleteMut.isPending}
-                      onRetry={() => retryMut.mutate(w.id)}
-                      onDelete={() => deleteMut.mutate(w.id)}
-                    />
-                  );
-                }
-                return <PlaceCard key={w.id} wish={w} onVisited={() => visitMut.mutate(w.id)} />;
-              })}
-            </div>
+        <>
+          {/* What was just saved (or read again) is shown here first, with
+              the area it will be filed under, so it never lands out of
+              sight in the middle of a long list. */}
+          <section aria-live="polite" className="space-y-2">
+            {layout.recent.length > 0 && (
+              <>
+                <h2 className={cn(LABEL, 'flex items-baseline justify-between px-0.5 text-[var(--color-accent)]')}>
+                  <span>Just added</span>
+                  <span className="ml-2 shrink-0 text-[var(--color-ink-faint)]">
+                    {layout.recent.length}
+                  </span>
+                </h2>
+                <div className="grid gap-2.5 md:grid-cols-2">
+                  {layout.recent.map((entry) => renderEntry(entry, true))}
+                </div>
+              </>
+            )}
           </section>
-        ))
+          {layout.groups.map((g) => (
+            <section key={g.area} className="space-y-2">
+              <h2 className={cn(LABEL, 'flex items-baseline justify-between px-0.5')}>
+                <span className="truncate">{g.area}</span>
+                <span className="ml-2 shrink-0 text-[var(--color-ink-faint)]">{g.entries.length}</span>
+              </h2>
+              <div className="grid gap-2.5 md:grid-cols-2">
+                {g.entries.map((entry) => renderEntry(entry, false))}
+              </div>
+            </section>
+          ))}
+        </>
       )}
 
       {visited.length > 0 && (
@@ -256,13 +302,26 @@ function Thumb({ wish, dimmed }: { wish: WishItem; dimmed?: boolean }) {
   return <WishThumb wish={wish} dimmed={dimmed} className="aspect-[3/4] w-[84px] rounded-[10px]" />;
 }
 
-function PlaceCard({ wish, onVisited }: { wish: WishItem; onVisited: () => void }) {
+function PlaceCard({
+  wish,
+  also,
+  area,
+  onVisited,
+}: {
+  wish: WishItem;
+  /** Other active wishes for the same place, folded into this card. */
+  also: WishItem[];
+  /** The area it is filed under, said on a card shown outside its area. */
+  area: string | null;
+  onVisited: () => void;
+}) {
   const reading = wishReading(wish);
   const alt = wishAltName(wish);
   const category = wishCategory(wish);
   const rating = wish.place?.rating ?? null;
   const highlights = reading?.highlights ?? [];
   const mapUri = wish.place?.google_maps_uri ?? null;
+  const suggestion = wish.place ? null : wish.place_suggestion;
   return (
     <article className={CARD}>
       <Link
@@ -317,6 +376,23 @@ function PlaceCard({ wish, onVisited }: { wish: WishItem; onVisited: () => void 
               from {reading.recommendedBy}
             </p>
           )}
+          {suggestion && (
+            <p className="mt-1.5 text-[11.5px] leading-snug text-[var(--color-accent)] [overflow-wrap:anywhere]">
+              Is it {suggestion.name ?? 'this place'}
+              {suggestion.formatted_address ? `, ${shortAddress(suggestion.formatted_address)}` : ''}?
+              <span className="text-[var(--color-ink-muted)]"> Confirm on its page →</span>
+            </p>
+          )}
+          {(also.length > 0 || (area && area !== UNPLACED_AREA)) && (
+            <p className="mt-1 truncate font-mono text-[9px] text-[var(--color-ink-muted)]">
+              {[
+                area && area !== UNPLACED_AREA ? `in ${area}` : null,
+                also.length > 0 ? `saved ${also.length + 1} times` : null,
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            </p>
+          )}
         </div>
       </Link>
       <CardActions>
@@ -333,6 +409,12 @@ function PlaceCard({ wish, onVisited }: { wish: WishItem; onVisited: () => void 
   );
 }
 
+/** `1164 Galleria Way, Glendale, CA 91210, USA` → `1164 Galleria Way,
+ *  Glendale`: enough to tell two branches apart on a card. */
+function shortAddress(address: string): string {
+  return address.split(',').slice(0, 2).join(',').trim();
+}
+
 function ReadingCard({ wish }: { wish: WishItem }) {
   return (
     <article className={cn(CARD, 'flex gap-3 p-3')} aria-busy="true">
@@ -340,7 +422,9 @@ function ReadingCard({ wish }: { wish: WishItem }) {
         <Thumb wish={wish} />
       </div>
       <div className="min-w-0 flex-1 self-center">
-        <p className="font-display text-[15px] italic text-[var(--color-ink-muted)]">Reading…</p>
+        <p className="font-display text-[15px] italic text-[var(--color-ink-muted)]">
+          {isRereading(wish) ? 'Reading again…' : 'Reading…'}
+        </p>
         <p className="mt-1 text-[12px] leading-snug text-[var(--color-ink-muted)]">
           Working out what this is and where. It usually takes under a minute.
         </p>
@@ -351,26 +435,37 @@ function ReadingCard({ wish }: { wish: WishItem }) {
 
 function FailedCard({
   wish,
+  now,
+  retried,
   busy,
   onRetry,
   onDelete,
 }: {
   wish: WishItem;
+  now: number;
+  /** Read again from this list, and failed again. */
+  retried: boolean;
   busy: boolean;
   onRetry: () => void;
   onDelete: () => void;
 }) {
+  const readAt = captureReadAt(wish);
   return (
     <article className={CARD}>
       <div className="flex gap-3 p-3">
         <Thumb wish={wish} dimmed />
         <div className="min-w-0 flex-1 self-center">
           <p className="font-mono text-[8.5px] uppercase tracking-[0.14em] text-[var(--color-stamp)]">
-            not read
+            {retried ? 'still not read' : 'not read'}
           </p>
           <p className="mt-1 text-[13px] leading-snug text-[var(--color-ink-soft)]">
             {captureFailureMessage(wish)}
           </p>
+          {readAt && (
+            <p className="mt-1 font-mono text-[9px] text-[var(--color-ink-muted)]">
+              {retried ? 'tried again' : 'tried'} {fmtWhen(readAt, now)}
+            </p>
+          )}
         </div>
       </div>
       <CardActions>
@@ -406,7 +501,11 @@ function AddPlaceForm({ onDone }: { onDone: () => void }) {
   const [title, setTitle] = useState('');
   const createMut = useMutation({
     mutationFn: () => createWishItem({ kind: 'place', title: title.trim() }),
-    onSuccess: () => {
+    onSuccess: (wish) => {
+      // Show it at once, under "Just added"; the refetch confirms it.
+      qc.setQueryData<WishItem[]>(ACTIVE_KEY, (list) =>
+        list ? [wish, ...list.filter((w) => w.id !== wish.id)] : list,
+      );
       qc.invalidateQueries({ queryKey: ['wish-items'] });
       onDone();
     },

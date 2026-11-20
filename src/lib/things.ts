@@ -113,6 +113,17 @@ export function fmtDollars(minor: number | null | undefined): string {
   return `$${Math.round(minor / 100).toLocaleString()}`;
 }
 
+/** One price as it was set: `$40.50`, or `$40` when it has no cents.
+ *  `fmtDollars` rounds, which suits a total, not a price someone typed. */
+export function fmtPrice(minor: number | null | undefined): string {
+  if (minor == null) return '—';
+  const cents = minor % 100 !== 0;
+  return `$${(minor / 100).toLocaleString('en-US', {
+    minimumFractionDigits: cents ? 2 : 0,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
 /**
  * What the item cost, as the receipt itself put it — `¥4,499.00`,
  * `12,000 pts` — for display beside the base-currency figure.

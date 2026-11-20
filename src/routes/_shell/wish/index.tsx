@@ -11,11 +11,12 @@ import {
   wishPerDay,
   fmtPerDay,
   fmtDollars,
+  fmtPrice,
   fmtYears,
   isSnoozed,
   perDay,
 } from '../../../lib/things';
-import { wishListKey } from '../../../lib/wishPlaces';
+import { isFailed, isReading, wishListKey } from '../../../lib/wishPlaces';
 import { cn } from '../../../lib/utils';
 import { PlaceWishes } from '../../../components/PlaceWishes';
 import { WishThumb } from '../../../components/WishImage';
@@ -112,6 +113,8 @@ function ThingWishes({ adding, onAdded }: { adding: boolean; onAdded: () => void
   const { data: wishes = [], isLoading } = useQuery({
     queryKey: wishListKey('thing', 'active'),
     queryFn: () => listWishItems({ status: 'active', kind: 'thing' }),
+    // A thing read again from its image is `reading` for a while.
+    refetchInterval: (query) => (query.state.data?.some(isReading) ? 3000 : false),
   });
   const { data: owned = [] } = useQuery({
     queryKey: ['owned-items', 'expanded'],
@@ -205,9 +208,14 @@ function ThingWishes({ adding, onAdded }: { adding: boolean; onAdded: () => void
         <div className="grid grid-cols-2 gap-2.5">
           {filtered.map((w) => {
             const snoozed = isSnoozed(w);
-            // Badge tint: snoozing wins over urgency, then the three
-            // urgency buckets.
+            // The image behind it is being read, or could not be read:
+            // that is said before anything else about it.
+            const capture = isReading(w) ? 'reading' : isFailed(w) ? 'not read' : null;
+            // Badge tint: the capture's state wins, then snoozing, then
+            // the three urgency buckets.
             const badgeTint = ((): string => {
+              if (capture === 'not read') return 'bg-[var(--color-stamp)]';
+              if (capture === 'reading') return 'bg-[var(--color-ink-muted)]';
               if (snoozed) return 'bg-[var(--color-ink-faint)]';
               if (w.urgency === 'now') return 'bg-[var(--color-accent)]';
               if (w.urgency === 'soon') return 'bg-[var(--color-amber)]';
@@ -225,7 +233,11 @@ function ThingWishes({ adding, onAdded }: { adding: boolean; onAdded: () => void
               >
                 <div className="relative flex aspect-[4/3] items-center justify-center bg-[var(--color-paper-deep)]">
                   {w.has_image ? (
-                    <WishThumb wish={w} className="absolute inset-0" />
+                    <WishThumb
+                      wish={w}
+                      dimmed={capture === 'not read'}
+                      className={cn('absolute inset-0', capture === 'reading' && 'animate-pulse')}
+                    />
                   ) : (
                     <span
                       aria-hidden="true"
@@ -244,16 +256,21 @@ function ThingWishes({ adding, onAdded }: { adding: boolean; onAdded: () => void
                       badgeTint,
                     )}
                   >
-                    {snoozed ? 'snoozed' : w.urgency}
+                    {capture ?? (snoozed ? 'snoozed' : w.urgency)}
                   </span>
                 </div>
                 <div className="px-2.5 pb-2.5 pt-2">
-                  <p className="truncate font-display text-[12.5px] font-medium leading-tight">
-                    {w.title}
+                  <p
+                    className={cn(
+                      'truncate font-display text-[12.5px] font-medium leading-tight',
+                      capture === 'reading' && 'italic text-[var(--color-ink-muted)]',
+                    )}
+                  >
+                    {capture === 'reading' ? 'Reading…' : w.title}
                   </p>
                   <p className="mt-1 flex items-baseline justify-between font-mono text-[9px]">
                     <span className="font-semibold text-[var(--color-olive)]">
-                      {fmtDollars(w.target_price_minor)}
+                      {fmtPrice(w.target_price_minor)}
                     </span>
                     <span className="text-[var(--color-ink-muted)]">
                       {wishPerDay(w) !== null
