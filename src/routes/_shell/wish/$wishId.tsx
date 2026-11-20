@@ -25,6 +25,7 @@ import {
 import {
   isFailed,
   isReading,
+  titleSetByUser,
   unreadDescription,
   wishClosure,
   wishDetailKey,
@@ -196,6 +197,10 @@ function ThingWishDetail({ wish }: { wish: WishItem }) {
   const closure = wishClosure(wish);
   const readingNow = isReading(wish);
   const unread = isFailed(wish);
+  // The title is not a name while it is the server's placeholder or the
+  // description an earlier reading put there: a failed capture, or one
+  // being read again, that nobody named by hand.
+  const titleNotAName = unread || (readingNow && !titleSetByUser(wish));
   // A file that will not load cannot have been described: a "description"
   // read from it is the model's complaint that there was no image.
   const [imageBroken, setImageBroken] = useState(false);
@@ -254,14 +259,15 @@ function ThingWishDetail({ wish }: { wish: WishItem }) {
       )}
 
       <div className="space-y-3">
-        {/* Not read: the title is a placeholder or the reading's
-            description of the image, not a name, so the field starts
-            empty and the description is shown under it as a hint. */}
+        {/* Not read, or being read again: the title is a placeholder or
+            a reading's description of the image, not a name, so the field
+            starts empty; a failed one shows the description under it as a
+            hint. */}
         <div>
           <TextField
-            key={`title:${unread}:${wish.title}`}
+            key={`title:${titleNotAName}:${wish.title}`}
             label="Name"
-            value={unread ? '' : wish.title}
+            value={titleNotAName ? '' : wish.title}
             placeholder="What do you want?"
             disabled={busy}
             required
