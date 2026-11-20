@@ -67,6 +67,7 @@ export function captureFailureMessage(w: WishItem): string {
   const code = str(w.capture?.error);
   if (code === 'nothing_to_save') return "Couldn't find a place or product in this image";
   if (code === 'interrupted') return 'Reading was interrupted';
+  if (code === 'image_missing') return 'The image file is missing';
   return "Couldn't read this image";
 }
 

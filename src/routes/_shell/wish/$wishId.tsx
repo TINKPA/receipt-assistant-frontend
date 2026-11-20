@@ -12,7 +12,7 @@ import {
   type WishItem,
 } from '../../../lib/api/things';
 import { WishClosureCard } from '../../../components/WishClosure';
-import { WishHeroImage } from '../../../components/WishImage';
+import { WishHeroImage, WishImagePlaceholder } from '../../../components/WishImage';
 import {
   wishPerDay,
   perDay,
@@ -196,7 +196,10 @@ function ThingWishDetail({ wish }: { wish: WishItem }) {
   const closure = wishClosure(wish);
   const readingNow = isReading(wish);
   const unread = isFailed(wish);
-  const description = unreadDescription(wish);
+  // A file that will not load cannot have been described: a "description"
+  // read from it is the model's complaint that there was no image.
+  const [imageBroken, setImageBroken] = useState(false);
+  const description = wish.has_image && !imageBroken ? unreadDescription(wish) : null;
   const busy = patchMut.isPending || retryMut.isPending;
   const badges = (
     <>
@@ -227,23 +230,17 @@ function ThingWishDetail({ wish }: { wish: WishItem }) {
 
       {/* hero: the image it was captured from, else the placeholder */}
       {wish.has_image ? (
-        <WishHeroImage wish={wish} alt="The image this wish was saved from" pulsing={readingNow}>
+        <WishHeroImage
+          wish={wish}
+          alt="The image this wish was saved from"
+          pulsing={readingNow}
+          fallback={<WishImagePlaceholder>{badges}</WishImagePlaceholder>}
+          onBroken={() => setImageBroken(true)}
+        >
           {badges}
         </WishHeroImage>
       ) : (
-        <div className="relative flex aspect-[5/3] items-center justify-center overflow-hidden rounded-[18px] border-[0.5px] border-[var(--color-rule-soft)] bg-[var(--color-paper-deep)]">
-          <span
-            aria-hidden="true"
-            className="flex h-full w-full items-center justify-center text-[64px] text-[var(--color-ink-faint)]"
-            style={{
-              background:
-                'repeating-linear-gradient(45deg, transparent 0 7px, rgba(140,130,115,0.07) 7px 9px)',
-            }}
-          >
-            ◇
-          </span>
-          {badges}
-        </div>
+        <WishImagePlaceholder>{badges}</WishImagePlaceholder>
       )}
 
       {readingNow && <ReadingNotice wish={wish} />}

@@ -273,23 +273,27 @@ export function PlaceWishDetail({ wish }: { wish: WishItem }) {
                   The place is called{' '}
                   <span className="text-[var(--color-ink-soft)]">{offerName}</span>.
                 </span>
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() =>
-                    patchMut.mutate({ title: offerName }, { onSuccess: () => setOfferName(null) })
-                  }
-                  className={SMALL_ACTION}
-                >
-                  Use that name
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setOfferName(null)}
-                  className="font-mono text-[9px] uppercase tracking-[0.1em] text-[var(--color-ink-muted)] hover:text-[var(--color-ink)]"
-                >
-                  Keep mine
-                </button>
+                {/* The two answers stay together: alone on a line, the
+                    unframed "Keep mine" reads like a field label. */}
+                <span className="inline-flex shrink-0 items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() =>
+                      patchMut.mutate({ title: offerName }, { onSuccess: () => setOfferName(null) })
+                    }
+                    className={SMALL_ACTION}
+                  >
+                    Use that name
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setOfferName(null)}
+                    className="px-1 py-1.5 font-mono text-[9px] uppercase tracking-[0.1em] text-[var(--color-ink-muted)] hover:text-[var(--color-ink)]"
+                  >
+                    Keep mine
+                  </button>
+                </span>
               </p>
             )}
             {(alt || category || place?.rating != null) && (
