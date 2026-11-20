@@ -134,10 +134,34 @@ export function categoryLabel(category: string, title: string): string {
   return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
+/**
+ * Whether the linked place was picked by the person (`capture.user_set.place`)
+ * rather than found by the reading. The reading's name, category and town
+ * then describe what the image showed, which is not this place (a relink is
+ * usually a correction), so they give way to the place's own.
+ */
+export function placePickedByUser(w: WishItem): boolean {
+  if (!w.place) return false;
+  const u = w.capture?.user_set;
+  return u != null && typeof u === 'object' && (u as Record<string, unknown>).place === true;
+}
+
+/** The reading's facts about the place, or null once the person picked a
+ *  place of their own (see `placePickedByUser`). */
+function readingOfPlace(w: WishItem): WishReading | null {
+  return placePickedByUser(w) ? null : wishReading(w);
+}
+
 export function wishCategory(w: WishItem): string | null {
-  const read = wishReading(w)?.category;
+  const read = readingOfPlace(w)?.category;
   if (read) return categoryLabel(read, w.title);
   return humanizePlaceType(w.place?.primary_type);
+}
+
+/** The town the place search starts from: the image's, unless the person
+ *  picked a place by hand, then that place's. */
+export function wishSearchArea(w: WishItem): string | null {
+  return readingOfPlace(w)?.locality ?? str(w.place?.locality);
 }
 
 /**
@@ -159,7 +183,7 @@ export function placeSearchPrefill(name: string, area: string | null): string {
 /** A second name to show beside the title (the Chinese name of a place
  *  titled in English, say), or null when there is none or it repeats it. */
 export function wishAltName(w: WishItem): string | null {
-  const alt = str(w.place?.name_zh) ?? wishReading(w)?.nameLocal ?? null;
+  const alt = str(w.place?.name_zh) ?? readingOfPlace(w)?.nameLocal ?? null;
   if (!alt) return null;
   return alt.toLowerCase() === w.title.trim().toLowerCase() ? null : alt;
 }

@@ -17,6 +17,7 @@ import {
   isReading,
   latestVisit,
   placeSearchPrefill,
+  wishSearchArea,
   suggestionReason,
   titleSetByUser,
   wishAltName,
@@ -202,8 +203,9 @@ export function PlaceWishDetail({ wish }: { wish: WishItem }) {
     deleteMut.isPending;
 
   // The search starts from the name and, when one is known, the area: the
-  // area the image named, else the matched place's.
-  const area = reading?.locality ?? place?.locality ?? null;
+  // area the image named, else the matched place's (the place's first when
+  // the person picked it by hand).
+  const area = wishSearchArea(wish);
   const searchQuery = placeSearchPrefill(unread ? '' : wish.title, area);
   const openSearch = () => {
     placeMut.reset();
