@@ -62,11 +62,49 @@ export function PlaceWishDetail({ wish }: { wish: WishItem }) {
     void refresh();
   };
 
+  // The other wishes for this place (the list folds the active ones into
+  // one card). Loaded here so "Been there" can say how many it closes.
+  const sameIds = wish.same_place_wish_ids;
+  const others = useQueries({
+    queries: sameIds.map((id) => ({
+      queryKey: wishDetailKey(id),
+      queryFn: () => getWishItem(id),
+      retry: false,
+    })),
+  });
+  const otherWishes = others.map((q) => q.data);
+  const activeOthers = otherWishes.filter((o): o is WishItem => o?.status === 'active');
+
   const patchMut = useMutation({
     mutationFn: (body: UpdateWishItemRequest) => patchWishItem(wish.id, body),
     onMutate: () => setErr(null),
     onSuccess: show,
     onError,
+  });
+  // "Been there" is about the place, not the one screenshot: like the
+  // folded card on the list (and a receipt from the place), it closes
+  // every active wish for it. The others are read again first, so one
+  // that changed since this page loaded is not reopened or closed twice.
+  const visitMut = useMutation({
+    mutationFn: async () => {
+      const next = await patchWishItem(wish.id, { status: 'converted' });
+      const fresh = await Promise.all(sameIds.map((id) => getWishItem(id)));
+      const closed = await Promise.all(
+        fresh
+          .filter((o) => o.status === 'active')
+          .map((o) => patchWishItem(o.id, { status: 'converted' })),
+      );
+      for (const o of closed) qc.setQueryData(wishDetailKey(o.id), o);
+      return next;
+    },
+    onMutate: () => setErr(null),
+    onSuccess: show,
+    // The first PATCH may have gone through: refetch so the page says
+    // what is true now.
+    onError: (e) => {
+      onError(e);
+      void refresh();
+    },
   });
   // A place picked in the search, or the match removed. Its failure is
   // shown inside the search, which stays open for another try.
@@ -109,7 +147,7 @@ export function PlaceWishDetail({ wish }: { wish: WishItem }) {
   const suggestion = place ? null : wish.place_suggestion;
   const sourceUrl = wish.source_url ?? reading?.sourceUrl ?? null;
   const busy =
-    patchMut.isPending || placeMut.isPending || retryMut.isPending || deleteMut.isPending;
+    patchMut.isPending || visitMut.isPending || placeMut.isPending || retryMut.isPending || deleteMut.isPending;
 
   // The search starts from the name and, when one is known, the area: the
   // area the image named, else the matched place's.
@@ -377,9 +415,7 @@ export function PlaceWishDetail({ wish }: { wish: WishItem }) {
         </Section>
       )}
 
-      {wish.same_place_wish_ids.length > 0 && (
-        <SamePlaceWishes ids={wish.same_place_wish_ids} />
-      )}
+      {sameIds.length > 0 && <SamePlaceWishes ids={sameIds} others={otherWishes} />}
 
       {wish.has_image && !readingNow && (
         <ReadAgainRow
@@ -395,7 +431,9 @@ export function PlaceWishDetail({ wish }: { wish: WishItem }) {
           <button
             type="button"
             disabled={busy}
-            onClick={() => patchMut.mutate({ status: visited ? 'active' : 'converted' })}
+            onClick={() =>
+              visited ? patchMut.mutate({ status: 'active' }) : visitMut.mutate()
+            }
             className={cn(
               'block w-full rounded-[14px] py-3.5 text-center font-display text-[15px] font-medium disabled:opacity-60',
               visited
@@ -410,7 +448,11 @@ export function PlaceWishDetail({ wish }: { wish: WishItem }) {
                 visited ? 'text-[var(--color-ink-muted)]' : 'text-[var(--color-paper-fold)]',
               )}
             >
-              {visited ? 'puts it back on the list' : 'moves it to visited'}
+              {visited
+                ? 'puts it back on the list'
+                : activeOthers.length > 0
+                  ? `moves it and ${activeOthers.length} other ${activeOthers.length === 1 ? 'save' : 'saves'} to visited`
+                  : 'moves it to visited'}
             </span>
           </button>
         )}
@@ -432,19 +474,19 @@ export function PlaceWishDetail({ wish }: { wish: WishItem }) {
  * another screenshot, or typed in again. The list shows them as one card;
  * this is where each can still be opened.
  */
-function SamePlaceWishes({ ids }: { ids: string[] }) {
-  const others = useQueries({
-    queries: ids.map((id) => ({
-      queryKey: wishDetailKey(id),
-      queryFn: () => getWishItem(id),
-      retry: false,
-    })),
-  });
+function SamePlaceWishes({
+  ids,
+  others,
+}: {
+  ids: string[];
+  /** The wish behind each id, in the same order; undefined while loading. */
+  others: (WishItem | undefined)[];
+}) {
   return (
     <Section label={`Also saved · ${ids.length}`}>
       <ul className="divide-y divide-[var(--color-rule-soft)] rounded-[13px] border-[0.5px] border-[var(--color-rule-soft)] bg-[var(--color-surface)]">
         {ids.map((id, i) => {
-          const other = others[i]?.data;
+          const other = others[i];
           const state = !other
             ? ''
             : other.status === 'converted'

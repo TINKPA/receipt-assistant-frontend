@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
@@ -15,8 +15,15 @@ import {
   fmtYears,
   isSnoozed,
   perDay,
+  dollarsToMinor,
+  yearsToDays,
 } from '../../../lib/things';
-import { isFailed, isReading, wishListKey } from '../../../lib/wishPlaces';
+import {
+  isFailed,
+  isReading,
+  wishListKey,
+  wishProblemMessage,
+} from '../../../lib/wishPlaces';
 import { cn } from '../../../lib/utils';
 import { PlaceWishes } from '../../../components/PlaceWishes';
 import { WishThumb } from '../../../components/WishImage';
@@ -294,12 +301,21 @@ function AddWishForm({ onDone }: { onDone: () => void }) {
   const [price, setPrice] = useState('');
   const [years, setYears] = useState('4');
   const [urgency, setUrgency] = useState<'now' | 'soon' | 'someday'>('soon');
+  // Both numbers are optional; what is typed must parse, the same rules as
+  // the fields on a wish's own page. A field that does not parse is marked
+  // and says why, and the form is not sent.
+  const priceText = price.trim();
+  const yearsText = years.trim();
+  const priceMinor = priceText ? dollarsToMinor(priceText) : null;
+  const plannedDays = yearsText ? yearsToDays(yearsText) : null;
+  const priceBad = priceText !== '' && priceMinor === null;
+  const yearsBad = yearsText !== '' && plannedDays === null;
   const createMut = useMutation({
     mutationFn: () =>
       createWishItem({
         title: title.trim(),
-        target_price_minor: price.trim() ? Math.round(Number(price) * 100) : undefined,
-        planned_days: years.trim() ? Math.round(Number(years) * 365) : undefined,
+        target_price_minor: priceMinor ?? undefined,
+        planned_days: plannedDays ?? undefined,
         urgency,
       }),
     onSuccess: () => {
@@ -307,11 +323,13 @@ function AddWishForm({ onDone }: { onDone: () => void }) {
       onDone();
     },
   });
+  const canSend = title.trim() !== '' && !priceBad && !yearsBad && !createMut.isPending;
   return (
     <form
+      noValidate
       onSubmit={(e) => {
         e.preventDefault();
-        if (title.trim()) createMut.mutate();
+        if (canSend) createMut.mutate();
       }}
       className="space-y-2.5 rounded-[14px] border-[0.5px] border-[var(--color-rule)] bg-[var(--color-surface)] p-3.5"
     >
@@ -320,32 +338,25 @@ function AddWishForm({ onDone }: { onDone: () => void }) {
         value={title}
         onChange={(e) => setTitle(e.target.value)}
         placeholder="What do you want?"
+        aria-label="What do you want?"
         className="w-full rounded-[10px] border-[0.5px] border-[var(--color-rule-soft)] bg-[var(--color-paper)] px-3 py-2 font-display text-[14px] outline-none placeholder:font-mono placeholder:text-[11px] placeholder:text-[var(--color-ink-faint)]"
       />
       <div className="grid grid-cols-2 gap-2">
-        <label className="block">
-          <span className="font-mono text-[8px] uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">
-            target $
-          </span>
-          <input
-            value={price}
-            onChange={(e) => setPrice(e.target.value)}
-            inputMode="decimal"
-            placeholder="499"
-            className="mt-1 w-full rounded-[10px] border-[0.5px] border-[var(--color-rule-soft)] bg-[var(--color-paper)] px-3 py-2 font-mono text-[13px] outline-none"
-          />
-        </label>
-        <label className="block">
-          <span className="font-mono text-[8px] uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">
-            planned years
-          </span>
-          <input
-            value={years}
-            onChange={(e) => setYears(e.target.value)}
-            inputMode="decimal"
-            className="mt-1 w-full rounded-[10px] border-[0.5px] border-[var(--color-rule-soft)] bg-[var(--color-paper)] px-3 py-2 font-mono text-[13px] outline-none"
-          />
-        </label>
+        <AddNumber
+          label="target $"
+          value={price}
+          onChange={setPrice}
+          placeholder="499"
+          invalid={priceBad}
+          hint="An amount in dollars, like 499 or 12.50"
+        />
+        <AddNumber
+          label="planned years"
+          value={years}
+          onChange={setYears}
+          invalid={yearsBad}
+          hint="A number of years, like 4 or 2.5"
+        />
       </div>
       <div className="flex gap-1.5">
         {(['now', 'soon', 'someday'] as const).map((u) => (
@@ -364,14 +375,63 @@ function AddWishForm({ onDone }: { onDone: () => void }) {
           </button>
         ))}
       </div>
+      {createMut.isError && (
+        <p role="alert" className="text-xs text-[var(--color-stamp)]">
+          {wishProblemMessage(createMut.error)}
+        </p>
+      )}
       <button
         type="submit"
-        disabled={!title.trim() || createMut.isPending}
+        disabled={!canSend}
         className="w-full rounded-[12px] bg-[var(--color-ink)] py-2.5 font-display text-[14px] font-medium text-[var(--color-paper)] disabled:opacity-50"
       >
         {createMut.isPending ? 'Saving…' : 'Add wish'}
       </button>
     </form>
+  );
+}
+
+/** A number field of the add form; marked, with a line saying what it
+ *  takes, while what is typed does not parse. */
+function AddNumber({
+  label,
+  value,
+  onChange,
+  placeholder,
+  invalid,
+  hint,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  invalid: boolean;
+  hint: string;
+}) {
+  const hintId = useId();
+  return (
+    <label className="block">
+      <span className="font-mono text-[8px] uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">
+        {label}
+      </span>
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        inputMode="decimal"
+        placeholder={placeholder}
+        aria-invalid={invalid}
+        aria-describedby={invalid ? hintId : undefined}
+        className={cn(
+          'mt-1 w-full rounded-[10px] border-[0.5px] bg-[var(--color-paper)] px-3 py-2 font-mono text-[13px] outline-none',
+          invalid ? 'border-[var(--color-stamp)]' : 'border-[var(--color-rule-soft)]',
+        )}
+      />
+      {invalid && (
+        <span id={hintId} className="mt-1 block text-[11px] leading-snug text-[var(--color-stamp)]">
+          {hint}
+        </span>
+      )}
+    </label>
   );
 }
 
