@@ -524,8 +524,15 @@ function totalMinorFromPostings(
   // `account_type` arrives on every posting the API serves. Guard anyway:
   // a cached response from before #221 has none, and silently summing an
   // undefined type would zero the row.
+  //
+  // Only the legs of the transaction's own kind count, the kind
+  // `transactionTypeOf` decides: income legs when it has any, else expense
+  // legs. A trade-in credited against a purchase has both (the phone sold
+  // for $455 is income, the same $455 spent on the order is expense), and
+  // adding them showed it as $910, twice what changed hands.
+  const hasIncome = postings.some((p) => p.account_type === 'income');
   const meaningful = postings.filter(
-    (p) => p.account_type === 'expense' || p.account_type === 'income',
+    (p) => p.account_type === (hasIncome ? 'income' : 'expense'),
   );
   const chosen = meaningful.length > 0
     ? meaningful
