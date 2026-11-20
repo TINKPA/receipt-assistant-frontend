@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { createFileRoute, useNavigate } from '@tanstack/react-router';
+import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
 import {
@@ -7,12 +7,26 @@ import {
   getWishItem,
   listOwnedItemsExpanded,
   patchWishItem,
+  type UpdateWishItemRequest,
   type WishItem,
 } from '../../../lib/api/things';
 import { WishClosureCard } from '../../../components/WishClosure';
 import { WishHeroImage } from '../../../components/WishImage';
-import { wishPerDay, perDay, isSnoozed } from '../../../lib/things';
-import { isReading, wishClosure, wishDetailKey } from '../../../lib/wishPlaces';
+import {
+  wishPerDay,
+  perDay,
+  isSnoozed,
+  fmtYears,
+  yearsToDays,
+  dollarsToMinor,
+} from '../../../lib/things';
+import {
+  isReading,
+  wishClosure,
+  wishDetailKey,
+  wishProblemMessage,
+} from '../../../lib/wishPlaces';
+import { NumberField, TextField } from '../../../components/WishFields';
 import { PlaceWishDetail } from '../../../components/PlaceWishDetail';
 import { useBack } from '../../../lib/useBack';
 import { cn } from '../../../lib/utils';
@@ -53,9 +67,17 @@ function WishDetailRoute() {
   }
   if (!wish) {
     return (
-      <p className="py-16 text-center font-display italic text-[var(--color-ink-muted)]">
-        Wish not found (it may have been deleted).
-      </p>
+      <div className="py-16 text-center">
+        <p className="font-display italic text-[var(--color-ink-muted)]">
+          Wish not found (it may have been deleted).
+        </p>
+        <Link
+          to="/wish"
+          className="mt-4 inline-block font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--color-accent)]"
+        >
+          ← Wanting
+        </Link>
+      </div>
     );
   }
   // A capture is a place until its reading says otherwise, so one that is
@@ -115,9 +137,14 @@ function ThingWishDetail({ wish }: { wish: WishItem }) {
   );
 
   const patchMut = useMutation({
-    mutationFn: (body: Parameters<typeof patchWishItem>[1]) => patchWishItem(wishId, body),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['wish-items'] }),
-    onError: (e: unknown) => setErr(e instanceof Error ? e.message : String(e)),
+    mutationFn: (body: UpdateWishItemRequest) => patchWishItem(wishId, body),
+    onMutate: () => setErr(null),
+    // PATCH answers with the whole wish: show it now, then refetch.
+    onSuccess: (next) => {
+      qc.setQueryData(wishDetailKey(wishId), next);
+      void qc.invalidateQueries({ queryKey: ['wish-items'] });
+    },
+    onError: (e: unknown) => setErr(wishProblemMessage(e)),
   });
   const deleteMut = useMutation({
     mutationFn: () => deleteWishItem(wishId),
@@ -144,14 +171,14 @@ function ThingWishDetail({ wish }: { wish: WishItem }) {
   );
 
   return (
-    <div className="space-y-4">
+    <div className="mx-auto max-w-[560px] space-y-4">
       <div className="flex items-center justify-between pt-2">
         <button
           type="button"
           onClick={back}
           className="font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--color-accent)]"
         >
-          ← Wishes
+          ← Wanting
         </button>
         <span className="font-mono text-[8.5px] uppercase tracking-[0.14em] text-[var(--color-ink-muted)]">
           wish · acquisition planning
@@ -179,25 +206,74 @@ function ThingWishDetail({ wish }: { wish: WishItem }) {
         </div>
       )}
 
-      <div>
-        <h1 className="font-display text-[22px] font-medium leading-tight tracking-tight">
-          {wish.title}
-        </h1>
-        {wish.notes && (
-          <p className="mt-1 text-[12px] leading-snug text-[var(--color-ink-muted)]">{wish.notes}</p>
-        )}
+      <div className="space-y-3">
+        <TextField
+          key={`title:${wish.title}`}
+          label="Name"
+          value={wish.title}
+          placeholder="What do you want?"
+          disabled={patchMut.isPending}
+          required
+          onSave={(title) => {
+            if (title) patchMut.mutate({ title });
+          }}
+          className="font-display text-[22px] font-medium leading-tight tracking-tight"
+        />
+        <TextField
+          key={`notes:${wish.notes ?? ''}`}
+          label="Notes"
+          value={wish.notes ?? ''}
+          placeholder="What do you want to remember about it?"
+          disabled={patchMut.isPending}
+          multiline
+          onSave={(notes) => patchMut.mutate({ notes })}
+          className="text-[13.5px] leading-snug text-[var(--color-ink-soft)]"
+        />
+      </div>
+
+      {/* the two numbers the projection is made of */}
+      <div className="grid grid-cols-2 gap-3 rounded-[13px] border-[0.5px] border-[var(--color-rule-soft)] bg-[var(--color-surface)] px-3.5 py-3">
+        <NumberField
+          key={`price:${wish.target_price_minor ?? ''}`}
+          label="target price"
+          prefix="$"
+          value={wish.target_price_minor}
+          disabled={patchMut.isPending}
+          toText={(minor) => (minor / 100).toFixed(2)}
+          fromText={dollarsToMinor}
+          onSave={(minor) => patchMut.mutate({ target_price_minor: minor })}
+        />
+        <NumberField
+          key={`days:${wish.planned_days ?? ''}`}
+          label="planned use"
+          suffix="years"
+          value={wish.planned_days}
+          disabled={patchMut.isPending}
+          toText={fmtYears}
+          fromText={yearsToDays}
+          onSave={(days) => patchMut.mutate({ planned_days: days })}
+        />
       </div>
 
       {/* projected cost */}
       <div>
         <p className="font-mono text-[8.5px] uppercase tracking-[0.18em] text-[var(--color-ink-muted)]">
           PROJECTED DAILY COST
-          {wish.planned_days ? ` · IF USED ${(wish.planned_days / 365).toFixed(0)} YEARS` : ''}
+          {wish.planned_days ? ` · IF USED ${fmtYears(wish.planned_days)} YEARS` : ''}
         </p>
         <p className="mt-1 font-display text-[2.6rem] font-light leading-none tracking-tight tnum">
           {pd !== null ? `$${pd.toFixed(2)}` : '—'}
           <span className="ml-1 text-[15px] tracking-[0.06em] text-[var(--color-ink-soft)]">/day</span>
         </p>
+        {pd === null && (
+          <p className="mt-2 text-[12px] text-[var(--color-ink-muted)]">
+            {target === null && !wish.planned_days
+              ? 'Fill in the price and how many years you would use it.'
+              : target === null
+                ? 'Fill in the price to see what it would cost a day.'
+                : 'Fill in how many years you would use it to see what it would cost a day.'}
+          </p>
+        )}
         {pd !== null && ownedDaily > 0 && (
           <p className="mt-2 text-[12px] text-[var(--color-ink-soft)]">
             would push your portfolio from{' '}

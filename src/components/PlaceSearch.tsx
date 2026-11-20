@@ -125,6 +125,9 @@ export function PlaceSearch({
       className="scroll-mt-4 overflow-hidden rounded-[13px] border-[0.5px] border-[var(--color-rule)] bg-[var(--color-surface)]"
     >
       <div className="flex items-center gap-2 border-b-[0.5px] border-[var(--color-rule-soft)] p-2.5">
+        {/* type=search for the keyboard's search key; the browser's own
+            clear × is hidden, so the × beside the box (close) is the only
+            one. */}
         <input
           autoFocus
           type="search"
@@ -133,7 +136,7 @@ export function PlaceSearch({
           placeholder="Name and area"
           aria-label="Search for the place"
           enterKeyHint="search"
-          className="min-w-0 flex-1 rounded-[10px] border-[0.5px] border-[var(--color-rule-soft)] bg-[var(--color-paper)] px-3 py-2 font-display text-[14px] outline-none placeholder:font-mono placeholder:text-[11px] placeholder:text-[var(--color-ink-faint)]"
+          className="min-w-0 flex-1 rounded-[10px] border-[0.5px] border-[var(--color-rule-soft)] bg-[var(--color-paper)] px-3 py-2 font-display text-[14px] outline-none placeholder:font-mono placeholder:text-[11px] placeholder:text-[var(--color-ink-faint)] [&::-webkit-search-cancel-button]:appearance-none"
         />
         <button
           type="button"

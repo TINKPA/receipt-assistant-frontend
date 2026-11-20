@@ -7,7 +7,14 @@ import {
   listOwnedItemsExpanded,
   listWishItems,
 } from '../../../lib/api/things';
-import { wishPerDay, fmtPerDay, fmtDollars, isSnoozed, perDay } from '../../../lib/things';
+import {
+  wishPerDay,
+  fmtPerDay,
+  fmtDollars,
+  fmtYears,
+  isSnoozed,
+  perDay,
+} from '../../../lib/things';
 import { wishListKey } from '../../../lib/wishPlaces';
 import { cn } from '../../../lib/utils';
 import { PlaceWishes } from '../../../components/PlaceWishes';
@@ -24,6 +31,8 @@ type Section = (typeof SECTIONS)[number]['key'];
 // page, lands where the user was. Absent (or anything else) means Places.
 const wishSearch = z.object({
   section: z.enum(['places', 'things']).optional().catch(undefined),
+  // The Visited list under Places is open.
+  visited: z.boolean().optional().catch(undefined),
 });
 
 export const Route = createFileRoute('/_shell/wish/')({
@@ -39,7 +48,8 @@ const PILLS: Pill[] = ['all', 'now', 'soon', 'someday', 'snoozed'];
  * to go to (first, and the default) and things to buy.
  */
 function WishRoute() {
-  const section: Section = Route.useSearch().section ?? 'places';
+  const search = Route.useSearch();
+  const section: Section = search.section ?? 'places';
   const navigate = Route.useNavigate();
   const [adding, setAdding] = useState(false);
 
@@ -76,7 +86,15 @@ function WishRoute() {
       />
 
       {section === 'places' ? (
-        <PlaceWishes />
+        <PlaceWishes
+          showVisited={search.visited === true}
+          onShowVisited={(open) =>
+            void navigate({
+              search: (prev) => ({ ...prev, visited: open ? true : undefined }),
+              replace: true,
+            })
+          }
+        />
       ) : (
         <ThingWishes adding={adding} onAdded={() => setAdding(false)} />
       )}
@@ -154,7 +172,11 @@ function ThingWishes({ adding, onAdded }: { adding: boolean; onAdded: () => void
       <div className="rounded-[12px] border-[0.5px] border-[var(--color-rule-soft)] bg-[var(--color-surface)]">
         <div className="grid grid-cols-3 divide-x divide-[var(--color-rule-soft)] py-3">
           <Stat label="Wish value" value={fmtDollars(wishValueMinor)} />
-          <Stat label="Proj. daily" value={`+$${projDaily.toFixed(2)}`} accent />
+          <Stat
+            label="Proj. daily"
+            value={wishes.some((w) => wishPerDay(w) !== null) ? `+$${projDaily.toFixed(2)}` : '—'}
+            accent
+          />
           <Stat label="Items" value={String(wishes.length)} />
         </div>
         {ownedDaily > 0 && projDaily > 0 && (
@@ -235,7 +257,7 @@ function ThingWishes({ adding, onAdded }: { adding: boolean; onAdded: () => void
                     </span>
                     <span className="text-[var(--color-ink-muted)]">
                       {wishPerDay(w) !== null
-                        ? `${fmtPerDay(wishPerDay(w))} · ${((w.planned_days ?? 0) / 365).toFixed(0)}y`
+                        ? `${fmtPerDay(wishPerDay(w))} · ${fmtYears(w.planned_days ?? 0)}y`
                         : '—'}
                     </span>
                   </p>

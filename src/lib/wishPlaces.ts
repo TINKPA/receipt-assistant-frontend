@@ -70,8 +70,52 @@ export function humanizePlaceType(t: string | null | undefined): string | null {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
+const CJK = /[぀-ヿ㐀-鿿가-힯豈-﫿]/;
+const LATIN = /[A-Za-z]/;
+
+/**
+ * The reading's category as a label: sentence case like the place types
+ * (`restaurant` → `Restaurant`), and in one language. A reading of a
+ * Chinese or Japanese image often gives the category twice, `日料 /
+ * Japanese sashimi restaurant` or `粤菜 (Cantonese restaurant)`; the half
+ * in the title's script is kept, so an English title gets the English one.
+ */
+export function categoryLabel(category: string, title: string): string {
+  let label = category.trim();
+  const halves =
+    /^(.+?)\s*[/／]\s*(.+)$/.exec(label) ?? /^(.+?)\s*[(（]\s*(.+?)\s*[)）]$/.exec(label);
+  if (halves) {
+    const [a, b] = [halves[1].trim(), halves[2].trim()];
+    const aCjk = CJK.test(a) && !LATIN.test(a);
+    const bCjk = CJK.test(b) && !LATIN.test(b);
+    if (aCjk !== bCjk) {
+      const wantCjk = CJK.test(title);
+      label = aCjk === wantCjk ? a : b;
+    }
+  }
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
 export function wishCategory(w: WishItem): string | null {
-  return wishReading(w)?.category ?? humanizePlaceType(w.place?.primary_type);
+  const read = wishReading(w)?.category;
+  if (read) return categoryLabel(read, w.title);
+  return humanizePlaceType(w.place?.primary_type);
+}
+
+/**
+ * What the place search starts from: the name, then whatever of the area
+ * the name does not already say. `Sushi Gen (Little Tokyo)` in `Little
+ * Tokyo, Los Angeles` searches `Sushi Gen (Little Tokyo) Los Angeles`.
+ */
+export function placeSearchPrefill(name: string, area: string | null): string {
+  const n = name.trim();
+  if (!area) return n;
+  const lower = n.toLowerCase();
+  const rest = area
+    .split(/[,，·]/)
+    .map((part) => part.trim())
+    .filter((part) => part !== '' && !lower.includes(part.toLowerCase()));
+  return [n, ...rest].filter(Boolean).join(' ');
 }
 
 /** A second name to show beside the title (the Chinese name of a place

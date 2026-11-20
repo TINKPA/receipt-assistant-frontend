@@ -13,6 +13,7 @@ import {
   humanizePlaceType,
   isFailed,
   isReading,
+  placeSearchPrefill,
   wishAltName,
   wishCategory,
   wishClosure,
@@ -25,6 +26,7 @@ import { cn } from '../lib/utils';
 import { PlaceSearch } from './PlaceSearch';
 import { WishClosureCard } from './WishClosure';
 import { WishHeroImage } from './WishImage';
+import { TextField } from './WishFields';
 
 const LABEL = 'font-mono text-[8.5px] uppercase tracking-[0.18em] text-[var(--color-ink-muted)]';
 const CARD =
@@ -100,11 +102,7 @@ export function PlaceWishDetail({ wish }: { wish: WishItem }) {
   // The search starts from the name and, when one is known, the area: the
   // area the image named, else the matched place's.
   const area = reading?.locality ?? place?.locality ?? null;
-  const name = unread ? '' : wish.title.trim();
-  const searchQuery =
-    area && !name.toLowerCase().includes(area.toLowerCase())
-      ? `${name} ${area}`.trim()
-      : name;
+  const searchQuery = placeSearchPrefill(unread ? '' : wish.title, area);
   const openSearch = () => {
     placeMut.reset();
     setSearching(true);
@@ -173,13 +171,22 @@ export function PlaceWishDetail({ wish }: { wish: WishItem }) {
               className="font-display text-[22px] font-medium leading-tight tracking-tight"
             />
             {(alt || category || place?.rating != null) && (
-              <p className="mt-1.5 text-[12.5px] text-[var(--color-ink-muted)]">
-                {alt && <span className="mr-2 font-display text-[14px] text-[var(--color-ink-soft)]">{alt}</span>}
-                {category}
-                {category && place?.rating != null && ' · '}
-                {place?.rating != null && (
-                  <span className="text-[var(--color-amber)]">★ {place.rating.toFixed(1)}</span>
-                )}
+              <p className="mt-1.5 break-words text-[12.5px] text-[var(--color-ink-muted)]">
+                {[
+                  alt && (
+                    <span key="alt" className="font-display text-[14px] text-[var(--color-ink-soft)]">
+                      {alt}
+                    </span>
+                  ),
+                  category && <span key="category">{category}</span>,
+                  place?.rating != null && (
+                    <span key="rating" className="text-[var(--color-amber)]">
+                      ★ {place.rating.toFixed(1)}
+                    </span>
+                  ),
+                ]
+                  .filter(Boolean)
+                  .flatMap((part, i) => (i === 0 ? [part] : [' · ', part]))}
               </p>
             )}
           </div>
@@ -380,73 +387,5 @@ function Fact({ term, children }: { term: string; children: ReactNode }) {
       </dt>
       <dd className="min-w-0 flex-1 text-[var(--color-ink-soft)]">{children}</dd>
     </div>
-  );
-}
-
-/** Text the user types; saved on blur (and on Enter for a single line),
- *  as the money fields on the owned page are. An empty notes field clears
- *  the note; an empty required field is put back as it was. */
-function TextField({
-  label,
-  value,
-  placeholder,
-  disabled,
-  multiline,
-  required,
-  onSave,
-  className,
-}: {
-  label: string;
-  value: string;
-  placeholder: string;
-  disabled: boolean;
-  multiline?: boolean;
-  required?: boolean;
-  onSave: (next: string | null) => void;
-  className?: string;
-}) {
-  const [text, setText] = useState(value);
-  const commit = () => {
-    const next = text.trim();
-    if (next === value.trim()) return;
-    if (next === '' && required) {
-      setText(value);
-      return;
-    }
-    onSave(next === '' ? null : next);
-  };
-  const shared = {
-    value: text,
-    placeholder,
-    disabled,
-    'aria-label': label,
-    onBlur: commit,
-    className: cn(
-      'w-full min-w-0 rounded-none border-b-[0.5px] border-transparent bg-transparent pb-0.5 outline-none transition-colors placeholder:text-[var(--color-ink-faint)] hover:border-[var(--color-rule)] focus:border-[var(--color-ink-muted)]',
-      className,
-    ),
-  };
-  return (
-    <label className="block">
-      <span className={LABEL}>{label}</span>
-      {multiline ? (
-        <textarea
-          {...shared}
-          rows={Math.min(6, Math.max(2, Math.ceil(text.length / 44)))}
-          onChange={(e) => setText(e.target.value)}
-          className={cn(shared.className, 'mt-1 block resize-none')}
-        />
-      ) : (
-        <input
-          {...shared}
-          type="text"
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') e.currentTarget.blur();
-          }}
-          className={cn(shared.className, 'mt-1 block')}
-        />
-      )}
-    </label>
   );
 }

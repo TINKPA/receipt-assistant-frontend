@@ -43,10 +43,17 @@ const SMALL_ACTION =
  * the server some seconds later, so the list polls while any card is in
  * that state and stops when none is.
  */
-export function PlaceWishes() {
+export function PlaceWishes({
+  showVisited,
+  onShowVisited,
+}: {
+  /** Whether the Visited list is open. The caller keeps it in the URL, so
+   *  it is still open after a reload or on coming back from a receipt. */
+  showVisited: boolean;
+  onShowVisited: (open: boolean) => void;
+}) {
   const qc = useQueryClient();
   const [typing, setTyping] = useState(false);
-  const [showVisited, setShowVisited] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   const { data: wishes = [], isLoading, error } = useQuery({
@@ -183,7 +190,7 @@ export function PlaceWishes() {
           <button
             type="button"
             aria-expanded={showVisited}
-            onClick={() => setShowVisited((v) => !v)}
+            onClick={() => onShowVisited(!showVisited)}
             className={cn(LABEL, 'flex w-full items-baseline justify-between px-0.5 hover:text-[var(--color-ink)]')}
           >
             <span>
@@ -265,7 +272,7 @@ function PlaceCard({ wish, onVisited }: { wish: WishItem; onVisited: () => void 
       >
         {wish.has_image && <Thumb wish={wish} />}
         <div className="min-w-0 flex-1">
-          <h3 className="font-display text-[16px] font-medium leading-tight tracking-tight">
+          <h3 className="line-clamp-2 font-display text-[16px] font-medium leading-tight tracking-tight [overflow-wrap:anywhere]">
             {wish.title}
             {alt && (
               <span className="ml-1.5 text-[13px] font-normal text-[var(--color-ink-muted)]">
@@ -301,7 +308,7 @@ function PlaceCard({ wish, onVisited }: { wish: WishItem; onVisited: () => void 
             </ul>
           )}
           {wish.notes && (
-            <p className="mt-1.5 line-clamp-2 text-[12px] leading-snug text-[var(--color-ink-soft)]">
+            <p className="mt-1.5 line-clamp-2 text-[12px] leading-snug text-[var(--color-ink-soft)] [overflow-wrap:anywhere]">
               {wish.notes}
             </p>
           )}
