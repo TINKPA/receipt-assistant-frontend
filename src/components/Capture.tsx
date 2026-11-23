@@ -1,6 +1,8 @@
 import React, { Fragment, useEffect, useRef, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { ingestBatch, extractProblemMessage } from '../lib/api';
+import { UploaderNoteField } from './UploaderNote';
+import { noteToSend, noteTooLong } from '../lib/uploaderNote';
 import { captureWishItem, isHeic, type CaptureResult } from '../lib/api/things';
 import { wishProblemMessage } from '../lib/wishPlaces';
 import { cn } from '../lib/utils';
@@ -158,6 +160,9 @@ export default function Capture({
   // `reviewing` flips to the confirm stage after each shot; "+ Add another"
   // drops back to the camera with the batch intact (count badge on shutter).
   const [reviewing, setReviewing] = useState(false);
+  // Optional uploader note for the batch (#179). Kept across "+ Add another"
+  // and cleared once the batch is sent.
+  const [note, setNote] = useState('');
 
   // A blob URL only renders in an <img> when the blob is actually an image.
   // PDFs and saved HTML receipts are valid uploads with no thumbnail, so the
@@ -260,13 +265,14 @@ export default function Capture({
       return;
     }
     try {
-      const result = await ingestBatch(files);
+      const result = await ingestBatch(files, { note: noteToSend(note) });
       const first = result.items[0];
       if (!first) {
         throw new Error('Upload accepted but server returned no ingest items.');
       }
       pending.forEach((p) => URL.revokeObjectURL(p.url));
       setPending([]);
+      setNote('');
       onComplete({
         batchId: result.batchId,
         ingestId: first.ingestId,
@@ -398,10 +404,16 @@ export default function Capture({
             )
           )}
 
+          {!want && (
+            <div className="pt-3">
+              <UploaderNoteField value={note} onChange={setNote} disabled={uploading} />
+            </div>
+          )}
+
           <div className="space-y-2 pb-6 pt-4">
             <button
               type="button"
-              disabled={uploading || notAnImage}
+              disabled={uploading || notAnImage || (!want && noteTooLong(note))}
               onClick={() => void sendPending()}
               className="block w-full rounded-[14px] bg-[var(--color-ink)] py-3.5 text-center font-display text-[15px] font-medium text-[var(--color-paper)] transition-opacity hover:opacity-90 disabled:opacity-60"
             >

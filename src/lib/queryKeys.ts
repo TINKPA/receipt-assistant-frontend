@@ -37,6 +37,8 @@ export const qk = {
    *  the combined set and would make each group's count wrong. */
   ingestProblemsUnreadable: ['ingestProblems', 'unsupported'] as const,
   ingestProblemsDupes: ['ingestProblems', 'dupes'] as const,
+  /** One ingest by id (#179: the receipt detail reads its uploader note). */
+  ingest: (id: string) => ['ingest', id] as const,
   /** A single ingest batch — shared by BatchDetail and the upload-job poller
    *  (ProcessingCardList) so both collapse onto one cache entry per batch. */
   batch: (id: string) => ['batch', id] as const,

@@ -14,6 +14,7 @@ import {
 import { cn } from '../lib/utils';
 import { qk } from '../lib/queryKeys';
 import { receiptLink } from '../lib/navLinks';
+import { RetryWithNote, UploaderNoteDisplay } from './UploaderNote';
 
 interface BatchesProps {
   onSelectBatch: (batchId: string) => void;
@@ -460,9 +461,11 @@ function AttentionRow({
         </p>
       )}
 
+      <UploaderNoteDisplay note={ingest.uploader_note} className="mt-1.5" />
+
       {error && <p className="mt-1 text-[10px] leading-snug text-[var(--color-stamp)]">{error}</p>}
 
-      <div className="mt-2 flex items-center gap-2">
+      <div className="mt-2 flex flex-wrap items-center gap-2">
         {ingest.retryable && (
           <button
             type="button"
@@ -481,6 +484,7 @@ function AttentionRow({
             view the original ›
           </Link>
         )}
+        <RetryWithNote ingest={ingest} />
       </div>
     </div>
   );
