@@ -1,0 +1,56 @@
+[
+  {
+    "case": "without-note",
+    "method": "POST",
+    "url": "http://127.0.0.1:5179/api/v1/ingest/batch",
+    "content_type": "multipart/form-data; boundary=----WebKitFormBoundaryqhAiakBwG8Y6B0DC",
+    "status": 202,
+    "formdata_fields": [
+      [
+        "files",
+        "<file net-mwt28nnzwithout-note.json, 191 bytes>"
+      ]
+    ],
+    "response": {
+      "batchId": "01a207b9-8132-742d-8d7b-4950fe6f4504",
+      "status": "pending",
+      "items": [
+        {
+          "ingestId": "01a207b9-8150-77d7-8b93-0e608deb6334",
+          "filename": "net-mwt28nnzwithout-note.json",
+          "mime_type": "application/json"
+        }
+      ],
+      "poll": "/v1/batches/01a207b9-8132-742d-8d7b-4950fe6f4504"
+    }
+  },
+  {
+    "case": "with-note",
+    "method": "POST",
+    "url": "http://127.0.0.1:5179/api/v1/ingest/batch",
+    "content_type": "multipart/form-data; boundary=----WebKitFormBoundary604Ik9zSfjQI0TEr",
+    "status": 202,
+    "formdata_fields": [
+      [
+        "files",
+        "<file net-mwt28nzkwith-note.json, 188 bytes>"
+      ],
+      [
+        "note",
+        "same payment as the PayPal email"
+      ]
+    ],
+    "response": {
+      "batchId": "01a207b9-8219-737f-a064-16815e67c0a1",
+      "status": "pending",
+      "items": [
+        {
+          "ingestId": "01a207b9-823a-721e-bcc2-c2ab6f6fc4e2",
+          "filename": "net-mwt28nzkwith-note.json",
+          "mime_type": "application/json"
+        }
+      ],
+      "poll": "/v1/batches/01a207b9-8219-737f-a064-16815e67c0a1"
+    }
+  }
+]

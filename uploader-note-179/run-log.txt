@@ -1,0 +1,9 @@
+A ingest 01a207b9-682f-77dd-84d9-4730f0bd0efa done note= "Employer relocation reimbursement paid to me, not a purchase I made."
+A receipt shows note: UPLOADER'S NOTE |  | Employer relocation reimbursement paid to me, not a purchase I made.
+B ingest 01a207b9-6e7a-70a0-9df1-3c0b47445a5e unsupported retryable= false retryable_with_note= true
+retry request body: {"note":"This is my employer reimbursing my moving costs: book it as income."}
+B retry ingest 01a207b9-7418-7392-962e-2ca489b812ca unsupported note= "This is my employer reimbursing my moving costs: book it as income."
+C ingest 01a207b9-798a-77da-9c1b-2718d9601b51 done note= null
+upload #1 multipart field names: []
+upload #2 multipart field names: []
+upload #3 multipart field names: []
