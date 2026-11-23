@@ -23,29 +23,38 @@ export function UploaderNoteField({
   disabled,
   defaultOpen = false,
   label = 'Add a note',
+  autoFocus = false,
 }: {
   value: string;
   onChange: (v: string) => void;
   disabled?: boolean;
   defaultOpen?: boolean;
   label?: string;
+  autoFocus?: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen || value !== '');
+  // Opening swaps the toggle for the textarea; focus follows so keyboard
+  // users are not dropped onto <body>.
+  const [focusOnMount, setFocusOnMount] = useState(autoFocus);
   const id = useId();
   if (!open) {
     return (
       <button
         type="button"
         disabled={disabled}
-        onClick={() => setOpen(true)}
+        onClick={() => {
+          setFocusOnMount(true);
+          setOpen(true);
+        }}
         aria-expanded={false}
+        aria-controls={id}
         className="font-mono text-[9px] uppercase tracking-[0.12em] text-[var(--color-ink-soft)] underline-offset-2 hover:underline disabled:opacity-50"
       >
         + {label} <span className="normal-case tracking-normal text-[var(--color-ink-muted)]">(optional)</span>
       </button>
     );
   }
-  const count = [...value].length;
+  const count = [...value.trim()].length;
   return (
     <div>
       <label
@@ -59,6 +68,7 @@ export function UploaderNoteField({
       </label>
       <textarea
         id={id}
+        autoFocus={focusOnMount}
         value={value}
         disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
@@ -152,6 +162,7 @@ export function RetryWithNote({ ingest }: { ingest: BackendIngest }) {
       <button
         type="button"
         onClick={() => setOpen(true)}
+        aria-expanded={false}
         className="rounded-full border-[0.5px] border-[var(--color-rule)] px-3 py-1 font-mono text-[8.5px] uppercase tracking-[0.06em] text-[var(--color-ink-soft)]"
       >
         retry with a note ✎
@@ -162,7 +173,7 @@ export function RetryWithNote({ ingest }: { ingest: BackendIngest }) {
   const send = noteToSend(note);
   return (
     <div className="mt-2 w-full space-y-2">
-      <UploaderNoteField value={note} onChange={setNote} disabled={retry.isPending} defaultOpen />
+      <UploaderNoteField value={note} onChange={setNote} disabled={retry.isPending} defaultOpen autoFocus />
       {retry.isError && (
         <p className="text-[10px] leading-snug text-[var(--color-stamp)]">{extractProblemMessage(retry.error)}</p>
       )}
