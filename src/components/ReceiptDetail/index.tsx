@@ -8,6 +8,7 @@ import {
   restoreDocument,
   type BackendTransaction,
   type ReExtractDocumentResult,
+  getIngest,
 } from '../../lib/api';
 import { statusBadge } from '../../lib/transactionStatus';
 import { cn } from '../../lib/utils';
@@ -33,6 +34,7 @@ import { ExtractionDetailsCollapsible } from './parts/ExtractionDetailsCollapsib
 import { ProcessingNote } from './parts/ProcessingNote';
 import { Banner, ReExtractBanner } from './parts/banners';
 import { formatTimeOfDay } from '@/lib/timeOfDay';
+import { UploaderNoteDisplay } from '../UploaderNote';
 
 interface ReceiptDetailProps {
   receiptId: string;
@@ -129,6 +131,17 @@ export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: Re
     },
   });
   const error = queryError ? extractProblemMessage(queryError) : null;
+
+  // The uploader's note (#179) lives on the ingest that created the
+  // transaction; `source_ingest_id` is the path to it. A note is set at
+  // upload or retry and never edited, so one read is enough.
+  const sourceIngestId = receipt?.sourceIngestId ?? null;
+  const { data: sourceIngest } = useQuery({
+    queryKey: qk.ingest(sourceIngestId ?? ''),
+    queryFn: () => getIngest(sourceIngestId!),
+    enabled: sourceIngestId != null,
+    staleTime: Infinity,
+  });
 
   // Every document on the transaction, most itemized first (#165 A/C).
   // Deterministic — role rank then id — and independent of the payload's
@@ -454,6 +467,8 @@ export default function ReceiptDetail({ receiptId, onBack, onAfterMutation }: Re
           <DocumentsCard entries={entries} />
         )
       )}
+
+      {sourceIngest?.uploader_note && <UploaderNoteDisplay note={sourceIngest.uploader_note} />}
 
       {/* Re-extract affordance. Only on active (non-deleted) receipts
           that have a linked document. Wall-time is ~30-60s for vision

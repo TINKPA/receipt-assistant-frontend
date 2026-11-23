@@ -11,6 +11,7 @@ import {
 import { cn } from '../lib/utils';
 import { qk } from '../lib/queryKeys';
 import { receiptLink } from '../lib/navLinks';
+import { RetryWithNote, UploaderNoteDisplay } from './UploaderNote';
 
 interface BatchDetailProps {
   batchId: string;
@@ -197,12 +198,8 @@ function IngestRow({ ingest, first }: { ingest: BackendIngest; first: boolean })
   const tone = TONE[meta.tone];
   const txnIds = ingest.produced?.transaction_ids ?? [];
   return (
-    <div
-      className={cn(
-        'flex items-center gap-3 px-4 py-2.5',
-        !first && 'border-t border-[var(--color-rule-soft)]',
-      )}
-    >
+    <div className={cn('px-4 py-2.5', !first && 'border-t border-[var(--color-rule-soft)]')}>
+    <div className="flex items-center gap-3">
       <span className="min-w-0 flex-1">
         <span className="block truncate font-mono text-[9.5px]">{ingest.filename}</span>
         <span className="mt-0.5 block truncate font-mono text-[7.5px] tracking-[0.04em] text-[var(--color-ink-faint)]">
@@ -230,6 +227,13 @@ function IngestRow({ ingest, first }: { ingest: BackendIngest; first: boolean })
         <span className={cn('h-[5px] w-[5px] rounded-full', tone.dot, tone.pulse && 'animate-pulse')} />
         {meta.label}
       </span>
+    </div>
+    <UploaderNoteDisplay note={ingest.uploader_note} className="mt-1.5" />
+    {ingest.retryable_with_note && !ingest.retryable && (
+      <div className="mt-1.5 flex flex-wrap items-center gap-2">
+        <RetryWithNote ingest={ingest} />
+      </div>
+    )}
     </div>
   );
 }

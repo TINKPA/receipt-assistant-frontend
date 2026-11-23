@@ -1771,7 +1771,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Merge this product into the target — re-points transaction_items + owned_items, retires source */
+        /** Merge this product into the target — re-points transaction_items, owned_items and wish_items, retires source */
         post: {
             parameters: {
                 query?: never;
@@ -2141,7 +2141,7 @@ export interface paths {
         put?: never;
         /**
          * Add a wish
-         * @description A place wish can name its place by `place_id` (a place the ledger has) or `google_place_id` (one picked from `GET /v1/wish-items/place-search`, stored by the server). A place wish sent with neither is matched by its title with Google Find Place before the answer, biased to the workspace's usual area; a miss leaves it unmatched, with the reason in `capture.place_match.error`, and a found place whose name differs from the title is not linked but offered as `place_suggestion`. A wish that gets a place or a product is checked against the ledger at once: a live purchase there on or after the day the wish was made converts it.
+         * @description A wish sent with `place_id` or `google_place_id` and no `kind` is a place wish. A place wish can name its place by `place_id` (a place the ledger has) or `google_place_id` (one picked from `GET /v1/wish-items/place-search`, stored by the server). A place wish sent with neither is matched by its title with Google Find Place before the answer, biased to the workspace's usual area; a miss leaves it unmatched, with the reason in `capture.place_match.error`. Only a found place inside the workspace's usual area (50 km around its purchases) whose name carries the title is linked; anything else (another name, another region, or a workspace with too few purchases to have an area) is offered as `place_suggestion`. A found place outside the area whose name does not carry the whole title is offered only when it shares the title's words and the rest of the title is in its address (`El Farolito Mission District` → Taquería El Farolito, Mission St), after any branch inside the area that carries the title's first word; one named for somewhere else (`Sugarfish Little Tokyo` → SUGARFISH Little Italy, San Diego, with no branch in the area) or whose name shares nothing with the title is not offered at all. A wish that gets a place or a product is checked against the ledger at once: a live purchase there on or after the day the wish was made converts it.
          */
         post: {
             parameters: {
@@ -2243,7 +2243,10 @@ export interface paths {
         };
         put?: never;
         post?: never;
-        /** Hard-delete a wish */
+        /**
+         * Hard-delete a wish
+         * @description Its captured image is deleted too, unless another wish (one split from the same capture) still shows it.
+         */
         delete: {
             parameters: {
                 query?: never;
@@ -2278,7 +2281,7 @@ export interface paths {
         head?: never;
         /**
          * Patch a wish (fields, urgency, snooze, convert / decline)
-         * @description JSON Merge Patch (RFC 7396). `metadata` merges into the stored object rather than replacing it (`null` removes a key, `{}` changes nothing). `status: converted` from the user sets `converted_by: user` and `converted_at` (now unless sent; not before the wish was made). Changing `converted_transaction_id` (a live transaction) or `converted_at` on a receipt conversion makes it `converted_by: user`. Leaving `converted` (to active or declined) dismisses its transaction for good; `status: active` from converted or declined starts the wish over: only a purchase from then on converts it, and that is checked at once. `google_place_id` stores the picked place and links it (confirming a `place_suggestion`); `place_id: null` removes a place or rejects the suggestion. Setting `title`, `kind` or the place on a captured wish records it in `capture.user_set`, which no reading overwrites; on a wish whose capture failed it also marks the capture `done` (`capture.resolved_by: user`, the error kept). A new place, product or kind is checked against the ledger at once.
+         * @description JSON Merge Patch (RFC 7396). `metadata` merges into the stored object rather than replacing it (`null` removes a key, `{}` changes nothing). `status: converted` from the user sets `converted_by: user` and `converted_at` (now unless sent; not before the wish was made; `Z` or a UTC offset). `currency` changes the currency of `target_price_minor` (the amount is not converted). Changing `converted_transaction_id` (a live transaction) or `converted_at` on a receipt conversion makes it `converted_by: user`. Leaving `converted` (to active or declined) dismisses its transaction for good; `status: active` from converted or declined starts the wish over: only a purchase from then on converts it, and that is checked at once. `google_place_id` stores the picked place and links it (confirming a `place_suggestion`); `place_id: null` removes a place or rejects the suggestion. Setting `title`, `kind` or the place on a captured wish records it in `capture.user_set`, which no reading overwrites; on a wish whose capture failed it also marks the capture `done` (`capture.resolved_by: user`, the error kept). A new `title` on a place wish with no place (a failed capture being named) is matched as a typed place wish is (`capture.place_match`, `place_suggestion`), unless the person removed a place by hand. A new place, product or kind is checked against the ledger at once.
          */
         patch: {
             parameters: {
@@ -2452,7 +2455,7 @@ export interface paths {
         put?: never;
         /**
          * Save a wish from an image (a screenshot of a post, a chat, a map; a photo)
-         * @description Stores the image and answers at once with a wish whose `capture_status` is `reading` and whose title is a placeholder. The image is then read in the background: the title, kind, notes, source link and, for a place, the matched `place` are filled in and `capture_status` becomes `done`, or `failed` with `capture.error` (`nothing_to_save` titles it with what the image showed). Poll `GET /v1/wish-items/{id}`. Nothing the reading fills overwrites a note sent with the upload, or a title, kind or place the person set while it was being read. A place with no city or address in the image is offered as `place_suggestion`, not linked. An image that lists several places with equal weight makes one wish for each (`capture.sibling_of` / `capture.siblings`), except for places already wished for. HEIC and AVIF are converted to JPEG first. The same bytes uploaded again answer 200 with the wish they made the first time, whatever its state, and are not read again; a note sent with them is added to its notes.
+         * @description Stores the image and answers at once with a wish whose `capture_status` is `reading` and whose title is a placeholder. The image is then read in the background: the title, kind, notes, source link and, for a place, the matched `place` are filled in and `capture_status` becomes `done`, or `failed` with `capture.error` (`nothing_to_save` titles it with what the image showed and makes it a `thing`). Poll `GET /v1/wish-items/{id}`. Nothing the reading fills overwrites a note sent with the upload, or a title, kind or place the person set while it was being read. A place with no city or address in the image is offered as `place_suggestion`, not linked. An image that lists several places with equal weight makes one wish for each (`capture.sibling_of` / `capture.siblings`), except for places already wished for; a capture whose own place is already wished for keeps its wish and names the earlier one in `capture.duplicate_of`. A place is linked only when its name agrees and the location the image names is confirmed by Google's structured address (its address components) in English or the name's own script: the house number is its street number on the read street, else the street (numbered ones such as `6th Ave` included) is its route, else the city or neighbourhood is a whole city-level part of it (`South San Francisco` is not `San Francisco`; a state or a country such as `USA` or `Taiwan` confirms nothing; `New York` and `NYC` are confirmed by the five boroughs). A place that fails it is offered as `place_suggestion` with the reason; one whose name shares nothing is not offered. For a shop's listing (Amazon and the like) with no person recommending it, `capture.reading.highlights` is empty: the listing's own words are not highlights. HEIC and AVIF are converted to JPEG first. A file that does not decode as an image is a 422 `unreadable_image`, and one over 50 million pixels a 422 `image_too_large` (checked from its header, before any pixel is decoded); nothing is stored or read. The same bytes uploaded again answer 200 with the wish they made the first time, whatever its state, and are not read again; a note sent with them is added to its notes.
          */
         post: {
             parameters: {
@@ -2486,7 +2489,7 @@ export interface paths {
                     };
                 };
                 400: components["responses"]["BadRequest"];
-                /** @description Not an image this endpoint reads */
+                /** @description Not an image this endpoint reads (`unsupported_image`), one that does not decode (`unreadable_image`), or one over 50 million pixels (`image_too_large`) */
                 422: {
                     headers: {
                         [name: string]: unknown;
@@ -2514,7 +2517,7 @@ export interface paths {
         put?: never;
         /**
          * Read a captured image again
-         * @description Fields the person set by hand (`capture.user_set`) are kept; if the new reading fails, a wish they had named or placed stays `done`. A wish split from another capture (`capture.sibling_of`) is not read on its own: 409, read the original.
+         * @description Fields the person set by hand (`capture.user_set`) are kept; if the new reading fails, a wish they had named or placed stays `done`. A wish split from another capture (`capture.sibling_of`) is not read on its own while that capture exists: 409, read the original. Once the original is deleted it is read on its own, for its own entry of the image (no further split). An image file that is no longer on disk fails the capture with `capture.error: image_missing` before anything is read, and the wish keeps its kind.
          */
         post: {
             parameters: {
@@ -2546,7 +2549,7 @@ export interface paths {
                         "application/problem+json": components["schemas"]["ProblemDetails"];
                     };
                 };
-                /** @description No image, or it is being read now */
+                /** @description No image, it is being read now, or it was split from a capture that still exists */
                 409: {
                     headers: {
                         [name: string]: unknown;
@@ -3881,7 +3884,7 @@ export interface paths {
                     };
                 };
                 400: components["responses"]["BadRequest"];
-                /** @description No files, or `auto_reconcile` is not one of true / 1 / false / 0 */
+                /** @description No files; `auto_reconcile` is not one of true / 1 / false / 0; or a `note` is too long, sent twice, or (`note[<filename>]`) names no uploaded file */
                 422: {
                     headers: {
                         [name: string]: unknown;
@@ -4193,7 +4196,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Retry a failed ingest (#158). Re-runs the original stored bytes through the batch pipeline (genuine-restore dedup branch — not suppressed). Returns 202 with the freshly-created ingest to poll. Accepts exactly the ingests whose `retryable` field is true, i.e. category `transient_actionable` or `infrastructure_fault` (#199); anything else 409s. `unsupported` was accepted before #199 despite always reporting `retryable: false`, and no longer is. */
+        /** Retry a failed ingest (#158). Re-runs the original stored bytes through the batch pipeline (genuine-restore dedup branch — not suppressed). Returns 202 with the freshly-created ingest to poll. Accepts exactly the ingests whose `retryable` field is true, i.e. category `transient_actionable` or `infrastructure_fault` (#199); anything else 409s. `unsupported` was accepted before #199 despite always reporting `retryable: false`, and no longer is. Optional JSON body `{ "note": "…" }` (#289): the new attempt carries that uploader note instead of the retried ingest's (blank or null clears it; no body keeps it), and a non-empty note also makes an `unsupported` ingest retryable (`retryable_with_note`), since the note is the context the document lacked. */
         post: {
             parameters: {
                 query?: never;
@@ -4203,7 +4206,11 @@ export interface paths {
                 };
                 cookie?: never;
             };
-            requestBody?: never;
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["RetryIngestBody"];
+                };
+            };
             responses: {
                 /** @description Retry enqueued — poll the returned ingest / batch */
                 202: {
@@ -4234,7 +4241,7 @@ export interface paths {
                         "application/problem+json": components["schemas"]["ProblemDetails"];
                     };
                 };
-                /** @description Stored source bytes missing */
+                /** @description Stored source bytes missing, or the body's `note` is not valid */
                 422: {
                     headers: {
                         [name: string]: unknown;
@@ -6030,6 +6037,7 @@ export interface components {
             target_id: string;
             moved_transaction_items: number;
             moved_owned_items: number;
+            moved_wish_items: number;
             /**
              * Format: uuid
              * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
@@ -6222,6 +6230,7 @@ export interface components {
             place_id: string | null;
             place: components["schemas"]["WishPlace"];
             place_suggestion: components["schemas"]["WishPlaceSuggestion"];
+            /** @description Other place wishes in the workspace at the same place, any status. A thing wish is never listed, and a thing wish's list is empty: visiting a place settles no thing to buy. */
             same_place_wish_ids: string[];
             title: string;
             notes: string | null;
@@ -6325,6 +6334,7 @@ export interface components {
             product_id?: string | null;
             notes?: string | null;
             target_price_minor?: number | null;
+            currency?: string;
             planned_days?: number | null;
             /** @enum {string} */
             urgency?: "now" | "soon" | "someday";
@@ -6340,7 +6350,10 @@ export interface components {
              * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
              */
             converted_transaction_id?: string | null;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @example 2026-11-20T00:00:00+09:00
+             */
             converted_at?: string;
             metadata?: {
                 [key: string]: unknown;
@@ -6773,6 +6786,10 @@ export interface components {
              * @example 01HXY9F0ABCDEFGHJKMNPQRSTV
              */
             dedup_of: string | null;
+            /** @description Whether `POST /v1/ingests/{id}/retry` will accept this ingest when the request carries a non-empty `note` (#289): every `retryable` ingest, plus an `unsupported` one, since the note is the context the document lacked. */
+            retryable_with_note: boolean;
+            /** @description Free text from whoever uploaded the file (#289), as stored: what the money was, when the document alone does not say. The extractor reads it as context, never as evidence: amounts, dates, payee and items come from the document. Null when none was sent. */
+            uploader_note: string | null;
             /** Format: date-time */
             created_at: string;
             /** Format: date-time */
@@ -6827,6 +6844,8 @@ export interface components {
             files?: string[];
             /** @description Whether to run reconcile for the batch once every file has been extracted. Sent as text: `true` / `1` / `false` / `0`, in any case. On when the field is absent or empty; any other value is a 422. */
             auto_reconcile?: boolean;
+            /** @description Optional uploader note (#289), stored on every ingest of the batch and shown to the extractor as context, never as evidence. For a multi-file upload a file can carry its own note in a field named `note[<filename>]` (the file's name as uploaded); it replaces the batch note for that file. A `note[…]` naming no file in the upload is a 422, as is `note` sent twice. At most 2000 characters each; blank is no note. */
+            note?: string;
         };
         CreateBatchResponse: {
             /**
@@ -6845,6 +6864,10 @@ export interface components {
                 mime_type: string | null;
             }[];
             poll: string;
+        };
+        RetryIngestBody: {
+            /** @description The uploader note for the new attempt (#289). Absent: the retried ingest's note is kept. A string replaces it; blank or null clears it. A non-empty note also makes an `unsupported` ingest retryable. Context for the extractor, never evidence. At most 2000 characters. */
+            note?: string | null;
         };
         RetryIngestResponse: {
             /**

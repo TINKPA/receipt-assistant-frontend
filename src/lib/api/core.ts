@@ -103,6 +103,9 @@ export interface WithETag<T> {
  */
 export interface ReceiptView {
   id: string;
+  /** The ingest that created this transaction, if any: the path from a
+   *  receipt to its uploader note (#179). Null for manual entries. */
+  sourceIngestId: string | null;
   status: BackendTransaction['status'];
   /** The TRANSACTION's own soft-delete stamp. Distinct from any
    *  document's `deleted_at` in `documents[]`: a fold can move every
@@ -655,6 +658,7 @@ export function toReceiptView(t: BackendTransaction, etag: string | null = null)
   const paymentMethod = typeof md.payment_method === 'string' ? md.payment_method : null;
   return {
     id: t.id,
+    sourceIngestId: t.source_ingest_id ?? null,
     status: t.status,
     deletedAt: t.deleted_at,
     version: t.version,

@@ -11,6 +11,10 @@ import type {
   BackendIngest,
   BatchStatus,
 } from './core';
+import type { components } from '@/lib/api-types';
+
+type CreateBatchForm = components['schemas']['CreateBatchForm'];
+type RetryIngestBody = components['schemas']['RetryIngestBody'];
 
 export interface IngestBatchResult {
   batchId: string;
@@ -24,7 +28,7 @@ export interface IngestBatchResult {
  *  via SSE) for progress. */
 export async function ingestBatch(
   files: File[],
-  opts: { autoReconcile?: boolean } = {},
+  opts: { autoReconcile?: boolean; note?: string } = {},
 ): Promise<IngestBatchResult> {
   const form = new FormData();
   for (const f of files) {
@@ -35,8 +39,12 @@ export async function ingestBatch(
   if (opts.autoReconcile != null) {
     form.append('auto_reconcile', opts.autoReconcile ? 'true' : 'false');
   }
+  // Uploader note (#289): one note for the whole batch. A blank note is sent
+  // as no field at all, never as an empty one.
+  const note = opts.note?.trim();
+  if (note) form.append('note', note);
   const { data, error, response } = await client.POST('/v1/ingest/batch', {
-    body: form as unknown as { files: string[] },
+    body: form as unknown as CreateBatchForm,
     bodySerializer: (b) => b as unknown as FormData,
   });
   const body = unwrap('ingestBatch', data, error, response.status);
@@ -90,10 +98,16 @@ export async function listIngestProblems(
 
 /** Re-run an ingest's original stored bytes. Server answers 202 with the
  *  freshly-created ingest to poll — 409 if the row isn't retryable, 422 if the
- *  source bytes are gone. Both surface through `unwrap` as ProblemDetails. */
-export async function retryIngest(id: string): Promise<BackendIngest> {
+ *  source bytes are gone. Both surface through `unwrap` as ProblemDetails.
+ *
+ *  `note` (#289): omitted keeps the retried ingest's note; a string replaces it
+ *  for the new attempt; `null` clears it. A non-empty note also lets an
+ *  `unsupported` ingest be retried (`retryable_with_note`). */
+export async function retryIngest(id: string, note?: string | null): Promise<BackendIngest> {
+  const reqBody: RetryIngestBody | undefined = note === undefined ? undefined : { note };
   const { data, error, response } = await client.POST('/v1/ingests/{id}/retry', {
     params: { path: { id } },
+    ...(reqBody ? { body: reqBody } : {}),
   });
   const body = unwrap('retryIngest', data, error, response.status);
   return body.ingest;
